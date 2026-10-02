@@ -1,0 +1,2 @@
+# Hippocampus-core
+由AI制作，一个由外部环境权威限制AI过于自由的毛病的AI文游引擎，仅需自行输入API key接通AI后，根据界面指引于APK外的AI对话窗口转化文游指令为json指即可导入文游进行游玩，demo版本持续优化制作中。
