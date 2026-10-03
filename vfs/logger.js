@@ -1,0 +1,484 @@
+// ============================================================
+// 日志系统
+// v4：LOGGER_REDESIGN · 树状结构 + 读兼容旧平铺
+//   - 新路径：/logs/{year}/{MM}/W{NN}/{date}.json
+//   - 周定义：fictional 模式，每月固定 5 周（W01=1-7, W02=8-14, W03=15-21, W04=22-28, W05=29-30）
+//   - 旧路径：/logs/{date}.json（保留只读兼容）
+//   - _week.json：周索引文件，partOf/twin 恒为 null
+//   - 归到哪天：logs[0].gameDate + 1 天；无日志时用 opts.gameDate
+//   - continuesTo：跨 1 天标 "HH:MM"，跨多天标 "+Nd HH:MM"
+// ============================================================
+
+(function() {
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function dateKey(gameDate) {
+    if (!gameDate) return 'unknown';
+    return gameDate.year + '-' + pad(gameDate.month) + '-' + pad(gameDate.day);
+  }
+  function safeArr(a) { return Array.isArray(a) ? a : []; }
+  function dateNum(gameDate) {
+    if (!gameDate) return 0;
+    return (gameDate.year || 0) * 10000 + (gameDate.month || 0) * 100 + (gameDate.day || 0);
+  }
+
+  // fictional 模式：每月 30 天，固定 5 周
+  function weekOfMonth(day) {
+    return Math.floor((day - 1) / 7) + 1;
+  }
+
+  // 加 N 天（简化历法，每月 30 天）
+  function addDays(gameDate, n) {
+    var y = gameDate.year, m = gameDate.month, d = gameDate.day + n;
+    while (d > 30) { d -= 30; m++; }
+    while (m > 12) { m -= 12; y++; }
+    return { year: y, month: m, day: d };
+  }
+
+  // 算两个日期的天数差
+  function daysBetween(d1, d2) {
+    var n1 = (d1.year * 12 + d1.month) * 30 + d1.day;
+    var n2 = (d2.year * 12 + d2.month) * 30 + d2.day;
+    return n2 - n1;
+  }
+
+  var Logger = {
+    _dir: function(cardId, saveId) {
+      return '/saves/' + cardId + '/' + saveId + '/logs';
+    },
+
+    // 新路径：/logs/{year}/{MM}/W{NN}/{date}.json
+    _pathNew: function(cardId, saveId, gameDate) {
+      var y = gameDate.year;
+      var m = pad(gameDate.month);
+      var w = 'W' + pad(weekOfMonth(gameDate.day));
+      return this._dir(cardId, saveId) + '/' + y + '/' + m + '/' + w + '/' + dateKey(gameDate) + '.json';
+    },
+
+    // 旧路径：/logs/{date}.json（只读兼容）
+    _pathOld: function(cardId, saveId, gameDate) {
+      return this._dir(cardId, saveId) + '/' + dateKey(gameDate) + '.json';
+    },
+
+    // 周索引路径
+    _weekIndexPath: function(cardId, saveId, gameDate) {
+      var y = gameDate.year;
+      var m = pad(gameDate.month);
+      var w = 'W' + pad(weekOfMonth(gameDate.day));
+      return this._dir(cardId, saveId) + '/' + y + '/' + m + '/' + w + '/_week.json';
+    },
+
+    // 生成 _week.json 内容
+    _buildWeekIndex: function(gameDate) {
+      var w = weekOfMonth(gameDate.day);
+      var startDay = (w - 1) * 7 + 1;
+      var endDay = Math.min(startDay + 6, 30);
+      var days = [];
+      for (var d = startDay; d <= endDay; d++) {
+        days.push(gameDate.year + '-' + pad(gameDate.month) + '-' + pad(d));
+      }
+      return {
+        isoYear: gameDate.year,
+        isoWeek: w,
+        days: days,
+        partOf: null,
+        twin: null
+      };
+    },
+
+    // 确保 _week.json 存在
+    _ensureWeekIndex: function(cardId, saveId, gameDate) {
+      var p = this._weekIndexPath(cardId, saveId, gameDate);
+      if (!VFS.exists(p)) {
+        VFS.writeJSON(p, this._buildWeekIndex(gameDate));
+      }
+    },
+
+    // 判断路径是否是周索引文件
+    _isWeekIndex: function(path) {
+      return /_week\.json$/.test(path);
+    },
+
+    listLogs: function(cardId, saveId) {
+      var dir = this._dir(cardId, saveId);
+      var paths = VFS.listAll(dir);
+      var out = [];
+      var seen = {};
+      for (var i = 0; i < paths.length; i++) {
+        var p = paths[i];
+        if (this._isWeekIndex(p)) continue;
+        var l = VFS.readJSON(p);
+        if (!l || !l.id) continue;
+        if (seen[l.id]) continue;
+        seen[l.id] = true;
+        out.push(l);
+      }
+      out.sort(function(a, b) {
+        return dateNum(b.gameDate) - dateNum(a.gameDate);
+      });
+      return out;
+    },
+
+    readLog: function(cardId, saveId, gameDate) {
+      // 先新路径
+      var l = VFS.readJSON(this._pathNew(cardId, saveId, gameDate));
+      if (l) return l;
+      // 退旧路径
+      return VFS.readJSON(this._pathOld(cardId, saveId, gameDate));
+    },
+
+    writeLog: function(cardId, saveId, logData) {
+      var gameDate = logData.gameDate;
+      // 确保目录存在
+      var y = gameDate.year;
+      var m = pad(gameDate.month);
+      var w = 'W' + pad(weekOfMonth(gameDate.day));
+      var dir = this._dir(cardId, saveId) + '/' + y + '/' + m + '/' + w;
+      VFS.mkdir(dir);
+      this._ensureWeekIndex(cardId, saveId, gameDate);
+      VFS.writeJSON(this._pathNew(cardId, saveId, gameDate), logData);
+    },
+
+    deleteLog: function(cardId, saveId, gameDate) {
+      // 新路径
+      VFS.deleteFile(this._pathNew(cardId, saveId, gameDate));
+      // 旧路径也删（兼容）
+      VFS.deleteFile(this._pathOld(cardId, saveId, gameDate));
+    },
+
+    // 删除指定游戏日期之后的日志（撤销回退用）
+    // ★ P4：可选第四参 round（轮次号，定义与 Snapshots._currentRound 同源）。
+    //   传 round 时：跨天的日志照旧整条删；恰好落在 gameDate 当天的日志按
+    //   chunks 的 msgTo 截断 —— 只删该轮之后的原文，当天更早的原文仍在。
+    //   不传 round：行为与旧版完全一致（向后兼容）。
+    //   返回：被删除的日志条数 + 被截断（未删但内容已缩短）的日志条数。
+    deleteLogsAfter: function(cardId, saveId, gameDate, round) {
+      if (!gameDate) return 0;
+      var cutoff = dateNum(gameDate);
+      var all = this.listLogs(cardId, saveId);
+      var affected = 0;
+      var self = this;
+      all.forEach(function(l) {
+        var dn = dateNum(l.gameDate);
+        if (dn > cutoff) {
+          self.deleteLog(cardId, saveId, l.gameDate);
+          affected++;
+          return;
+        }
+        if (round == null || dn !== cutoff) return;
+        var chunks = Array.isArray(l.chunks) ? l.chunks : null;
+        if (!chunks) return; // 老日志没有轮次信息：不猜、不动（只读兼容）
+        var kept = chunks.filter(function(c) {
+          // msgTo 为 null 的块是老 fullText 整体装入的，无法判断轮次 ⇒ 保守保留，防误删
+          if (c.msgTo == null) return true;
+          return c.msgTo <= round;
+        });
+        if (kept.length === chunks.length) return;
+        if (!kept.length) {
+          self.deleteLog(cardId, saveId, l.gameDate);
+          affected++;
+          return;
+        }
+        var patched = Object.assign({}, l);
+        patched.chunks = kept;
+        patched.fullText = kept.map(function(c) { return c.text; })
+          .filter(function(t) { return !!t; })
+          .join('\n\n---\n\n');
+        self.writeLog(cardId, saveId, patched);
+        // 老路径若存在同 id 的残留会盖回新内容，一并清掉
+        VFS.deleteFile(self._pathOld(cardId, saveId, l.gameDate));
+        affected++;
+      });
+      return affected;
+    },
+
+    // ============ 压缩 ============
+    compress: async function(opts) {
+      var cardId = opts.cardId, saveId = opts.saveId;
+      var messages = opts.messages || [];
+      if (messages.length === 0) return null;
+
+      // 归到哪天（优先级从高到低）：
+      // 1. opts.startGameDate —— 这批消息的起始游戏时间（story.js 传）
+      // 2. logs[0].gameDate + 1 —— 上一条日志的次日（老存档 fallback）
+      // 3. opts.gameDate —— 当前游戏时间
+      // 4. GameState._gameTime —— 兜底
+      // 5. 2026-01-01 —— 极端兜底
+      var gameDate;
+      if (opts.startGameDate && opts.startGameDate.year && opts.startGameDate.month && opts.startGameDate.day) {
+        gameDate = {
+          year: opts.startGameDate.year,
+          month: opts.startGameDate.month,
+          day: opts.startGameDate.day
+        };
+      } else {
+        var logs = this.listLogs(cardId, saveId);
+        if (logs.length > 0) {
+          gameDate = addDays(logs[0].gameDate, 1);
+        } else if (opts.gameDate) {
+          gameDate = { year: opts.gameDate.year, month: opts.gameDate.month, day: opts.gameDate.day };
+        } else if (GameState._gameTime) {
+          var gt = GameState._gameTime;
+          gameDate = { year: gt.year, month: gt.month, day: gt.day };
+        } else {
+          gameDate = { year: 2026, month: 1, day: 1 };
+        }
+      }
+
+      var existing = this.readLog(cardId, saveId, gameDate);
+      var prevSummary = existing ? (existing.summary || '') : '';
+      var prevFullText = existing ? (existing.fullText || '') : '';
+      var prevTitle = existing ? (existing.title || '') : '';
+      var prevTags = existing ? safeArr(existing.tags) : [];
+      var prevUnresolved = existing ? safeArr(existing.unresolved) : [];
+      var prevEntities = existing ? (existing.entities || {}) : {};
+
+      // ★ P4：分块。按 40 条切块，每一块都必须进 dialogue / fullText。
+      //   旧实现只截取尾部 40 条（见历史版本）：story.js 的 toCompress 可以超过 40 条，
+      //   超出的部分既不在摘要里、也不在 fullText 里，永久丢失。
+      var BLOCK = 40;
+      var isRealUserMsg = function(m) {
+        if (!m || m.role !== 'user') return false;
+        return !String(m.content || '').startsWith('【系统 ·');
+      };
+      // 轮次号：与 Snapshots._currentRound 同源（当前 chatHistory 中真实玩家发言的累计条数）。
+      //   本批第一条消息的轮次号由 opts.msgFrom 传入（story.js 给），
+      //   批次内之后每一条真实玩家发言 +1。
+      var roundOf = [];
+      var rn = (opts.msgFrom != null) ? opts.msgFrom : null;
+      for (var ri = 0; ri < messages.length; ri++) {
+        if (ri > 0 && rn != null && isRealUserMsg(messages[ri])) rn++;
+        roundOf.push(rn);
+      }
+
+      var newChunks = [];
+      var dialogue = '';
+      for (var bi = 0; bi < messages.length; bi += BLOCK) {
+        var blockEnd = Math.min(bi + BLOCK, messages.length);
+        var txt = '';
+        for (var mi = bi; mi < blockEnd; mi++) {
+          var mm = messages[mi];
+          if (mm.role === 'system') continue;
+          var mc = mm.content || '';
+          if (mc.length > 3000) mc = mc.slice(0, 3000) + '…（已截断）';
+          var who = (mm.role === 'user') ? '玩家' : 'GM';
+          txt += '[' + who + '] ' + mc + '\n\n';
+        }
+        newChunks.push({
+          msgFrom: roundOf[bi],
+          msgTo: roundOf[blockEnd - 1],
+          text: txt
+        });
+        dialogue += txt;
+      }
+
+      var sysPrompt = '你是游戏日志压缩器。把玩家与 GM 的对话压缩成一条结构化日志。\n' +
+        '必须保留五类信息：\n' +
+        '1. 涉及的 NPC / 地点 / 物品 / 势力（用对话里出现的原文名字）\n' +
+        '2. 玩家的重大选择\n' +
+        '3. 关系变化\n' +
+        '4. 未完成的事（伏笔、约定、任务、时间点）\n' +
+        '5. 玩家未经验证的声称——凡玩家单方面说出的身份、经历、承诺、物品归属，都必须保留「声称/自称/据说」的语气，不得写成已确认的事实。\n\n' +
+        (prevSummary ? '【已有摘要（今天更早的对话）】\n' + prevSummary + '\n\n请把已有摘要和新对话的内容合并成一份新的完整摘要。\n\n' : '') +
+        '只输出一个 JSON 对象，不要任何解释、不要 markdown 代码块。格式：\n' +
+        '{\n' +
+        '  "title": "一句话标题，15字以内",\n' +
+        '  "summary": "150字以内的摘要，中文；凡是玩家单方面说出的内容，都要带上「声称 / 自称 / 据说」这类限定词",\n' +
+        '  "entities": { "npcs": [], "places": [], "items": [], "factions": [] },\n' +
+        '  "unresolved": [],\n' +
+        '  "tags": []\n' +
+        '}';
+
+      var userMsg = '【游戏内日期】' + dateKey(gameDate) + '\n\n【新对话】\n' + dialogue;
+
+      var content;
+      try {
+        content = await ApiClient.chat([
+          { role: 'system', content: sysPrompt },
+          { role: 'user', content: userMsg }
+        ], { max_tokens: 2000, temperature: 0.3, jsonMode: true });
+      } catch (e) {
+        try {
+          content = await ApiClient.chat([
+            { role: 'system', content: sysPrompt },
+            { role: 'user', content: userMsg }
+          ], { max_tokens: 2000, temperature: 0.3 });
+        } catch (e2) {
+          console.error('[Logger] 压缩失败：', e2);
+          return null;
+        }
+      }
+
+      var jsonStr = String(content || '').trim();
+      var m2 = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (m2) jsonStr = m2[1].trim();
+      var start = jsonStr.indexOf('{');
+      var end = jsonStr.lastIndexOf('}');
+      if (start >= 0 && end > start) jsonStr = jsonStr.slice(start, end + 1);
+
+      var parsed;
+      try { parsed = JSON.parse(jsonStr); }
+      catch (e) {
+        console.error('[Logger] JSON 解析失败：', content);
+        parsed = {
+          title: prevTitle || '（自动备份）',
+          // P14·S4：兜底路径不经过 LLM，玩家原话会被原样截进摘要 ⇒ 必须自带限定，
+          //   否则「我是皇家骑士」会直接变成摘要里的既定陈述。
+          summary: '（以下为原始对话摘录，未经整理；玩家的话仅为玩家所说）' +
+            (prevSummary ? prevSummary + ' ' : '') + dialogue.slice(0, 200),
+          entities: prevEntities,
+          unresolved: prevUnresolved,
+          tags: prevTags
+        };
+      }
+
+      var entities = parsed.entities && typeof parsed.entities === 'object' ? parsed.entities : {};
+      entities.npcs = safeArr(entities.npcs);
+      entities.places = safeArr(entities.places);
+      entities.items = safeArr(entities.items);
+      entities.factions = safeArr(entities.factions);
+
+      var mergedTags = prevTags.slice();
+      safeArr(parsed.tags).forEach(function(t) {
+        if (mergedTags.indexOf(t) === -1) mergedTags.push(t);
+      });
+      var mergedUnresolved = prevUnresolved.slice();
+      safeArr(parsed.unresolved).forEach(function(u) {
+        if (mergedUnresolved.indexOf(u) === -1) mergedUnresolved.push(u);
+      });
+
+      // ★ P4：chunks 是 fullText 的唯一真源；fullText 由 chunks 拼出。
+      //   老日志（P4 之前）没有 chunks：把已有 fullText 当做一个不可再分的块装进去，
+      //   拼接结果与旧行为逐字节一致（旧：prev + '\n\n---\n\n' + dialogue）。
+      var prevChunks = (existing && Array.isArray(existing.chunks)) ? existing.chunks.slice() : [];
+      if (!prevChunks.length && prevFullText) {
+        prevChunks = [{ msgFrom: null, msgTo: null, text: prevFullText }];
+      }
+      var allChunks = prevChunks.concat(newChunks);
+      var fullText = allChunks.map(function(c) { return c.text; })
+        .filter(function(t) { return !!t; })
+        .join('\n\n---\n\n');
+      var firstRound = null, lastRound = null;
+      allChunks.forEach(function(c) {
+        if (c.msgFrom != null && (firstRound == null || c.msgFrom < firstRound)) firstRound = c.msgFrom;
+        if (c.msgTo != null && (lastRound == null || c.msgTo > lastRound)) lastRound = c.msgTo;
+      });
+
+      var logData = {
+        id: 'log_' + dateKey(gameDate),
+        gameDate: { year: gameDate.year, month: gameDate.month, day: gameDate.day },
+        realTime: new Date().toISOString(),
+        title: parsed.title || prevTitle || '',
+        summary: parsed.summary || prevSummary || '',
+        entities: entities,
+        unresolved: mergedUnresolved,
+        tags: mergedTags,
+        messageCount: (existing ? (existing.messageCount || 0) : 0) + messages.length,
+        fullText: fullText,
+        chunks: allChunks,
+        msgFrom: firstRound,
+        msgTo: lastRound
+      };
+
+      // continuesTo：跨天标注
+      var endTime = opts.endGameTime || GameState._gameTime;
+      if (endTime) {
+        var diff = daysBetween(gameDate, { year: endTime.year, month: endTime.month, day: endTime.day });
+        if (diff === 1) {
+          logData.continuesTo = pad(endTime.hour) + ':' + pad(endTime.minute);
+        } else if (diff > 1) {
+          logData.continuesTo = '+' + diff + 'd ' + pad(endTime.hour) + ':' + pad(endTime.minute);
+        }
+      }
+
+      this.writeLog(cardId, saveId, logData);
+      return logData;
+    },
+
+    getRecentSummaries: function(cardId, saveId, n) {
+      var all = this.listLogs(cardId, saveId);
+      return all.slice(0, n).map(function(l) {
+        return {
+          date: dateKey(l.gameDate),
+          title: l.title,
+          summary: l.summary,
+          entities: l.entities || {},
+          unresolved: safeArr(l.unresolved),
+          tags: safeArr(l.tags)
+        };
+      });
+    },
+
+    getActiveEntities: function(cardId, saveId, n) {
+      var summaries = this.getRecentSummaries(cardId, saveId, n);
+      var npcs = {}, places = {}, items = {}, factions = {}, unresolved = [];
+      summaries.forEach(function(s) {
+        var e = s.entities || {};
+        safeArr(e.npcs).forEach(function(x) { npcs[x] = true; });
+        safeArr(e.places).forEach(function(x) { places[x] = true; });
+        safeArr(e.items).forEach(function(x) { items[x] = true; });
+        safeArr(e.factions).forEach(function(x) { factions[x] = true; });
+        safeArr(s.unresolved).forEach(function(x) { if (unresolved.indexOf(x) === -1) unresolved.push(x); });
+      });
+      return {
+        npcs: Object.keys(npcs),
+        places: Object.keys(places),
+        items: Object.keys(items),
+        factions: Object.keys(factions),
+        unresolved: unresolved
+      };
+    },
+
+    search: function(cardId, saveId, keyword) {
+      if (!keyword) return [];
+      keyword = String(keyword).toLowerCase();
+      var all = this.listLogs(cardId, saveId);
+      var hits = [];
+      all.forEach(function(l) {
+        var entities = l.entities || {};
+        var hay = [
+          l.title || '', l.summary || '',
+          safeArr(l.tags).join(' '),
+          safeArr(entities.npcs).join(' '),
+          safeArr(entities.places).join(' '),
+          safeArr(entities.items).join(' '),
+          safeArr(entities.factions).join(' ')
+        ].join(' ').toLowerCase();
+        var score = 0;
+        if (hay.indexOf(keyword) >= 0) score += 10;
+        if (l.fullText && String(l.fullText).toLowerCase().indexOf(keyword) >= 0) score += 3;
+        if (score > 0) hits.push({ log: l, score: score });
+      });
+      hits.sort(function(a, b) { return b.score - a.score; });
+      return hits.map(function(h) { return h.log; });
+    },
+
+    // ============ 触发判断 ============
+    // 参数：
+    //   lastLogDate      上一次日志的游戏内日期（可能为 null）
+    //   currentGameDate  当前游戏内日期
+    //   dayMessageCount  当天累积的对话消息数（不含 system）
+    shouldCompress: function(lastLogDate, currentGameDate, dayMessageCount) {
+      if (!currentGameDate) return { yes: false };
+      var todayKey = dateNum(currentGameDate);
+      var lastKey = dateNum(lastLogDate);
+
+      // 跨日：上次日志的游戏内日期早于今天
+      if (lastLogDate && lastKey < todayKey) {
+        return { yes: true, reason: 'crossDay' };
+      }
+
+      // 首次日志：还没任何日志，但今天已累积 20 条以上
+      if (!lastLogDate && dayMessageCount >= 20) {
+        return { yes: true, reason: 'firstLog' };
+      }
+
+      return { yes: false };
+    },
+
+    dateKey: dateKey
+  };
+
+  if (typeof window !== 'undefined') window.Logger = Logger;
+  if (typeof module !== 'undefined' && module.exports) module.exports = Logger;
+})();

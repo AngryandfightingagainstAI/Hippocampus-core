@@ -1,0 +1,201 @@
+﻿PASS: P1C-1 三项全开 → 全保留
+PASS: P1C-2 ts 不参与渲染故不复制（actual=undefined）
+PASS: P1C-3 meta 为 null → null（actual=null）
+PASS: P1C-4 meta 空对象 → null（actual=null）
+PASS: P1C-5 只有 ts → null（actual=null）
+PASS: P1C-6 关思维链 → reasoning 裁掉，其余保留
+PASS: P1C-7 关搜索 → searches 裁掉，其余保留
+PASS: P1C-8 关 Token → usage 裁掉，其余保留
+PASS: P1C-9 三项全关 → null（actual=null）
+PASS: P1C-10 searches 空数组不计（actual=null）
+PASS: P1C-11 usage 全 0 仍保留（空判在 ThinkingBlock 层，同 UI_Thinking.render）
+PASS: P1C-12 缺 cfg 走全局 getThinkingConfig
+PASS: P1C-13 全局缺失 → 三项全开兜底
+PASS: P1C-14 段条目存 thinking
+PASS: P1C-15 关思维链后入队，新段已裁
+PASS: P1C-16 已落段不随后改开关变化（同时机同桌面）
+PASS: P1C-17 三项全关 → thinking null（不渲染）（actual=null）
+PASS: P1C-18 meta 为 null → thinking null（actual=null）
+PASS: P1C-19 meta 空对象 → thinking null（actual=null）
+PASS: P1D-32 段存 round（actual=7）
+PASS: P1D-33 round 0 → 0（不渲染动作区）（actual=0）
+PASS: P1D-34 round 缺参 → 0（actual=0）
+PASS: P1E-1 ErrorLog 未装载 → 空态逐字
+PASS: P1E-2 _load 被调用一次（actual=1）
+PASS: P1E-3 条数（actual=2）
+PASS: P1E-4 倒序（新错误在前）
+PASS: P1E-5 最新条 index = 总数（actual=2）
+PASS: P1E-6 次新条 index（actual=1）
+PASS: P1E-7 字段映射（time/timeFull/type/stack）
+PASS: P1E-8 现场（屏幕/卡带/轮次）
+PASS: P1E-9 现场字段直取（第二条 screen=home / round=?）
+PASS: P1E-10 _state.errors 缺失 → 空态
+PASS: P1E-11 空数组 → 空态逐字
+PASS: P1E-12 _load 抛异常仍返回内存态（actual=2）
+PASS: P1E-13 clearErrorLog 调 core.clear（actual=1）
+PASS: P1E-14 ErrorLog 未装载时 clearErrorLog 不抛
+PASS: P1F-1 RN 侧 engine/core/cards_demo.js 存在
+PASS: P1F-2 字节数 2457（= 桌面同值）（actual=2457）
+PASS: P1F-3 MD5 逐字节同桌面（actual="AA393C3F50A4C2FD0F732D29C95115C4"）
+PASS: P1F-4 导出 CARDS["demo_v1"]（示例卡带）
+PASS: P1F-5 demo_v1 schemaVersion（actual="1.2"）
+PASS: P1F-6 demo_v1 fatigue segments 三档
+PASS: P1F-7 rn_bootstrap 装载 CARDS
+PASS: P1G-1 第①处：globalThis.CardClassify = {（actual=true）
+PASS: P1G-2 原 window.CardClassify 已不存在
+PASS: P1G-3 第②处：闭包内 module.exports 导出口
+PASS: P1G-4 导出块在 })(); 之前（闭包内）
+PASS: P1G-5 导出 5 个纯函数
+PASS: P1G-6 extractAllNumbers 取到 2 条（actual=2）
+PASS: P1G-7 buildPrompt 产出含卡名（游戏：测试世界）
+PASS: P1G-8 buildPrompt 含条目行（key="hp" / key="fame_port"）
+PASS: P1G-9 buildPrompt 含位置字典（hud / panel.3）
+PASS: P1G-10 parseSuggestions 吃样本 JSON 出 2 条
+PASS: P1G-11 fame_port 建议目标 = panel.3
+PASS: P1G-12 hp 应判原位（changed=false）
+PASS: P1G-13 代码块包裹也能解析
+PASS: P1G-14 非 JSON 返回 null
+PASS: P1G-15 movedCount = 1（actual=1）
+PASS: P1G-16 卡带 JSON 真变了：hud 只剩 hp
+PASS: P1G-17 卡带 JSON 真变了：panel.3 收下 fame_port
+PASS: P1G-18 原卡带未被就地改动（深拷贝）
+PASS: P1G-19 未勾选则不移动（actual=0）
+PASS: P1G-20 无 key ⇒ hasApiKey() false（按钮禁用依据）
+PASS: P1G-21 有 key ⇒ hasApiKey() true
+PASS: P1G-22 loadCard 取到样本卡（actual="测试卡带"）
+PASS: P1G-23 meta.classified = true
+PASS: P1G-24 meta.classifiedAt 为 ISO
+PASS: P1G-25 meta.classifiedSnapshot 去掉 meta 自身
+PASS: P1G-26 落 imported 层且等于整卡
+PASS: P1G-27 分析按钮 disabled 依据 hasKey
+PASS: P1G-28 无 key 有文案说明
+PASS: P1G-29 应用 toast 逐字照桌面 :442
+PASS: P1G-30 不可解析文案逐字照桌面 :240
+PASS: P1G-31 CardsScreen 行内「分类审核」入口
+PASS: P1G-32 App.tsx classify 路由分支
+PASS: P1I3-1 全缺省不抛，快照空态逐字
+PASS: P1I3-2 gameTime 为 JSON null（actual="null"）
+PASS: P1I3-3 npcRuntime 缺模块 → {}（actual="{}"）
+PASS: P1I3-4 游戏时间 JSON 含 year/day
+PASS: P1I3-5 playerData JSON 含姓名
+PASS: P1I3-6 快照计数（actual=2）
+PASS: P1I3-7 快照文案（共 N + 最近第 N 轮）逐字照桌面（actual="共 2 个快照\n最近：第 7 轮"）
+PASS: P1I3-8 NPC 运行时 JSON
+PASS: P1I3-9 list 抛异常兜底为空态
+PASS: P1A-1 非本引擎存档 → 拒绝且 reason 逐字
+PASS: P1A-2 缺 files → 同一拒绝 reason
+PASS: P1A-3 缺 saveId → reason 逐字
+PASS: P1A-4 卡带不存在 → reason 含卡带 id
+PASS: P1A-5 无匹配路径 → reason 逐字
+PASS: P1A-6 成功：ok + written=2 + 新 saveId 前缀
+PASS: P1A-7 VFS 真落新前缀文件且内容一致
+PASS: P1A-8 缺 meta → 自动补建且 saveId/cardId 对
+PASS: P1A-9 导出结构恰两键 global / vfs
+PASS: P1A-10 global 为全局配置对象（含 settings/gm）
+PASS: P1A-11 vfs 结构 version/files/dirs（exportAll 契约）
+PASS: P1A-12 JSON 往返保结构（导出即可落盘）
+PASS: P1B-1 listSlots 恒 7 槽且初值全空
+PASS: P1B-2 saveSlot ok + listSlots 反映
+PASS: P1B-3 槽位真落 Storage（settings.theme.slots[0].name）
+PASS: P1B-4 saveSlot 越界 → 槽位越界（actual="槽位越界"）
+PASS: P1B-5 loadSlot 空槽 → 槽位为空（actual="槽位为空"）
+PASS: P1B-6 槽位存取往返（自定义 #111111 → 切内置 → 载槽还原 #111111）
+PASS: P1B-7 renameSlot 往返
+PASS: P1B-8 deleteSlot 后槽位为空
+PASS: P1B-9 主题包导出结构（schemaVersion/id/name/colors）
+PASS: P1B-10 主题包导出→导入往返 ok + 名称一致
+PASS: P1B-11 导入后 getActive 生效（activeId=custom）
+PASS: P1B-12 非法 JSON → 不抛且 reason 含 JSON 解析失败
+PASS: P1D-1 lastAssistantText 取末条 assistant（actual="老者抬眼。"）
+PASS: P1D-2 busy 时不发起（actual=false）
+PASS: P1D-3 busy toast warn
+PASS: P1D-4 busy 不调 rollbackLast（actual=0）
+PASS: P1D-5 无快照返回 false（actual=false）
+PASS: P1D-6 无快照 toast 逐字
+PASS: P1D-7 取消确认返回 false（actual=false）
+PASS: P1D-8 取消后未回滚
+PASS: P1D-9 确认文案含最新轮次
+PASS: P1D-10 确认返回 true（actual=true）
+PASS: P1D-11 rollbackLast 调用一次（actual=1）
+PASS: P1D-12 _regenContext 存被否决输出、comment 空
+PASS: P1D-13 重放历史 + 重跑
+PASS: P1D-14 回退日志 hint
+PASS: P1D-15 rollbackLast 失败返回 false（actual=false）
+PASS: P1D-16 回滚失败 toast 逐字
+PASS: P1D-17 失败不重跑
+PASS: P1D-18 回退 busy 拦截（actual=false）
+PASS: P1D-19 找不到目标轮（actual=false）
+PASS: P1D-20 toast 逐字
+PASS: P1D-21 最新轮无需回退返回 false（actual=false）
+PASS: P1D-22 toast 逐字
+PASS: P1D-23 取消确认返回 false（actual=false）
+PASS: P1D-24 取消不回滚（actual=0）
+PASS: P1D-25 回退确认文案含轮次与丢弃轮数
+PASS: P1D-26 确认返回 true（actual=true）
+PASS: P1D-27 rollbackTo 目标轮
+PASS: P1D-28 三条收尾（topbar/侧栏/重放/尾 hint）
+PASS: P1D-29 回退日志 hint
+PASS: P1D-30 rollbackTo 失败返回 false（actual=false）
+PASS: P1D-31 失败 toast 逐字
+PASS: P1I2-1 promptOpen 建 pending（message/defaultValue/options）
+PASS: P1I2-2 确定 → resolve 输入值（actual="夜色"）
+PASS: P1I2-3 结算后 pending 清空（actual=null）
+PASS: P1I2-4 取消 → resolve null（actual=null）
+PASS: P1I2-5 缺参 pending 归一为字符串
+PASS: P1I2-6 resolve undefined → null（actual=null）
+PASS: P1I2-7 重复 resolve 不抛
+PASS: P1I2-8 首次结算值保持（actual="a"）
+PASS: P1I2-9 prompt 打开不动 confirmPending（actual=null）
+PASS: P1I1-1 导出 10 个函数
+PASS: P1I1-2 A 类零 DOM/React（代码行无 document./window./require(react)）
+PASS: P1I1-3 requestUpdate 解析成功
+PASS: P1I1-4 pending 就位
+PASS: P1I1-5 _updatingNpcId 保留（同桌面 :221）（actual="a"）
+PASS: P1I1-6 buildForm 字段（name/alive/mood/locationId/playerRelation）
+PASS: P1I1-7 knownFactsText 逐字（已有 [时间·来源] + 新提到标推演）（actual="[D1·目击] x\n[推演] y"）
+PASS: P1I1-8 recentEventsText（actual="e1"）
+PASS: P1I1-9 applyUpdate 收到剥离前缀的知识
+PASS: P1I1-10 recentEvents 逐行 trim + 过滤空
+PASS: P1I1-11 confirmUpdate 后 pending 清空（actual=null）
+PASS: P1I1-12 confirmUpdate 后 updatingId 清空（actual=null）
+PASS: P1I1-13 解析失败返回 error 文案逐字
+PASS: P1I1-14 NPC 不存在 toast 逐字
+PASS: P1I1-15 确认成功 toast 逐字
+PASS: P1I1-16 失败条目不可确认 toast 逐字
+PASS: P1I1-17 拒绝 toast 逐字
+PASS: P1I1-18 重试完成 toast + 返回 true
+PASS: P1I1-19 未启用 toast 逐字 + 返回 false
+PASS: P1I1-20 NpcPanel 卡片头「更新」按钮
+PASS: P1I1-21 NpcPanel pending 三态按钮（确认/重试/拒绝）
+PASS: P1I1-22 NpcPanel history 文案照桌面 :173
+PASS: P1I1-23 NpcUpdateModal 标题 + 六字段 label 逐字
+PASS: P1I1-24 NpcUpdateModal 三按钮逐字
+PASS: P1I4-1 导出 6 段 + getInstructionTemplate
+PASS: P1I4-2 六段皆非空且为字符串
+PASS: P1I4-3 getInstructionTemplate = 六段 \n 顺连（同桌面 :1135）（actual="你是一位「AI 文字游戏卡带作者」。与用户讨论后，输出一份符合 schema v1.2 的卡带 JSON。\n\n【硬性要求】\n1. 只输出一个 JSON 对象。不要解释、不要 markdown 代码块包裹。\n2. 严格按下面 schema。不许自创字段、不许改字段名、不许发明新 type。\n3. key 用英文小写 + 下划线。name 用中文。\n4. icon 用单个 emoji。\n5. 不知道填什么用空数组 [] 或空对象 {} 或 null，不要省略字段。\n6. 遇到用户设想超出 schema 支持范围，必须说\"这做不到\"。\n\n═══════════════════════════════════════\n【数值范围】\n═══════════════════════════════════════\n引擎对数值大小无限制，min/max 由你按题材定：\n- 校园/日常：0 ~ 100\n- 现代/枪战：0 ~ 几千\n- 修仙/玄幻：0 ~ 百万甚至 1e12\n- 属性池 pool.total：30 ~ 50000\n\n═══════════════════════════════════════\n【数值分类规则】\n═══════════════════════════════════════\n  hud      顶栏，3-5 项。玩家时刻盯的核心值（HP/MP/金钱）\n  sidebar  左栏，3-6 项。玩家的\"状态\"（疲劳/饥饿/心情）\n  panel 2  先天+后天属性（力量/敏捷/智略）\n  panel 3  对外印象（声望/通缉等级）\n  panel 4  玩家↔NPC 关系（必须用 relation 类型）\n  panel 5  收集类信息（用 list 类型）\n\n═══════════════════════════════════════\n【字段命名】\n═══════════════════════════════════════\n1. 玩家字段 key 用标准命名：\n   ✓ name / gender / age / birth_year / height / appearance / background\n   ✗ 避免：player_name / player_gender / player_age\n2. 属性 key 以 attr_ 开头\n3. 所有 id 全局唯一，英文+下划线\n\n═══════════════════════════════════════\n【schema v1.2】\n═══════════════════════════════════════\n{\n  \"schemaVersion\": \"1.2\", \"cardId\": \"\", \"cardName\": \"\", \"author\": \"\", \"description\": \"\",\n\n  \"game\": {\n    \"title\": \"\", \"background\": \"\", \"sourceUniverse\": \"\", \"eraRange\": [1991, 1998],\n    \"openingPrompt\": \"\",\n    \"startDate\": { \"month\": null, \"day\": null, \"hour\": null, \"minute\": null }\n  },\n  // openingPrompt：游戏开始时给 AI 的第一句指令。留空则用通用默认。\n  // startDate：可选。填了之后开场固定在这个日期（月日时可省略，省略则随机）。留空 = 月日随机、时分随机。\n  // startDate 只填 month/day/hour/minute，不填 year（year 由 eraRange 和玩家选择决定）。\n\n  \"hud\": [ { \"key\": \"hp\", \"name\": \"体力\", \"icon\": \"heart\", \"max\": 100, \"init\": 100 } ],\n\n  \"sidebar\": [\n    { \"key\": \"fatigue\", \"name\": \"疲劳\", \"icon\": \"moon\", \"max\": 100, \"init\": 0,\n      \"segments\": [\n        { \"min\": 0, \"max\": 30, \"text\": \"精力充沛\", \"trigger\": false },\n        { \"min\": 31, \"max\": 100, \"text\": \"精疲力竭\", \"trigger\": true }\n      ] }\n  ],\n\n  \"panels\": [\n    { \"id\": \"attrs\",  \"num\": 2, \"name\": \"个人素质\", \"entries\": [\n        { \"type\": \"number\", \"key\": \"p_str\", \"name\": \"力量\", \"icon\": \"barbell\", \"min\": 0, \"max\": 100, \"current\": 10 }\n    ] },\n    { \"id\": \"fame\",   \"num\": 3, \"name\": \"声望名誉\", \"entries\": [\n        { \"type\": \"number\", \"key\": \"fame\", \"name\": \"声望\", \"icon\": \"⭐\", \"min\": -100, \"max\": 100, \"current\": 0 }\n    ] },\n    { \"id\": \"social\", \"num\": 4, \"name\": \"社交关系\", \"entries\": [\n        { \"type\": \"relation\", \"key\": \"rel_x\", \"name\": \"某NPC\", \"icon\": \"user\",\n          \"from\": \"player\", \"to\": \"npc_x\", \"min\": -100, \"max\": 100, \"current\": 0 }\n    ] },\n    { \"id\": \"world\",  \"num\": 5, \"name\": \"世界百科\", \"entries\": [\n        { \"type\": \"list\", \"key\": \"known_places\", \"name\": \"已知地点\", \"items\": [] }\n    ] }\n  ],\n  // entry.type 可选：number / relation / list / switch\n  // switch 类型示例：\n  //   { \"type\": \"switch\", \"key\": \"has_key\", \"name\": \"持有钥匙\", \"icon\": \"key\", \"value\": false }\n  //   value 是布尔值；面板上显示为\"是 / 否\"\n\n  \"attributes\": [ { \"key\": \"attr_str\", \"name\": \"力量\", \"icon\": \"barbell\", \"min\": 5, \"max\": 20, \"init\": 5 } ],\n  \"attributePool\": { \"total\": 30, \"base\": 5 },\n\n  // statusCard（可选）：玩家动态字段+NPC 心声，详见【可选系统】段\n  // calendar（可选）：节假日池，详见【可选系统】段\n  \"steps\": [\n    { \"id\": \"name\", \"type\": \"form\", \"title\": \"姓名\", \"guide\": \"\",\n      \"fields\": [\n        { \"key\": \"name\", \"type\": \"text\", \"label\": \"姓名\", \"required\": true },\n        { \"key\": \"gender\", \"type\": \"choice\", \"label\": \"性别\", \"options\": [\n            { \"id\": \"male\", \"label\": \"男\" },\n            { \"id\": \"female\", \"label\": \"女\" }\n        ] },\n        { \"key\": \"age\", \"type\": \"number\", \"label\": \"年龄\", \"min\": 14, \"max\": 60, \"default\": 18 }\n      ]\n    },\n    { \"id\": \"era\", \"type\": \"select\", \"title\": \"时代\", \"key\": \"era\",\n      \"options\": [ { \"id\": \"era_1\", \"name\": \"\", \"period\": [1991, 1992], \"startYear\": 1991, \"events\": [], \"figures\": [] } ]\n    },\n    // option 字段说明：\n    //   id       时代 id\n    //   name     时代名（显示用）\n    //   period   [起始年, 结束年]，时代范围（叙事参考）\n    //   startYear 游戏从这个时代哪一年开始（可选）。填了就用它，不填用 period[0]\n    //   events   这个时代的标志性事件（可选）\n    //   figures  这个时代的活跃人物（可选）\n    // startYear 和 period 的区别：period 描述\"时代跨度\"，startYear 指定\"玩家从哪一年进场\"。\n    // 例：明治时代 period [1868, 1912]，但玩家从 1880 进场 → startYear: 1880。\n    { \"id\": \"attributes\", \"type\": \"form\", \"title\": \"属性分配\",\n      \"pool\": { \"total\": 30, \"base\": 5 },\n      \"fields\": [ { \"key\": \"attr_str\", \"type\": \"number\", \"label\": \"力量\", \"min\": 5, \"max\": 20, \"default\": 5 } ]\n    },\n    { \"id\": \"confirm\", \"type\": \"summary\", \"title\": \"确认\" }\n  ],\n  // step.type 还可选 multi-select；select/multi-select 加 renderMode:\"quiz\" 可渲染成卡片式选择\n\n  \"worldbook\": {\n\n    \"worldSetting\": {\n      \"worldName\": \"\", \"mainStage\": \"\", \"description\": \"\",\n      \"powerSystem\": \"\", \"powerMix\": false, \"powerCeiling\": \"\",\n      \"powerCounters\": [], \"powerWeakness\": \"\",\n      \"officials\": [], \"militaryUse\": { \"used\": false, \"inWar\": false, \"note\": \"\" },\n      \"religions\": [], \"newReligion\": false,\n      \"racialDiscrimination\": { \"has\": false, \"against\": \"\" },\n\n      \"existence\": {\n        \"has\":    [\"魔法\", \"蒸汽机械\", \"矮人\"],\n        \"hasNot\": [\"电力\", \"火器\", \"智能手机\", \"现代医疗\"]\n      },\n\n      \"eraProducts\": [\n        { \"from\": 1900, \"to\": 1920, \"has\": [\"蒸汽机\",\"马车\",\"电报\"], \"hasNot\": [\"汽车\",\"飞机\",\"电子设备\"] },\n        { \"from\": 1920, \"to\": 1950, \"has\": [\"汽车\",\"电话\",\"收音机\"], \"hasNot\": [\"电视\",\"手机\",\"互联网\"] }\n      ]\n    },\n\n    // weather / tasks / achievements（可选）：详见【可选系统】段\n    \"maps\": [ { \"rootId\": \"map_root_1\", \"name\": \"主舞台\" } ],\n    \"mapNodes\": {\n      \"map_root_1\": { \"id\": \"map_root_1\", \"name\": \"主舞台\", \"type\": \"city\", \"desc\": \"\",\n        \"parentId\": null, \"childrenIds\": [], \"tags\": [], \"linkedNPCs\": [], \"linkedItems\": [], \"actions\": [] }\n    },\n    // mapNode.type 可选：universe / galaxy / solar_system / planet / continent / country / province / city / district / street / community / building / floor / room / custom\n\n    \"timeline\": { \"official\": [], \"fanFuture\": [], \"playerLine\": [] },\n    // official：玩家进入之前，这个世界历史上发生过什么\n    // fanFuture：玩家进入之后，原作会怎么走（同人卡带必填，写到台词级；原创卡带留空）\n    // playerLine：玩家自己的支线，运行时引擎自动累积，卡带留空\n\n    // ★ 节点/伏笔系统（可选，默认关闭，需全局开关启用）\n    \"storyNodes\": [],\n    // 例：[ { \"id\": \"node_intro\", \"name\": \"引子\", \"type\": \"hook\",\n    //     \"lockedUntil\": [], \"promptHint\": \"玩家刚到小镇\", \"stuckHint\": \"玩家卡住时的提示语\",\n    //     \"exit\": { \"engine\": { \"type\": \"location\", \"mapNodeId\": \"map_bar\" }, \"hint\": \"去酒吧\" },\n    //     \"requiredForeshadows\": [\"fs_letter\"], \"requiredReveals\": [] } ]\n    \"foreshadows\": [],\n    // 例：[ { \"id\": \"fs_letter\", \"name\": \"神秘信件\", \"desc\": \"旅馆房间里的匿名信\" } ]\n\n    // ★ 结局系统（可选，默认关闭，需全局开关启用）\n    \"endings\": [],\n    // 例：[ { \"id\": \"end_truth\", \"name\": \"真相结局\", \"type\": \"good\",\n    //     \"desc\": \"你揭开了全部真相\", \"locked\": true, \"priority\": 10,\n    //     \"trigger\": { \"type\": \"value\", \"key\": \"truth\", \"op\": \">=\", \"value\": 100 },\n    //     \"epilogue\": \"\" } ]\n\n    \"npcs\": [\n      {\n        \"id\": \"npc_x\", \"name\": \"某NPC\",\n        \"weight\": 5,\n        \"keywords\": [\"关键词1\", \"关键词2\"],\n        \"locationId\": \"map_root_1\",\n        \"gender\": \"男\", \"height\": \"\", \"age\": \"\", \"born\": 1980,\n        \"abilities\": [], \"likes\": [], \"dislikes\": [],\n        \"factions\": [], \"relations\": [], \"periods\": [],\n        \"desc\": \"\", \"tags\": []\n      }\n    ],\n\n    \"shops\": [\n      {\n        \"id\": \"shop_1\", \"name\": \"银月杂货铺\", \"desc\": \"卖各种小道具\",\n        \"npcId\": \"npc_merchant\", \"locationId\": \"map_city_1\",\n        \"currencyId\": \"\", \"refresh\": \"none\",\n        // currencyId：填 hud 或 sidebar 里某个数值项的 key（比如 \"money\"）。\n        // 例：hud 里有 {\"key\":\"money\",\"name\":\"现金\"}，则 currencyId 填 \"money\"。\n        \"items\": [\n          { \"id\": \"si_1\", \"name\": \"治疗药水\", \"price\": 50, \"stock\": 10, \"category\": \"common\", \"desc\": \"恢复 30 HP\" }\n        ],\n        // refresh 可选：none / daily / weekly / story；item.stock: -1 表示无限库存\n      }\n    ],\n\n    \"factions\": [], \"items\": [], \"skills\": [],\n    \"currency\": { \"currencies\": [], \"purchasingPower\": \"\", \"exchangeRates\": [], \"allowBarter\": false, \"allowSell\": false },\n    \"hasRaces\": false, \"races\": [], \"occupations\": []\n  }\n}\n\n═══════════════════════════════════════\n【事件系统 · 重要】\n═══════════════════════════════════════\n本引擎使用「动态事件池」机制，事件由 AI 在游戏运行时提议、玩家审核、引擎执行。\n\n★ 卡带里 worldbook.events 应留空数组 []，不要手写事件。\n  · 引擎内置了 30+ 个「事件原型」\n  · 游戏进行中，AI 会从原型库挑选、适配当前世界观、提议给玩家审核\n  · 玩家接受后，事件自动进入世界事件池\n  · 剧情推进到一定阶段，AI 会临时或永久封禁某些事件\n\n★ 唯一需要你（卡带作者）做的：\n  · 把 mapNodes 每个节点的 tags 填好（公开/隐蔽/危险/安全/神圣/禁忌 等）\n  · 引擎会根据这些 tags 让事件在合适的地点漂移\n\n═══════════════════════════════════════\n【NPC 设计规范】\n═══════════════════════════════════════\n- weight 范围 1-10，默认 5\n  · 主角级 NPC → 8-10\n  · 重要配角 → 6-7\n  · 路人/背景 → 3-5\n  · 一次性角色 → 1-2\n- keywords 3-8 条\n- locationId 可选。填了之后玩家到该地点时该 NPC 会自动出现\n- 至少 3 个 NPC，不设上限（按题材复杂度定，100 个也支持）\n- 复杂度不同：校园题材 5-10 个够用；IP 同人题材 30-50 个常见；不要为了省事强行砍\n\n═══════════════════════════════════════\n【内容要求】\n═══════════════════════════════════════\n- hud 3-5 项，sidebar 3-6 项\n- panels 必须含 num 2/3/4/5 四项（每项 entries 数量不限）\n- attributes 3-6 项\n- steps 5-15 个\n- worldbook.npcs 至少 3 个，不设上限（按题材定，需要多少写多少）\n- worldbook.factions 2-4 个\n- worldbook.mapNodes 5-10 个，每个节点填好 tags\n- worldbook.timeline.official 3-5 条\n- worldSetting.existence 必须有内容\n- worldSetting.eraProducts 至少 1 段\n- worldbook.shops 2-4 个（有商店时，hud 里必须有货币数值项，shops[].currencyId 填它的 key）\n- worldbook.events 留空数组 []\n- worldbook.storyNodes 留空数组 []（如果做模组可填）\n- worldbook.endings 留空数组 []（如果做结局可填）\n- calendar 不填（用引擎默认节日） / 填 []（这个世界没有节日） / 填自定义节假日\n- game.startDate 可选，留空则开场日期随机（避免每次都从 1 月 1 日开始）\n\n【输出工作流】\n1. 先问用户：游戏名 / 来源宇宙 / 时代背景 / 玩家视角 / 题材风格 / 数值范围\n2. 用户答完，分段输出（骨架先，worldbook 后）\n3. 超过 3 万字主动分 3-4 段发\n4. 用户反馈问题，只改相关字段\n═══════════════════════════════════════\n【可选系统 · 按需使用】\n═══════════════════════════════════════\n\n以下 5 个系统都是可选的，不做也能跑。按题材需要决定要不要用。\n\n───── 1. 状态卡 statusCard（card 顶层字段）─────\n作用：让 AI 用工具维护玩家的动态字段（位置/衣着/心情）和 NPC 心声，显示在状态卡面板。\n适用：恋爱、日常、需要\"角色内心\"表现的题材。\n\n\"statusCard\": {\n  \"enabled\": false,\n  \"sections\": [\n    { \"type\": \"time\", \"showWeather\": true },\n    { \"type\": \"fields\", \"keys\": [\"location\", \"outfit\"], \"labels\": { \"location\": \"位置\", \"outfit\": \"衣着\" } },\n    { \"type\": \"relation\", \"from\": \"player\", \"to\": \"npc_x\" },\n    { \"type\": \"innerVoice\", \"npcId\": \"npc_x\" },\n    { \"type\": \"custom\", \"label\": \"备注\", \"text\": \"\" }\n  ]\n}\n\nsection.type 可选：time / fields / relation / innerVoice / custom\n\n───── 2. 天气 weather（worldbook.weather）─────\n作用：卡带自定义天气池，引擎按游戏内时间自动切换。\n适用：需要季节感/氛围感的题材。\n\n\"weather\": {\n  \"mode\": \"off\",\n  \"changeEvery\": \"daily\",\n  \"pool\": [\n    { \"type\": \"晴\", \"icon\": \"sun\", \"weight\": 5, \"seasons\": [\"春\",\"夏\",\"秋\",\"冬\"] },\n    { \"type\": \"雨\", \"icon\": \"cloud-rain\", \"weight\": 3, \"seasons\": [\"春\",\"夏\"], \"effects\": { \"fatigue\": 5 } }\n  ]\n}\n\nmode 可选：off / card / real（real = 同步现实天气，需玩家授权）\nchangeEvery 可选：6h / 12h / daily\neffects: { \"数值 key\": delta }，天气变化时自动应用\n\n───── 3. 任务 tasks（worldbook.tasks）─────\n作用：有明确目标的委托/主线/支线，引擎按 trigger 判定步骤完成。\n适用：有目标推进感的题材。\n\n\"tasks\": [\n  { \"id\": \"task_main_1\", \"name\": \"找回失踪的猫\", \"desc\": \"邻居家的猫不见了\", \"type\": \"main\",\n    \"steps\": [\n      { \"id\": \"s1\", \"desc\": \"询问邻居\", \"trigger\": { \"type\": \"keyword\", \"words\": [\"猫\",\"邻居\"] } },\n      { \"id\": \"s2\", \"desc\": \"去后山搜索\", \"trigger\": { \"type\": \"location\", \"mapNodeId\": \"map_hill\" } }\n    ],\n    \"reward\": { \"hudChanges\": [{\"key\":\"money\",\"delta\":100}], \"addItems\": [{\"category\":\"common\",\"name\":\"猫铃铛\"}] },\n    \"failWhen\": { \"type\": \"time\", \"after\": \"2006-03-20\" } }\n]\n\ntype 可选：main / side / daily\nreward: { hudChanges / sidebarChanges / relations / addItems / promptHint }\n\n【trigger 语法 · 通用】\ntrigger 是任务步骤、成就、事件共用的条件对象。五种类型：\n\n1. time（时间）\n   { \"type\": \"time\", \"year\": 1923 }                  — 指定年\n   { \"type\": \"time\", \"year\": 1923, \"month\": 9 }      — 指定年月\n   { \"type\": \"time\", \"after\": \"1923-09-01\" }         — 在此日期之后\n   { \"type\": \"time\", \"before\": \"1924-01-01\" }        — 在此日期之前\n\n2. location（地点）\n   { \"type\": \"location\", \"mapNodeId\": \"map_bar\" }    — 玩家在当前地点时命中\n\n3. value（数值）\n   { \"type\": \"value\", \"key\": \"hp\", \"op\": \"<\", \"value\": 50 }\n   op 可选：< / <= / > / >= / == / !=\n\n4. keyword（关键词）\n   { \"type\": \"keyword\", \"words\": [\"钥匙\", \"地下室\"] }  — 最近 6 轮对话中出现任一关键词\n\n5. random（随机）\n   { \"type\": \"random\", \"chance\": 0.05 }              — 每轮掷一次，chance 是 0-1\n   ★ random 类型默认只触发一次（防重复）。需要多次触发请在代码外处理。\n\n───── 4. 成就 achievements（worldbook.achievements）─────\n作用：一次性条件达成后永久解锁，可发奖励。\n\n\"achievements\": [\n  { \"id\": \"ach_first_blood\", \"name\": \"初次战斗\", \"desc\": \"第一次打赢\", \"hidden\": false,\n    \"icon\": \"trophy\", \"category\": \"combat\",\n    \"trigger\": { \"type\": \"value\", \"key\": \"hp\", \"op\": \"<\", \"value\": 50 },\n    \"reward\": { \"hudChanges\": [{\"key\":\"exp\",\"delta\":10}] } }\n]\n\nhidden=true 时玩家看不到解锁条件（神秘成就）；trigger 语法同 tasks\n\n───── 5. 现实感知 realtime（card 顶层字段）─────\n作用：把现实世界的时间 / 距上次会话的间隔告诉 AI。\n适用：人机恋、长期陪伴、打破第四面墙的题材。\n\n\"realtime\": {\n  \"enabled\": false,\n  \"awareDate\": true,\n  \"awareTime\": true,\n  \"awareWeekday\": true,\n  \"awareGap\": true\n}\n\n四项 aware* 分别控制：告诉 AI 年月日 / 具体时间 / 星期几 / 距上次会话多久\n\n───── 6. 节假日池 calendar（card 顶层字段）─────\n作用：卡带定义\"这个世界有哪些节日\"，引擎在对应日期在 HUD 显示节日图标。\n适用：有明确历法/节日氛围的题材。\n\n\"calendar\": {\n  \"mode\": \"fictional\",\n  \"holidays\": [\n    { \"month\": 12, \"day\": 25, \"name\": \"圣诞节\", \"icon\": \"tree-evergreen\" },\n    { \"month\": 1, \"day\": 1, \"name\": \"元旦\", \"icon\": \"confetti\" },\n    { \"month\": 10, \"day\": 31, \"name\": \"万圣节\", \"icon\": \"ghost\" }\n  ]\n}\n\nmode 可选：\n· \"fictional\"（默认）—— 每月 30 天，虚构历法\n· \"real\" —— 真实公历，有大小月、有闰年\n\n字段：month（1-12）/ day（1-31）/ name（节日全名）/ icon（单个 emoji）\n\n三种做法（由卡带作者选）：\n· 不填 calendar → 用引擎默认节日池（现实世界的公历节日）\n· 填 \"holidays\": [] → 明确表示\"这个世界没有节日\"\n· 填自定义 holidays → 用卡带定义；同一天的条目会覆盖引擎默认\n\n★ 原创世界如果不想用现实节日，必须显式填 \"holidays\": []\n★ 同人世界可以部分保留、部分覆盖：引擎默认有的照样有，卡带新增的追加\n\n不做农历节日（春节/端午/中秋等每年日期不同，引擎暂不支持）\n\n───── 7. 开场日期 game.startDate（game 内可选字段）─────\n作用：固定游戏开始时的月日时分，避免每次开场都是 1 月 1 日。\n\n\"game\": {\n  \"...\": \"（其它字段）\",\n  \"startDate\": { \"month\": 4, \"day\": 15, \"hour\": 8, \"minute\": 30 }\n}\n\n· month / day / hour / minute 都可选——填了的用填的，没填的随机\n· 不填 year（year 由 eraRange 和玩家选的时代决定）\n· 完全留空 → 月日随机、时分随机\n\n建议：\n· 故事有明确时间起点（比如\"某个夏天\"）→ 填 startDate\n· 无所谓从哪天开始 → 留空，让引擎随机\n\n───── 8. 产出物系统 outputs（worldbook.outputs）─────\n作用：玩家发表的作品（书/画/曲/功法/提案）会在世界中\"发酵\"——被 NPC 看到、被引动、累积声誉，最终定论并反哺玩家属性。\n适用：有\"创作/发表/成名\"题材的世界。\n\n\"outputs\": {\n  \"types\": [\n    { \"id\": \"book\", \"name\": \"著作\", \"icon\": \"book-open\" }\n  ],\n  \"audiences\": [\n    { \"id\": \"literati\", \"name\": \"文人圈\", \"weight\": 5 }\n  ],\n  \"eventPool\": [],\n  \"settleRules\": {\n    \"when\": { \"type\": \"progress-full\" },\n    \"affects\": [{ \"statKey\": \"fame\", \"delta\": 10 }]\n  },\n  \"fermentInterval\": \"year\"\n}\n\n字段说明：\n· types：产出物类型（书/画/曲/功法/提案……）\n· audiences：受众群体。每个群体有 weight 决定发酵速度\n· eventPool：发酵事件池（可选，第二版才生效）\n· settleRules.when：定论条件\n  - { \"type\": \"progress-full\" } —— progress 累积到 100\n  - { \"type\": \"fixed-years\", \"years\": 3 } —— 发布后 N 年\n· settleRules.affects：定论时影响的属性（statKey 填 hud/sidebar/panels 里的 key）\n· fermentInterval：多久发酵一次\n  - \"month\" 游戏内每月 / \"season\" 每季 / \"year\" 每年（推荐）\n\n三种做法：\n· 不填 outputs → 系统对卡带不可用（除非玩家在设置里开启）\n· 填 \"outputs\": {} → 用引擎默认池（types/audiences 由 AI 运行时动态生成）\n· 填完整内容 → 卡带指定默认池\n\nAI 工具（游戏中自动可用）：\n· output_publish({name, type, keywords, audience}) —— 发布产出物\n· output_stir({outputId, npcId, action}) —— 记录一次 NPC 引动（action 自由，npcId 由引擎给候选池）\n· output_settle({id, verdict}) —— 主动定论（少见）\n· query_outputs() —— 查询发酵中的产出物\n\n═══════════════════════════════════════\n【世界书数据结构 · 补充】\n═══════════════════════════════════════\n\n以下字段在 schema 里是空数组，这里给出每一项的完整结构。\n\n───── 1. 势力 factions（worldbook.factions）─────\n\n\"factions\": [\n  { \"id\": \"fac_1\", \"name\": \"银月学院\",\n    \"hasHiddenSide\": false,\n    \"publicSide\": { \"name\": \"银月学院\", \"what\": \"培养星辰系术士的学院\", \"scope\": \"北境\", \"resources\": [\"藏书楼\",\"实验场\"] },\n    \"hiddenSide\": { \"name\": \"\", \"what\": \"\", \"scope\": \"\", \"resources\": [] },\n    \"mainGoal\": \"培养最优秀的术士\", \"mainFace\": \"明面\",\n    \"stanceOfficial\": \"官方支持\", \"stanceMilitary\": \"\", \"stancePeople\": \"敬仰\", \"stancePeers\": \"中立\",\n    \"relations\": [ { \"targetId\": \"fac_2\", \"type\": \"合作\", \"level\": \"平等\", \"reason\": \"共同对抗暗影系\" } ],\n    \"linkedNPCs\": [\"npc_1\"], \"tags\": [\"学院\"] }\n]\n\nrelations[].type 可选：合作 / 敌对；hasHiddenSide=true 时 hiddenSide 有内容；\nmainFace 可选：明面 / 暗面 / 两面并用\n\n───── 2. 物品 items（worldbook.items）─────\n\n\"items\": [\n  { \"id\": \"item_1\", \"name\": \"星辰符\", \"category\": \"其他\",\n    \"desc\": \"刻着星辰纹路的木牌\", \"effects\": \"握在手里时灵力回复加快\",\n    \"linkedMaps\": [\"map_city_1\"], \"linkedNPCs\": [], \"tags\": [] }\n]\n\ncategory 六选一：武器 / 食物 / 家具 / 电器 / 衣物 / 其他\n\n───── 3. 技能 skills（worldbook.skills）─────\n\n\"skills\": [\n  { \"id\": \"skill_1\", \"name\": \"星辰斩\", \"desc\": \"凝聚星辰之力的斩击\",\n    \"hasSideEffect\": true, \"sideEffect\": \"使用后 10 分钟内灵力上限减半\",\n    \"hasLevels\": true,\n    \"levels\": [\n      { \"level\": 1, \"condition\": \"初次学习\", \"requires\": { \"items\": [], \"exp\": 0 }, \"effect\": \"造成基础伤害\" },\n      { \"level\": 2, \"condition\": \"使用 10 次\", \"requires\": { \"items\": [\"星辰符\"], \"exp\": 100 }, \"effect\": \"伤害翻倍\" }\n    ],\n    \"linkedMaps\": [], \"linkedNPCs\": [], \"tags\": [\"星辰系\"] }\n]\n\n───── 4. 种族 races（worldbook.races，需 hasRaces:true）─────\n\n\"hasRaces\": true,\n\"races\": [\n  { \"id\": \"race_1\", \"name\": \"月精灵\", \"desc\": \"被月光祝福的古老种族\",\n    \"stanceOfficial\": \"官方保护\", \"stancePeople\": \"神秘传说\", \"stanceReligion\": \"被视为神使\",\n    \"npcTendency\": \"喜欢\", \"talents\": [\"夜视\",\"月之祝福\"], \"specials\": \"满月时灵力翻倍\",\n    \"habitat\": \"北方森林\", \"socialType\": \"群居\", \"rarity\": \"稀有\",\n    \"history\": \"千年前从大陆中心迁徙到北方\", \"tags\": [\"精灵\"] }\n]\n\nnpcTendency 可选：喜欢 / 厌恶 / 无感；socialType：群居 / 分散；rarity：稀有 / 常见\n\n───── 5. 职业 occupations（worldbook.occupations）─────\n\n\"occupations\": [\n  { \"id\": \"occ_1\", \"name\": \"星轨师\", \"desc\": \"为旅人指路的导航员\",\n    \"treatment\": \"报酬丰厚但辛苦\", \"stanceOfficial\": \"官方认可\",\n    \"officiallyKnown\": true, \"workTime\": \"自由\",\n    \"origin\": \"大航海时代出现\", \"necessity\": \"星辰迷雾中只有星轨师能找到路\",\n    \"tags\": [\"专业\"] }\n]\n\nworkTime 可选：自由 / 固定\n\n───── 6. 时间线 timeline（worldbook.timeline）─────\n\n三条线：official（过去）/ fanFuture（原作未来）/ playerLine（玩家支线）。\n\n★ 原创卡带：official 写 3-5 条历史事件，fanFuture 留空，playerLine 留空。\n★ 同人卡带：official 写\"进入之前原作发生过什么\"，fanFuture 必填且写到台词级。\n\n\"timeline\": {\n  \"official\": [\n    { \"id\": \"tl_1\", \"time\": \"主线前 10 年\", \"event\": \"北境大战\",\n      \"narrative\": \"霜月帝国的建立者黑铁一世率军攻入北境。三国联军在寒鸦平原迎战，最终败北。战后帝国统一了大陆北部。\",\n      \"echoes\": \"北方人至今谈论这场战役；银月学院因参与抵抗而被迁都。\",\n      \"impactWorld\": \"大陆北部三国统一为霜月帝国\",\n      \"impactFactions\": [\"银月学院迁都\"], \"impactNPCs\": [\"npc_1 失去双亲\"],\n      \"tags\": [\"战争\"] }\n  ],\n  \"fanFuture\": [\n    {\n      \"id\": \"ff_1\",\n      \"time\": \"进入后的第 3 个月\",\n      \"event\": \"太宰与中也第一次正面冲突\",\n      \"narrative\": \"在横滨码头。中也奉森鸥外之命来接管港口，太宰先到一步。两人在仓库里对峙，中也先开口，太宰用惯常的调侃回应。事后两人没有动手，但彼此记住了对方。\",\n      \"keyLines\": [\n        \"中也：「你是谁。」\",\n        \"太宰：「我是谁，你猜。」\"\n      ],\n      \"outcome\": \"两人未交手，但建立了敌对关系。之后中也会主动找太宰。\",\n      \"branchPoints\": [\n        \"如果玩家在场，可以介入或旁观\",\n        \"玩家介入不改变结局，但会改变两人对玩家的印象\"\n      ],\n      \"tags\": [\"原作\", \"名场面\"]\n    }\n  ],\n  \"playerLine\": []\n}\n\n【字段说明】\n· official 每条：id, time, event, narrative, echoes, impactWorld, impactFactions, impactNPCs, tags\n· fanFuture 每条：id, time, event, narrative, keyLines, outcome, branchPoints, tags\n· playerLine 由引擎运行时自动累积，卡带作者留空\n\n★ fanFuture 是\"原作的未来\"，不是\"作者编的可能走向\"。\n  它是给 AI 的导航线：玩家跟着主线走时，AI 知道该演什么，不会胡编原作剧情。\n  玩家岔开主线时，AI 跟着玩家走，这条线暂时不用。\n\n★ fanFuture 的写作标准（重要）：\n· keyLines 必须写原作会说出的具体台词，写到句子级\n· narrative 要写清\"怎么发生的\"——地点、在场的谁、事情经过\n· outcome 写这条线的结局走向（玩家不插手时）\n· branchPoints 写\"玩家可以在哪里插手\"（插手不改变结局，但改变玩家和人物的关系）\n\n★ 什么算\"同人卡带\"：\n· 玩家进入的世界基于某个已有的 IP（动漫/小说/游戏/影视）\n· 卡带作者判断标准：如果这个 IP 有\"原作已知的后续剧情\"，就应该填 fanFuture\n\n───── 7. 货币 currency（worldbook.currency）─────\n\n\"currency\": {\n  \"currencies\": [\n    { \"name\": \"金币\", \"symbol\": \"G\", \"icon\": \"coins\", \"isMain\": true },\n    { \"name\": \"银币\", \"symbol\": \"S\", \"icon\": \"\", \"isMain\": false }\n  ],\n  \"purchasingPower\": \"1 金币 ≈ 一顿丰盛晚餐\",\n  \"exchangeRates\": [ { \"from\": \"金币\", \"to\": \"银币\", \"rate\": 10 } ],\n  \"allowBarter\": false,\n  \"allowSell\": true\n}\n\nisMain=true 的是主货币；allowBarter 允许以物换物；allowSell 允许变卖道具\n\n★ 货币和玩家面板的对应关系（重要）：\n· currencies[].name 定义的是\"这个世界有哪几种货币\"\n· 玩家身上实际持有的货币，必须在 hud 或 sidebar 里有一个数值项\n· 例：hud 里放 {\"key\":\"money\",\"name\":\"现金\",\"init\":1000,\"max\":9999999}\n· shops[].currencyId 填的是那个数值项的 key（例：\"money\"），不是货币的 name\n· 如果不确定，就让 currencyId 等于 hud 里那个代表钱的数值项的 key\n\n★ 简单做法：\n· 大多数卡带只用一种主货币\n· 定义 currency.currencies[0].name = \"现金\"（或\"金币\"）\n· 在 hud 里放 {\"key\":\"money\",\"name\":\"现金\",...}\n· shops[].currencyId 全填 \"money\"\n· 引擎按 key 或 name 都能匹配，但 key 最稳\n\n───── 8. 官方与宗教（worldSetting 内）─────\n\n\"officials\": [ { \"id\": \"off_1\", \"name\": \"霜月帝国\", \"stance\": \"支持星辰系术士\" } ],\n\"religions\": [ { \"id\": \"rel_1\", \"name\": \"月神教\", \"faith\": \"月神\", \"practice\": \"每月满月祭拜\", \"stance\": \"视星辰术士为神使\", \"isNew\": false } ],\n\"newReligion\": false,\n\nofficials 是政权/官方势力；religions 是宗教；newReligion=true 表示存在新诞生的宗教\n\n───── 9. NPC 伪装与真名（worldbook.npcs 内补充）─────\n\n每个 NPC 除了基础字段，还支持：\n  \"disguise\": true,                 // 该 NPC 有隐藏身份\n  \"revealHint\": \"脖子上的旧伤疤\",   // 揭示身份的线索（可选）\n  \"realNames\": [                    // 真名/曾用名\n    { \"name\": \"真名\", \"type\": \"real\" },\n    { \"name\": \"化名\", \"type\": \"former\" }\n  ]\n\n伪装的 NPC 默认 AI 不会暴露真名，玩家发现线索后可调 npc_reveal 揭示\n\n───── 10. 地图可互动点 mapNodes[].actions ─────\n\n每个 mapNode 可加 actions 数组，定义玩家可在此处执行的动作：\n\n\"actions\": [\n  { \"id\": \"act_1\", \"label\": \"买一杯奶茶\",\n    \"cost\": { \"money\": 10, \"time\": 5 },\n    \"gives\": { \"items\": [\"milk_tea\"], \"states\": [\"holding_milk_tea\"] },\n    \"then\": [\n      { \"label\": \"现在喝\", \"action\": \"drink_now\" },\n      { \"label\": \"打包带走\", \"action\": \"add_todo\" }\n    ] }\n]\n\naction 是可选字段；没有 actions 的地图节点玩家只能用自然语言描述行动\n\n★ then[].action 可选值（引擎预定义三个）：\n· \"none\"       —— 无后续动作\n· \"drink_now\"  —— 立即执行（比如\"现在喝\"）\n· \"add_todo\"   —— 加入玩家待办列表\n\n  其它值会被存下来但不触发引擎行为——只是给 AI 的提示。\n"）
+PASS: P1I4-4 段内容锚点（p1 含 schemaVersion / p6 含世界书）
+PASS: P1I4-5 InstructionModal 7 按钮文案逐字（照 ui_cards.js:426-432）
+PASS: P1I4-6 InstructionModal 标题 + 说明行逐字
+PASS: P1I4-7 复制走 RN 核心 Clipboard + toast 逐字
+PASS: P1I4-8 复制/关闭按钮逐字
+PASS: P1I4-9 InstructionModal 零 DOM（无 document./window.）
+PASS: P1I4-10 CardsScreen 接线（require + 入口按钮 + visible）
+PASS: P1 babel transform rn/components/ThinkingBlock.js
+PASS: P1 babel transform rn/screens/StoryScreen.js
+PASS: P1 babel transform rn/story_store.js
+PASS: P1 babel transform rn/snapshot_actions.js
+PASS: P1 babel transform rn/story_runtime.js
+PASS: P1 babel transform rn/panels/ErrorLogPanel.js
+PASS: P1 babel transform rn/components/PanelHost.js
+PASS: P1 babel transform rn/panels/DebugPanel.js
+PASS: P1 babel transform rn/components/OverlayHost.js
+PASS: P1 babel transform rn/npc_actions_rn.js
+PASS: P1 babel transform rn/panels/NpcPanel.js
+PASS: P1 babel transform rn/panels/NpcUpdateModal.js
+PASS: P1 babel transform rn/instruction_templates.js
+PASS: P1 babel transform rn/components/InstructionModal.js
+PASS: P1 babel transform rn/screens/ClassifyScreen.js
+PASS: P1 babel transform rn/screens/CardsScreen.js
+PASS: P1 babel transform rn/screens/settings/DataTab.js
+PASS: P1 babel transform rn/screens/settings/ColorTab.js
+P1_SETTINGS_SMOKE: 200 ok, 0 failed

@@ -1,0 +1,84 @@
+﻿PASS: A1 LogQuery.run 是函数
+PASS: A2 硬上限常量齐（80 / 3 / 3 / 1200）
+PASS: A3 已自注册 ToolExecutor.WHITELIST.query_log
+PASS: A4 原有工具未被覆盖（query_npc / query_worldsetting 仍在）
+PASS: B1a compress 返回 logData
+FAIL: B1b ★ 第 1 条内容进了 fullText（红证锚点）
+PASS: B1c 第 41 条内容也进了 fullText（分块后不再丢）
+PASS: B1d 第 45 条内容也进了 fullText
+FAIL: B1e messageCount 记满 45 条（旧版只记 40）（actual=40）
+FAIL: B1f chunks 分两块（40 + 5）
+PASS: B1g 顶层 msgFrom（actual=1）
+FAIL: B1h 顶层 msgTo（actual=21）
+PASS: B1i fullText 由 chunks 拼出（逐字一致）
+PASS: B2a ≤40 条只有 1 块（actual=1）
+PASS: B2b ≤40 条 fullText 无分隔符
+PASS: B2c messageCount（actual=6）
+PASS: B3a 老 fullText 逐字保留在头部
+PASS: B3b 老文本装成 msgFrom/msgTo 为 null 的块 + 新块
+PASS: B3c messageCount 累加（actual=16）
+PASS: C1 无 keyword → reason 逐字（actual="keyword 为空"）
+PASS: C1 补 ok=false（actual=false）
+PASS: C2 返回结构 {ok,type,queryType,data}
+PASS: C2 补 条目字段齐（date/title/summary/hits）（actual="date,hits,summary,title"）
+PASS: C3a 搜得到：2000-10-20（今天）
+PASS: C3b 搜得到：2000-10-18（过去）
+PASS: C3c ★ 搜不到：2000-10-25（未来）
+PASS: C3d 排序：标题/摘要命中(10分)排在只有全文命中(3分)之前
+PASS: C4a 片段存在
+PASS: C4b 片段长度 = 前后各 80 字 + 省略号 = 164（actual=164）
+PASS: C4c 片段两端都有省略号
+PASS: C5a 日志条数 ≤3
+PASS: C5b 每条片段 ≤3 段
+PASS: C5c 总字符 ≤1200（实际 615）
+PASS: C5d 超限时标 truncated（actual=true）
+PASS: C5e limit 传再大也被压到 3 条
+PASS: C6 无命中 → ok + data:[] + 不抛
+PASS: C8a from 过滤掉更早的日志
+PASS: C8b to 过滤掉更晚的日志
+PASS: D0a 未配置时用默认 maxTokens=3000（actual=3000）
+PASS: D0b 默认值不触发降级（[]）
+PASS: D1a 真触发降级（_lastTrimLog 非空，4 档）
+PASS: D1b ★ 最终 token ≤ maxTokens（est=951 ≤ 1000）
+PASS: D1c 阶梯元素结构 {section,before,after,reason}
+PASS: D1d 降级顺序严格按阶梯（档序 === DEGRADE_STEPS 前 N 项）
+PASS: D1e 每档 after ≤ before（单调下降）
+PASS: D2a 两次 _lastTrimLog 逐字一致（actual="[{\"section\":\"recent1\",\"before\":2081,\"after\":1583,\"reason\":\"产出物发酵 / 骰子历史 / 成就：只留最近 1 条\"},{\"section\":\"clip2\",\"before\":1583,\"after\":1583,\"reason\":\"变更提议 / 任务 / 信息层：每条截到 ≤2 行\"},{\"section\":\"names\",\"before\":1583,\"after\":1346,\"reason\":\"现场舞台 + 跟随 NPC：压成名字串（【镜头内】保留）\"},{\"section\":\"count1\",\"before\":1346,\"after\":951,\"reason\":\"商店索引 / 剧情节点 / 结局：压成一行计数\"}]"）
+PASS: D2b 两次输出文本逐字一致（actual="════════════════════════════════════════\n【第四部分 · 系统状态快照】只读参考 · 禁止复制到回复\n════════════════════════════════════════\n\n>>> 当前时间：2000-10-20 08:00\n>>> 今天是 2000年10月20日，昨天是 2000年10月19日，明天是 2000年10月21日\n>>> 玩家：（未填）\n>>> （需要详细角色信息时调 query_player）\n>>> HUD：hp=10/100\n>>> Sidebar：\n>>> 【商店索引】12 家（需要时调 open_shop(id)）\n>>> 【镜头内】（≤3，你正在写的）\n镜头内甲\n>>> 【现场舞台上】（可以互动，但没聚焦）\n现场0、现场1、现场2、现场3、现场4、现场5、现场6、现场7、现场8、现场9、现场10、现场11\n>>> 【跟随你】（换场景会一起走）\n跟随0、跟随1、跟随2、跟随3、跟随4、跟随5、跟随6、跟随7\n>>> 【镜头内 NPC 状态】\n镜头内状态\n>>> 【剧情节点】10 项（需要时用工具查询）\n>>> 【结局】10 项（需要时用工具查询）\n>>> 【信息层·手机】\n· 讯息0 一段不算长的描述文字用于撑预算\n· 讯息1 一段不算长的描述文字用于撑预算\n· 讯息2 一段不算长的描述文字用于撑预算\n· 讯息3 一段不算长的描述文字用于撑预算\n· 讯息4 一段不算长的描述文字用于撑预算\n· 讯息5 一段不算长的描述文字用于撑预算\n· 讯息6 一段不算长的描述文字用于撑预算\n· 讯息7 一段不算长的描述文字用于撑预算\n· 讯息8 一段不算长的描述文字用于撑预算\n· 讯息9 一段不算长的描述文字用于撑预算\n· 讯息10 一段不算长的描述文字用于撑预算\n· 讯息11 一段不算长的描述文字用于撑预算\n· 讯息12 一段不算长的描述文字用于撑预算\n· 讯息13 一段不算长的描述文字用于撑预算\n· 讯息14 一段不算长的描述文字用于撑预算\n· 讯息15 一段不算长的描述文字用于撑预算\n· 讯息16 一段不算长的描述文字用于撑预算\n· 讯息17 一段不算长的描述文字用于撑预算\n· 讯息18 一段不算长的描述文字用于撑预算\n· 讯息19 一段不算长的描述文字用于撑预算\n>>> 【进行中任务】\n· 任务0 一段不算长的描述文字用于撑预算\n· 任务1 一段不算长的描述文字用于撑预算\n· 任务2 一段不算长的描述文字用于撑预算\n· 任务3 一段不算长的描述文字用于撑预算\n· 任务4 一段不算长的描述文字用于撑预算\n· 任务5 一段不算长的描述文字用于撑预算\n· 任务6 一段不算长的描述文字用于撑预算\n· 任务7 一段不算长的描述文字用于撑预算\n· 任务8 一段不算长的描述文字用于撑预算\n· 任务9 一段不算长的描述文字用于撑预算\n· 任务10 一段不算长的描述文字用于撑预算\n· 任务11 一段不算长的描述文字用于撑预算\n· 任务12 一段不算长的描述文字用于撑预算\n· 任务13 一段不算长的描述文字用于撑预算\n· 任务14 一段不算长的描述文字用于撑预算\n· 任务15 一段不算长的描述文字用于撑预算\n· 任务16 一段不算长的描述文字用于撑预算\n· 任务17 一段不算长的描述文字用于撑预算\n· 任务18 一段不算长的描述文字用于撑预算\n· 任务19 一段不算长的描述文字用于撑预算\n>>> 【最近成就】\n· 成就0 一段不算长的描述文字用于撑预算\n>>> 【待确认的变更提议】5 条（用 propose_change 处理）\n>>> 【最近骰子记录】\n· 骰子0\n>>> 【发酵中的产出物】\n· 产出0 一段不算长的描述文字用于撑预算\n>>> 前情 [2000-10-10] 前情0：摘要0\n>>> 前情 [2000-10-11] 前情1：摘要1\n>>> 前情 [2000-10-12] 前情2：摘要2\n>>> 相关NPC：甲、乙\n>>> 未完成：未了\n>>> （更早的事可调 query_log({keyword})）\n\n════════════════════════════════════════\n【系统状态结束】现在开始写剧情。只输出：【正文】+【时间】+【选项】。不要重复上面任何一行。\n════════════════════════════════════════"）
+PASS: D3a enabled:false ⇒ _lastTrimLog 为空（actual=0）
+PASS: D3b enabled:false ⇒ 输出比降级后长得多（3804 > 1843）
+PASS: D3c enabled:false ⇒ 未降级的区块原文还在
+PASS: D4a 预算极小 ⇒ 阶梯走到底（含 sum0）
+PASS: D4b sum0 档输出仍带 query_log 提示
+PASS: D4c level 0（未降级）有摘要时也带 query_log 提示
+PASS: D4d level 0 带【镜头内】（最后防线不动）
+PASS: D4e recent1 档产出物只剩 1 条（不再有「产出19」）
+PASS: E1a 返回受影响条数 = 2（1 条整删 + 1 条截断）（actual=2）
+PASS: E1b ★ 当天更早的原文仍在（AAA / BBB）
+PASS: E1c ★ 该轮之后的原文被删（CCC 没了）
+PASS: E1d 截断后 fullText 逐字（actual="AAA\n\n---\n\nBBB"）
+PASS: E1e chunks 只剩前两块（actual=2）
+PASS: E1f 次日的日志整条删了
+PASS: E2a 老签名只删跨天的 1 条（actual=1）
+PASS: E2b 老签名下当天原文一字未动
+PASS: E3a 老日志无 chunks ⇒ 不删也不改（返回 0）（actual=0）
+PASS: E3b 老日志原文仍在
+FAIL: F1 logger.js 已无 messages.slice(-40)
+PASS: F2 logger.js 有 chunks / msgFrom / msgTo
+PASS: F3 logger.js deleteLogsAfter 带第 4 参 round
+PASS: F4 story.js compress 传 msgFrom
+PASS: F5 snapshot_actions.js 传 snap.round
+PASS: F6 prompt_builder.js 工具清单含 query_log({keyword, from?, to?})
+PASS: F7 prompt_builder.js 有预算刹车入口与阶梯常量
+PASS: F8 prompt_builder.js 前情处带 query_log 提示
+PASS: F9 LogPanel.js 搜索框接 Logger.search
+PASS: F10 LogPanel.js 搜索结果补 date（列表行可见日期）
+PASS: F11 panel_data.js 注释已改（不再写「搜索/清空按钮不搬」）
+PASS: F12 rn_bootstrap.js 装载 LogQuery
+PASS: F13 桌面仓未被改写（story.js 两仓同源仍在，只读自证）
+PASS: G 桌面 engine/core/gamestate.js MD5 未变（actual="9B3FC583DF088FE24B774BE4378F860C"）
+PASS: G 桌面 engine/core/prompt_builder.js MD5 未变（actual="E436081C4766EB9BA74D93A9BF3DAE84"）
+PASS: G 桌面 engine/info_feed.js MD5 未变（actual="09CF6E57A6117064605E06131BC9484D"）
+PASS: G RN engine/info_feed.js 本轮未动（actual="09CF6E57A6117064605E06131BC9484D"）
+
+LOG_QUERY_SMOKE: 77 ok, 5 failed

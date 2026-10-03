@@ -1,0 +1,108 @@
+# OSX
+#
+.DS_Store
+
+# Xcode
+#
+build/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata
+*.xccheckout
+*.moved-aside
+DerivedData
+*.hmap
+*.ipa
+*.xcuserstate
+**/.xcode.env.local
+
+# Android/IntelliJ
+#
+build/
+.idea
+.gradle
+local.properties
+*.iml
+*.hprof
+.cxx/
+*.keystore
+!debug.keystore
+.kotlin/
+
+# node.js
+#
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# fastlane
+#
+# It is recommended to not store the screenshots in the git repo. Instead, use fastlane to re-generate the
+# screenshots whenever they are needed.
+# For more information about the recommended setup visit:
+# https://docs.fastlane.tools/best-practices/source-control/
+
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output
+
+# Bundle artifact
+*.jsbundle
+
+# Ruby / CocoaPods
+**/Pods/
+/vendor/bundle/
+
+# Temporary files created by Metro to check the health of the file watcher
+.metro-health-check*
+
+# testing
+/coverage
+
+# Yarn
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/sdks
+!.yarn/versions
+
+# --- 密钥 / 凭据（Hippocampus 追加：绝不上传）---
+.key_*
+*.key
+*.pem
+*.p12
+*.pfx
+.env
+.env.*
+hc_key.txt
+*_secret*.txt
+
+# --- 本机数据转储（App 真实 localStorage 导出，内含已配置凭据与存档）---
+docs/design_refs/leveldb_backup_*/
+
+# --- 调试截图与运行日志（2026-10-03 追加，上 GitHub 前）---
+# 各轮验收/审计跑出来的整屏截图（单张 1.6–3.8 MB）与 smoke 日志，
+# 全量约 200 MB，对使用者没有价值，只留在本机。
+# 本文件只做排除，不删除任何本地文件。
+*_shots/
+*_logs/
+*.log
+/p10_cold_home.png
+
+# 截图目录整体排除，但 README.md 正文里真正引用的 6 张要留下，
+# 否则说明书里的图在 GitHub 上全裂（6 张共约 4.65 MB）。
+docs/shots_*/*
+!docs/shots_p13/p13_41_after_continue.png
+!docs/shots_p13/p13_50_topbar_unread1.png
+!docs/shots_p13/p13_51_sidebar_badge1.png
+!docs/shots_p13/p13_52_panel_unread1.png
+!docs/shots_p15/p15_import_section.png
+!docs/shots_p15/p15_inapp_report.png
