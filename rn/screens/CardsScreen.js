@@ -34,6 +34,8 @@ var SafeArea = require('react-native-safe-area-context');
 
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
+// P35：导入解析/定位口径（纯 JS，可 Node 直测）
+var JsonLocate = require('../json_locate.js');
 var Model = require('../home_model.js');
 var UiClassify = require('../ui_classify_rn.js');
 var InstructionModal = require('../components/InstructionModal.js').InstructionModal;
@@ -166,29 +168,29 @@ function CardsScreen() {
 
   // 粘贴 JSON 导入：照桌面 _legacyImport（:377-389）口径
   // JSON.parse → CardValidator.validate → getImportedCards + 赋值 + setImportedCards
+  // P35：解析口径在 rn/json_locate.js。两个真机结论：
+  //   · 字符串**内容**里的中文引号是合法内容 —— H2-R4 那种「所有弯引号一律换成 "」
+  //     会把 "喊了一声「出发」" 提前闭合，真机上正好报 Unexpected character: 出；
+  //   · Hermes 的 JSON.parse 不带 position，只能贴开头 40 字（＝「第 0 字符附近」）
+  //     ⇒ 两次都失败时自己扫描出真实偏移 + 上下文 + 可能原因。
   function doImport() {
-    var raw = String(importText || '').trim();
-    if (!raw) {
+    if (!String(importText || '').trim()) {
       setImportMsg({ type: 'warn', text: '内容为空' });
       return;
     }
-    // H2-R4：粘贴清洗——去 BOM / 零宽字符 / 弯引号（真机实测：完整卡带导不进的真凶是粘贴过程引号改写/截断/BOM，非字数上限或世界书缺失）
-    var text = raw
-      .replace(/^\uFEFF/, '')
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2018\u2019]/g, "'");
-    var card;
-    try { card = JSON.parse(text); }
-    catch (e) {
-      // H2-R4：错误可定位——贴 e.message + 第 N 字符附近前后各 40 字符片段
-      var pos = 0;
-      var pm = String(e.message).match(/position (\d+)/);
-      if (pm) pos = parseInt(pm[1], 10);
-      var around = text.slice(Math.max(0, pos - 40), pos + 40);
-      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + e.message + '（第 ' + pos + ' 字符附近：' + around + '）' });
+    var parsed = JsonLocate.parseCardJson(importText);
+    if (!parsed.ok) {
+      var loc = parsed.loc;
+      var detail = loc
+        ? '（第 ' + loc.pos + ' 字符附近，全文 ' + loc.length + ' 字：…' + loc.around + '…）'
+          + '\n可能原因：' + loc.hint
+          + '\n末尾：…' + loc.tail + '…'
+        : '';
+      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + parsed.message + detail });
       return;
     }
+    var card = parsed.card;
+    var importNote = parsed.usedFallback ? '（结构引号是中文弯引号，已自动还原）' : '';
     var v = CardValidator.validate(card);
     if (!v.ok) {
       setImportMsg({ type: 'error', text: '校验失败：' + v.msg });
@@ -198,7 +200,7 @@ function CardsScreen() {
       var imported = Storage.getImportedCards();
       imported[card.cardId] = card;
       Storage.setImportedCards(imported);
-      setImportMsg({ type: 'success', text: '已导入：' + (card.cardName || card.cardId) });
+      setImportMsg({ type: 'success', text: '已导入：' + (card.cardName || card.cardId) + importNote });
       setImportText('');
       refresh();
     } catch (e) {
@@ -363,7 +365,7 @@ function CardsScreen() {
       cardName: { fontFamily: fonts.serif, fontSize: f.md, color: c.ink, fontWeight: '600', marginBottom: 4 },
       cardDesc: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.6), marginBottom: 6 },
       cardMeta: { fontFamily: fonts.mono, fontSize: f.xs, color: c.faint, marginBottom: 10 },
-      btnRow: { flexDirection: 'row', gap: 10 },
+      btnRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
       primaryBtn: {
         borderWidth: 1, borderColor: c.accent, borderRadius: tk.radius.sm,
         paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.accent
