@@ -11,6 +11,11 @@
 (function() {
   function uid() { return 'end_' + Date.now() + '_' + Math.floor(Math.random() * 1000); }
 
+  // P24·④：结局门槛缺省值。第 1 轮 =「开局那一轮」（chatHistory 里只有开场白，玩家还没出手），
+  //   所以缺省 2 表示「玩家至少出手过一次之后，结局才可能被引擎自动判定触发」。
+  //   作者想保留「开局即结局」的卡，显式写 minRound: 1。
+  var DEFAULT_MIN_ROUND = 2;
+
   var Endings = {
     _data: null,
 
@@ -90,6 +95,7 @@
       var defs = this.listDefs();
       return defs.map(function(def) {
         var rt = self._data.triggered[def.id] || null;
+        var g = self.gateOf(def);                    // P24·④：门槛状态（面板/查询能看到还差什么）
         return {
           id: def.id,
           name: def.name || def.id,
@@ -103,7 +109,12 @@
           reachedBy: rt ? rt.by : '',
           epilogue: rt ? (rt.epilogue || def.epilogue || '') : (def.epilogue || ''),
           extensions: rt ? (rt.extensions || []) : [],
-          isDefEpilogue: !!(def.epilogue && (!rt || !rt.epilogue))
+          isDefEpilogue: !!(def.epilogue && (!rt || !rt.epilogue)),
+          // P24·④：门槛（还差几轮 / 还差哪些前置事件）
+          minRound: g.minRound,
+          requireEvents: (def.requireEvents && def.requireEvents.slice) ? def.requireEvents.slice() : [],
+          gateOk: g.ok,
+          gateReason: g.ok ? '' : g.reasons.join('；')
         };
       });
     },
@@ -116,6 +127,41 @@
     hasAnyReached: function() {
       if (!this._data) this.load();
       return Object.keys(this._data.triggered || {}).length > 0;
+    },
+
+    // ============ 触发门槛（P24·④） ============
+    // 背景：结局条件原本「数值/标记一满足就触发」，而开局的数值就是卡带的 init。
+    //   一张卡把坏结局条件写成「某数值 ≤ 最低值」时，第 1 轮就会直接秒结局。
+    // 卡带 endings[i] 可选写两个字段（都不写时按 minRound 缺省值执行）：
+    //   minRound: 2          —— 最少玩到第 2 轮才可能触发（第 1 轮 = 开局那一轮）
+    //   requireEvents: ['e'] —— 这些事件必须先触发过（全部满足）
+    // 门槛只拦「引擎自动判定」（tick）；AI 在叙事里主动调 trigger_ending 不受拦（那是剧情决定）。
+    gateOf: function(def) {
+      var reasons = [];
+      var need = (def && def.minRound != null) ? Number(def.minRound) : DEFAULT_MIN_ROUND;
+      if (!isFinite(need) || need < 1) need = 1;
+      var cur = this._roundCount();
+      if (cur < need) reasons.push('至少要玩到第 ' + need + ' 轮（现在第 ' + cur + ' 轮）');
+      var needEvents = (def && Array.isArray(def.requireEvents)) ? def.requireEvents : [];
+      var fired = this._firedEventIds();
+      var missing = needEvents.filter(function(id) { return fired.indexOf(String(id)) < 0; });
+      if (missing.length) reasons.push('需要先触发事件：' + missing.join('、'));
+      return {
+        ok: reasons.length === 0,
+        reasons: reasons,
+        round: cur,
+        minRound: need,
+        missingEvents: missing
+      };
+    },
+
+    // 已触发过的事件 id（Events 未加载/无数据时返回空数组）
+    _firedEventIds: function() {
+      try {
+        if (typeof Events === 'undefined' || !Events || !Events._data) return [];
+        if (Events._ensureShape) Events._ensureShape();
+        return Object.keys(Events._data.triggered || {});
+      } catch (e) { return []; }
     },
 
     // ============ 触发判定 ============
@@ -145,6 +191,9 @@
       defs.forEach(function(def) {
         if (!def.id) return;
         if (self._data.triggered[def.id]) return;   // 已达成
+        // P24·④：门槛（回合数 / 前置事件）不过 → 条件命中也不触发
+        var gate = self.gateOf(def);
+        if (!gate.ok) return;
         var ck = self.checkTrigger(def);
         if (!ck.ok) return;
         candidates.push(def);

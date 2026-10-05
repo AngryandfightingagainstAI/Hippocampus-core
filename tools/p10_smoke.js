@@ -482,8 +482,8 @@ function runB67() {
     st.indexOf('set_weather(type, icon?)') >= 0 && st.indexOf('set_weather(type, icon)') < 0);
   check('B6b npc_reveal(id, reason?)（reason 可选，CONTRACTS.md:114）',
     st.indexOf('npc_reveal(id, reason?)') >= 0);
-  check('B6c output_publish({name, type?, keywords?, audience?})（仅 name 必填）',
-    st.indexOf('output_publish({name, type?, keywords?, audience?})') >= 0);
+  check('B6c output_publish({name, title?, content?, desc?, type?, keywords?, audience?})（仅 name 必填）',
+    st.indexOf('output_publish({name, title?, content?, desc?, type?, keywords?, audience?})') >= 0);
   check('B6d ban_event / unban_event 在静态协议段可见',
     st.indexOf('ban_event(id, duration?, reason?)') >= 0 && st.indexOf('unban_event(id)') >= 0);
 

@@ -18,7 +18,69 @@ var CardValidator = {
     if (!Array.isArray(card.attributes)) return { ok: false, msg: 'attributes 必须是数组' };
     const nums = card.panels.map(p => p.num).sort();
     for (const n of [2,3,4,5]) if (!nums.includes(n)) return { ok: false, msg: 'panels 缺少 num=' + n };
-    return { ok: true };
+    // P24·④：结局「开局即满足」静态自查（只报 warnings，不拦导入）
+    const warnings = this.auditEndingsAtStart(card);
+    return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
+  },
+
+  // ============ P24·④ 结局「开局即满足」自查 ============
+  // 背景：结局条件由 engine/endings.js 每轮 tick 判定，而开局时数值就是卡带的 init。
+  //   作者把坏结局条件写成「某数值 ≤ 它的最低值」（很常见），又没写回合/事件门槛时，
+  //   第一轮（AI 回完开场白）就会直接秒结局 —— 玩家什么都没做。
+  //   endings.js 侧已加门槛（缺省 minRound: 2）；这里把「没写门槛而又开局即成立」的结局查出来。
+  // 语义与 engine/events.js 的 _readStatValue 对齐：只认 hud / sidebar / panels[].entries。
+  auditEndingsAtStart(card) {
+    const out = [];
+    const endings = (card && card.worldbook && card.worldbook.endings) || [];
+    if (!Array.isArray(endings) || !endings.length) return out;
+    const init = this._initialValues(card);
+    for (const def of endings) {
+      if (!def || !def.id) continue;
+      // 作者写过门槛（含 minRound: 1 这种「我就是要开局即结局」）→ 视为显式意图，不报警；
+      // 只有「一个门槛字段都没写、而开局条件就成立」才是需要提示的疏漏。
+      const declared = (def.minRound != null)
+        || (Array.isArray(def.requireEvents) && def.requireEvents.length > 0);
+      if (declared) continue;
+      const t = def.trigger;
+      if (!t || t.type !== 'value' || !t.key) continue;
+      const it = init[t.key];
+      if (!it) continue;
+      if (!this._cmpOp(it.value, t.op || '<', Number(t.value))) continue;
+      out.push('结局「' + (def.name || def.id) + '」开局即满足触发条件（' + t.key + ' ' + (t.op || '<') + ' ' + t.value
+        + '，开局值 ' + it.value + '）：第一轮就会直接结局。建议加 minRound（至少玩到第 N 轮）或 requireEvents（先触发某事件），或改阈值。');
+    }
+    return out;
+  },
+
+  // 卡带声明的开局数值（只含引擎能读到的三处容器）
+  _initialValues(card) {
+    const out = {};
+    const put = (arr) => {
+      if (!Array.isArray(arr)) return;
+      for (const it of arr) {
+        if (!it || !it.key) continue;
+        const raw = (it.init != null) ? it.init : (it.current != null ? it.current : null);
+        if (raw == null) continue;
+        if (out[it.key]) continue;
+        const n = Number(raw);
+        out[it.key] = { value: isFinite(n) ? n : raw, min: it.min, name: it.name || it.label || '' };
+      }
+    };
+    put(card && card.hud);
+    put(card && card.sidebar);
+    const panels = (card && card.panels) || [];
+    if (Array.isArray(panels)) for (const p of panels) put(p && p.entries);
+    return out;
+  },
+
+  _cmpOp(cur, op, v) {
+    if (op === '<') return cur < v;
+    if (op === '<=') return cur <= v;
+    if (op === '>') return cur > v;
+    if (op === '>=') return cur >= v;
+    if (op === '==') return cur === v;
+    if (op === '!=') return cur !== v;
+    return false;
   },
 
   // 身份层 display 是【可选段】：这里的结果永不参与 validate 的导入拦截。

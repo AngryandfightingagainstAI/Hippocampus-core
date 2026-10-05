@@ -30,7 +30,8 @@ var AchievementsPanel = require('../panels/AchievementsPanel.js');
 var EndingsPanel = require('../panels/EndingsPanel.js');
 var StoryNodesPanel = require('../panels/StoryNodesPanel.js');
 var EventProposalsPanel = require('../panels/EventProposalsPanel.js');
-var ChangeProposalsPanel = require('../panels/ChangeProposalsPanel.js');
+var ChangeProposalsPanel = require('../panels/ChangeProposalsPanel.js');var OutputsPanel = require('../panels/OutputsPanel.js');
+
 var NpcPanel = require('../panels/NpcPanel.js');
 var ErrorLogPanel = require('../panels/ErrorLogPanel.js');
 var DebugPanel = require('../panels/DebugPanel.js');
@@ -47,7 +48,8 @@ var TITLE_MAP = {
   endings: '结局',
   storyNodes: '剧情节点',
   eventProposals: '事件提议',
-  changeProposals: '变更提议',
+  changeProposals: '变更提议',  outputs: '产出物',
+
   npc: '人物',
   errorLog: '报错',
   debug: '调试信息',
@@ -123,7 +125,8 @@ function PanelHost() {
                   {panelId === 'endings' ? <EndingsPanel tokens={tk} /> : null}
                   {panelId === 'storyNodes' ? <StoryNodesPanel tokens={tk} /> : null}
                   {panelId === 'eventProposals' ? <EventProposalsPanel tokens={tk} /> : null}
-                  {panelId === 'changeProposals' ? <ChangeProposalsPanel tokens={tk} /> : null}
+                  {panelId === 'changeProposals' ? <ChangeProposalsPanel tokens={tk} /> : null}                  {panelId === 'outputs' ? <OutputsPanel tokens={tk} /> : null}
+
                   {panelId === 'npc' ? <NpcPanel tokens={tk} /> : null}
                   {panelId === 'errorLog' ? <ErrorLogPanel tokens={tk} /> : null}
                   {panelId === 'debug' ? <DebugPanel tokens={tk} /> : null}

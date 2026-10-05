@@ -30,6 +30,17 @@
         this._data.outputs = {};
       }
       if (typeof this._data._lastIntervalKey !== 'string') this._data._lastIntervalKey = '';
+      // P27：老存档里的产出物没有 title / content / desc / review —— 读时补齐（不改语义）
+      var outs = this._data.outputs;
+      Object.keys(outs).forEach(function(k) {
+        var o = outs[k];
+        if (!o || typeof o !== 'object') return;
+        if (typeof o.title !== 'string' || !o.title) o.title = String(o.name || '');
+        if (typeof o.content !== 'string') o.content = '';
+        if (typeof o.desc !== 'string') o.desc = '';
+        if (!o.review || typeof o.review !== 'object') o.review = { state: 'none', reason: '', at: '', round: 0 };
+        if (typeof o.review.state !== 'string') o.review.state = 'none';
+      });
     },
 
     load: function() {
@@ -90,9 +101,15 @@
       if (this._data.outputs[id]) return { ok: false, reason: 'id 已存在：' + id };
 
       var now = GameState.formatGameTime();
+      // P27：面板提交（def.fromPanel / reviewState:'pending'）要先过一轮 AI 审核；
+      //   AI 自己 output_publish 的默认 none = 已纳入（正文/描述直接进提示词）。
+      var reviewState = (def.reviewState === 'pending' || def.fromPanel === true) ? 'pending' : 'none';
       this._data.outputs[id] = {
         id: id,
         name: String(def.name),
+        title: String(def.title != null ? def.title : def.name),
+        content: String(def.content || ''),
+        desc: String(def.desc || ''),
         type: def.type || '',
         createdAt: now,
         publishedAt: now,
@@ -103,7 +120,8 @@
         events: [],
         stirCooldowns: {},
         finalVerdict: '',
-        settledAt: ''
+        settledAt: '',
+        review: { state: reviewState, reason: '', at: '', round: 0 }
       };
       this.save();
       return { ok: true, id: id, name: this._data.outputs[id].name };
@@ -113,6 +131,110 @@
       if (!this._data) this.load();
       if (!this._data.outputs[id]) return null;
       return JSON.parse(JSON.stringify(this._data.outputs[id]));
+    },
+
+    // P27：面板/AI 改写标题、正文、描述（字段白名单，不碰 fate / progress / events）
+    update: function(id, patch) {
+      if (!this._data) this.load();
+      this._ensureShape();
+      var o = this._data.outputs[id];
+      if (!o) return { ok: false, reason: '产出物不存在：' + id };
+      if (!patch || typeof patch !== 'object') return { ok: false, reason: '参数不是对象' };
+      var applied = [];
+      var strFields = ['name', 'title', 'content', 'desc', 'type'];
+      for (var i = 0; i < strFields.length; i++) {
+        var f = strFields[i];
+        if (patch[f] != null) { o[f] = String(patch[f]); applied.push(f); }
+      }
+      if (Array.isArray(patch.keywords)) { o.keywords = patch.keywords.slice(); applied.push('keywords'); }
+      if (Array.isArray(patch.audience)) { o.audience = patch.audience.slice(); applied.push('audience'); }
+      if (!applied.length) return { ok: false, reason: '没有可改的字段（只认 name/title/content/desc/type/keywords/audience）' };
+      this.save();
+      return { ok: true, id: id, applied: applied, output: this.get(id) };
+    },
+
+    // ============ 一轮 AI 审核（P27） ============
+    // 面板里提交的产出物 review.state = pending；送审后由 AI 裁决：
+    //   include 直接纳入剧情 / revise 按 AI 给的标题正文描述改写后纳入 / reject 驳回并记原因。
+    buildReviewPrompt: function(o) {
+      var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
+      var g = (card && card.game) || {};
+      var bg = String(g.background || '');
+      if (bg.length > 800) bg = bg.slice(0, 800) + '…';
+      var lines = [];
+      lines.push('你是这个文字冒险游戏的世界观审核员。有人提交了一件「产出物」，请判断它能否进入正文剧情。');
+      lines.push('');
+      lines.push('【游戏】' + (g.title || (card && card.cardName) || '（未命名）'));
+      if (bg) lines.push('【世界背景（节选）】' + bg);
+      lines.push('');
+      lines.push('【待审产出物】');
+      lines.push('标题：' + (o.title || o.name || ''));
+      if (o.type) lines.push('类别：' + o.type);
+      lines.push('描述：' + (o.desc || '（无）'));
+      lines.push('正文：' + (o.content || '（无）'));
+      lines.push('受众：' + ((o.audience && o.audience.length) ? o.audience.join('、') : '（未指）'));
+      lines.push('');
+      lines.push('裁决口径：');
+      lines.push('· include —— 与世界一致、可直接写进剧情（哪怕粗糙，只要不矛盾）；');
+      lines.push('· revise —— 方向可用但措辞与世界观冲突或太笼统，给出改写后的 title / content / desc；');
+      lines.push('· reject —— 与世界明显矛盾（出现不存在的事物、破坏设定），说明原因。');
+      lines.push('只输出一个 JSON，不要解释、不要代码块围栏：');
+      lines.push('{"verdict":"include|revise|reject","reason":"一句话原因","title":"改写后的标题（revise 必填）","content":"改写后的正文（revise 必填）","desc":"改写后的描述（revise 可空）"}');
+      return lines.join('\n');
+    },
+
+    // 从 AI 回复里取第一个 JSON 对象（容忍 ```json 围栏与前后闲聊）
+    parseReviewVerdict: function(text) {
+      var s = String(text == null ? '' : text).trim();
+      s = s.replace(/```[a-zA-Z]*/g, '').replace(/```/g, '');
+      var i = s.indexOf('{'), j = s.lastIndexOf('}');
+      if (i < 0 || j <= i) return { ok: false, raw: s.slice(0, 120) };
+      var obj = null;
+      try { obj = JSON.parse(s.slice(i, j + 1)); } catch (e) { return { ok: false, raw: s.slice(i, j + 1).slice(0, 120) }; }
+      var v = obj && obj.verdict ? String(obj.verdict).toLowerCase() : '';
+      if (['include', 'revise', 'reject'].indexOf(v) < 0) return { ok: false, raw: 'verdict=' + JSON.stringify(obj && obj.verdict) };
+      return { ok: true, verdict: v, reason: String(obj.reason || ''), title: obj.title != null ? String(obj.title) : '', content: obj.content != null ? String(obj.content) : '', desc: obj.desc != null ? String(obj.desc) : '' };
+    },
+
+    // 送一审：opts.chat 形如 ApiClient.chat(messages, options) → Promise<{content}>
+    review: function(id, opts) {
+      if (!this._data) this.load();
+      this._ensureShape();
+      var o = this._data.outputs[id];
+      if (!o) return Promise.resolve({ ok: false, reason: '产出物不存在：' + id });
+      opts = opts || {};
+      if (typeof opts.chat !== 'function') return Promise.resolve({ ok: false, reason: '没有可用的 AI 通道（opts.chat 缺失）' });
+      var self = this;
+      var prompt = self.buildReviewPrompt(o);
+      var pick = function(res) { return (res && (res.content || res.text)) || ''; };
+      return Promise.resolve()
+        .then(function() { return opts.chat([{ role: 'user', content: prompt }], { max_tokens: 500, temperature: 0.4 }); })
+        .then(function(res) {
+          var v = self.parseReviewVerdict(pick(res));
+          var now = GameState.formatGameTime();
+          if (!v.ok) {
+            o.review = { state: 'pending', reason: 'AI 回复无法解析为裁决：' + v.raw, at: now, round: 0 };
+            self.save();
+            return { ok: false, reason: 'AI 回复无法解析为裁决', raw: v.raw };
+          }
+          if (v.verdict === 'include') {
+            o.review = { state: 'included', reason: v.reason, at: now, round: 0 };
+          } else if (v.verdict === 'revise') {
+            if (v.title) o.title = v.title;
+            if (v.content) o.content = v.content;
+            if (v.desc) o.desc = v.desc;
+            o.review = { state: 'revised', reason: v.reason, at: now, round: 0 };
+          } else {
+            o.review = { state: 'rejected', reason: v.reason, at: now, round: 0 };
+          }
+          self.save();
+          return { ok: true, id: id, verdict: v.verdict, reason: v.reason, output: self.get(id) };
+        }, function(err) {
+          var msg = (err && err.message) ? err.message : String(err);
+          o.review = { state: 'pending', reason: '审核调用失败：' + msg, at: GameState.formatGameTime(), round: 0 };
+          self.save();
+          return { ok: false, reason: o.review.reason };
+        });
     },
 
     listAll: function() {
@@ -366,6 +488,18 @@
         if (o.audience && o.audience.length) line += ' · 受众：' + o.audience.join('、');
         lines.push(line);
 
+        // P27：审核通过（included / revised）或 AI 直接发布（none）⇒ 描述与正文当剧情素材带上；
+        //   pending 只给一句提示（玩家从面板提交，等审核）；rejected 不注入内容。
+        var st = (o.review && o.review.state) ? o.review.state : 'none';
+        if (st === 'included' || st === 'revised' || st === 'none') {
+          var dsc = String(o.desc || '').trim();
+          if (dsc) lines.push('  描述：' + (dsc.length > 60 ? dsc.slice(0, 60) + '…' : dsc));
+          var ctn = String(o.content || '').trim();
+          if (ctn) lines.push('  正文：' + (ctn.length > 120 ? ctn.slice(0, 120) + '…' : ctn));
+        } else if (st === 'pending') {
+          lines.push('  待审：玩家从产出物面板提交，等一轮 AI 审核通过后才写进正文');
+        }
+
         if (Array.isArray(o.pendingStirs) && o.pendingStirs.length) {
           var cands = o.pendingStirs.map(function(c) {
             return c.name + '(id=' + c.npcId + ',命中' + c.hits + ')';
@@ -409,6 +543,9 @@
         if (!a.name) return { ok: false, reason: '缺少 name' };
         var r = O.create({
           name: a.name,
+          title: a.title,
+          content: a.content,
+          desc: a.desc,
           type: a.type || '',
           keywords: a.keywords || [],
           audience: a.audience || []
@@ -479,9 +616,14 @@
             fermenting: all.filter(function(o) { return o.fate === 'fermenting'; }).length,
             settled: all.filter(function(o) { return o.fate === 'settled'; }).length,
             list: all.map(function(o) {
+              var ctn = String(o.content || '');
               return {
                 id: o.id,
                 name: o.name,
+                title: o.title || o.name,
+                desc: o.desc || '',
+                content: ctn.length > 120 ? (ctn.slice(0, 120) + '…') : ctn,
+                reviewState: (o.review && o.review.state) || 'none',
                 type: o.type,
                 fate: o.fate,
                 progress: o.progress,

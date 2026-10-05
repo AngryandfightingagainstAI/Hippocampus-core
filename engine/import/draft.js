@@ -106,8 +106,22 @@ var ImportDraft = {
     };
 
     // ---- 1) 背景：取开头的正文段落 ----
-    var prose = collectProse(blocks, opts.backgroundChars || 900);
-    if (prose) card.game.background = prose;
+    // P26：正文默认从 900 提到 2600 字，并把「原文总量 / 是否截断」记进 _import；
+    //   背景末尾指路 query_source —— 资料全文留在原件保管库，AI 可随时检索。
+    var bgLimit = opts.backgroundChars || 2600;
+    var prose = collectProse(blocks, bgLimit);
+    if (prose) {
+      var proseAll = collectProse(blocks, 1e9) || '';
+      var proseTotal = Math.max(proseAll.length, prose.length);
+      card._import.sourceChars = {
+        total: proseTotal,
+        used: Math.min(proseTotal, bgLimit),
+        truncated: proseTotal > bgLimit
+      };
+      card.game.background = (proseTotal > bgLimit)
+        ? (prose + '\n（导入资料正文共 ' + proseTotal + ' 字，以上为前 ' + Math.min(proseTotal, bgLimit) + ' 字；写到当事人、地名、事件细节时先用 query_source 工具把原文取回来，不要凭空编。）')
+        : prose;
+    }
     else gaps.push({ field: 'game.background', why: '资料里没有可用的正文段落', how: '手工补一段世界观背景，或确认原文件是否只含表格/图片' });
 
     // ---- 2) 世界设定：标题层级 + 「存在/不存在」小节 ----

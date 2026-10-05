@@ -128,62 +128,8 @@ function StoryScreen() {
   // Calendar，store 只维护单调计数，组件收信号后现读（对齐 ui_core L214-259）。
   React.useSyncExternalStore(NavStore.subscribe, NavStore.getSnapshot, NavStore.getSnapshot);
 
-  // HUD 条（ui_core L214-228）：有 max/current 走进度条（显式色 / pct 自动色），否则只显名称
-  var HUD_BAR_KEY = { green: 'success', yellow: 'yellow', red: 'danger', danger: 'danger', warn: 'orange' };
-  function hudColorOf(h, pct) {
-    if (h.color && h.color !== 'blue') {
-      var key = HUD_BAR_KEY[h.color];
-      return (key && c[key]) || c.accent;
-    }
-    if (pct == null) return c.accent;
-    if (pct <= 20) return c.danger;
-    if (pct <= 50) return c.orange || c.warning;
-    return c.accent;
-  }
-  function hudItems() {
-    try {
-      var st = GameState.currentState;
-      var hud = (st && Array.isArray(st.hud)) ? st.hud : [];
-      return hud.map(function (h) {
-        var hasBoth = (h.max != null && h.current != null);
-        var pct = hasBoth ? Math.max(0, Math.min(100, (h.current / h.max) * 100)) : null;
-        return {
-          name: h.name || '',
-          val: hasBoth ? (h.current + '/' + h.max) : '—',
-          pct: pct,
-          color: hudColorOf(h, pct)
-        };
-      });
-    } catch (e) { return []; }
-  }
-  // 天气（ui_core L230-239）
-  function weatherText() {
-    try {
-      if (typeof Weather !== 'undefined' && Weather.getCurrent) {
-        var w = Weather.getCurrent();
-        if (w && w.type) return w.type;
-      }
-    } catch (e) {}
-    return '';
-  }
-  // 节日（ui_core L240-251：显示开关 + 今日节日名）
-  function holidayText() {
-    try {
-      if (typeof Calendar !== 'undefined' && Calendar.isDisplayEnabled && Calendar.isDisplayEnabled()) {
-        var hs = Calendar.getTodayHolidays() || [];
-        if (hs.length) return hs.map(function (h) { return h.name; }).join('、');
-      }
-    } catch (e) {}
-    return '';
-  }
-  // token 徽章（ui_core L261-268）
-  function tokenText() {
-    var t = 0;
-    try { t = GameState._totalTokens || 0; } catch (e) { t = 0; }
-    if (t < 1000) return String(t);
-    if (t < 1000000) return (t / 1000).toFixed(1) + 'k';
-    return (t / 1000000).toFixed(2) + 'M';
-  }
+  // P33·①：原顶栏横滑状态条（HUD / 天气 / 节日 / token）整条下线，读取逻辑
+  //   搬进 SidebarDrawer「数值」区（用户裁决：状态不该靠顶部横滑看）。
 
   // P1-D：当前轮次（ui_core L693 isLast 判定用 _currentRoundNum）
   var curRound = 0;
@@ -240,13 +186,6 @@ function StoryScreen() {
         paddingTop: insets.top + 8, paddingBottom: 8, paddingHorizontal: 14,
         borderBottomWidth: 1, borderBottomColor: c.hair
       },
-      hudBar: { borderBottomWidth: 1, borderBottomColor: c.hair },
-      hudRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6 },
-      hudItem: { flexDirection: 'row', alignItems: 'center', marginRight: 14 },
-      hudName: { color: c.faint, fontSize: f.xs, marginRight: 4 },
-      hudTrack: { width: 44, height: 5, borderRadius: 3, backgroundColor: c.hair, overflow: 'hidden', marginRight: 4 },
-      hudFill: { height: 5, borderRadius: 3 },
-      hudVal: { color: c.ink, fontSize: f.xs },
       exitBtn: { fontSize: f.sm, color: c.muted, letterSpacing: 1 },
       topTitle: { flex: 1, fontSize: f.xs, color: c.ink2, textAlign: 'center', letterSpacing: 2, marginHorizontal: 10 },
       topClock: { fontSize: f.xs, color: c.faint, fontFamily: fonts.mono, minWidth: 92, textAlign: 'right' },
@@ -339,8 +278,12 @@ function StoryScreen() {
       propAcceptText: { fontSize: f.sm, color: c.ink, letterSpacing: 2, fontFamily: fonts.serif },
       propRejectText: { fontSize: f.sm, color: c.muted, letterSpacing: 2, fontFamily: fonts.serif },
       propStatus: { fontSize: f.xs, color: c.muted, fontFamily: fonts.serif, letterSpacing: 1 },
-      sbBtn: { paddingHorizontal: 8, paddingVertical: 2 },
-      sbGlyph: { fontSize: f.md, color: c.ink2 },
+      // P33·①：菜单入口加边框与文字（原先只有一个小 ◇ 字形，用户反映找不到）
+      menuBtn: {
+        borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
+        paddingHorizontal: 12, paddingVertical: 6, marginLeft: 6
+      },
+      menuTxt: { fontSize: f.sm, color: c.ink2, letterSpacing: 1 },
       notice: { fontSize: f.sm, color: c.muted, fontStyle: 'italic', lineHeight: 22, marginVertical: 16 },
       inputBar: {
         flexDirection: 'row', alignItems: 'flex-end', gap: 8,
@@ -512,9 +455,10 @@ function StoryScreen() {
         <TouchableOpacity onPress={onExit} hitSlop={{ top: 10, bottom: 10, left: 6, right: 10 }}>
           <Text style={styles.exitBtn}>{'← 退出'}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.sbBtn} onPress={function () { StoryStore.openSidebar(); }}
-          hitSlop={{ top: 10, bottom: 10, left: 8, right: 8 }}>
-          <Text style={styles.sbGlyph}>{'◇'}</Text>
+        <TouchableOpacity style={styles.menuBtn} onPress={function () { StoryStore.openSidebar(); }}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 10, right: 10 }}>
+          <Text style={styles.menuTxt}>{'☰ 菜单'}</Text>
         </TouchableOpacity>
         <Text style={styles.topTitle} numberOfLines={1}>{cardName()}</Text>
         {phoneUnread > 0 ? (
@@ -530,31 +474,7 @@ function StoryScreen() {
         <Text style={styles.topClock}>{gameClock()}</Text>
       </View>
 
-      {/* P6·S3：HUD/天气/节日/token 条（ui_core L214-259 顶栏等价物） */}
-      <View style={styles.hudBar}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.hudRow}>
-          {hudItems().map(function (h, i) {
-            return (
-              <View key={'h' + i} style={styles.hudItem}>
-                <Text style={styles.hudName} numberOfLines={1}>{h.name}</Text>
-                {h.pct != null ? (
-                  <View style={styles.hudTrack}>
-                    <View style={[styles.hudFill, { width: h.pct + '%', backgroundColor: h.color }]} />
-                  </View>
-                ) : null}
-                <Text style={styles.hudVal}>{h.val}</Text>
-              </View>
-            );
-          })}
-          {weatherText() ? (
-            <View style={styles.hudItem}><Text style={styles.hudVal}>{weatherText()}</Text></View>
-          ) : null}
-          <View style={styles.hudItem}>
-            <Text style={styles.hudVal}>{gameClock() + (holidayText() ? ' · ' + holidayText() : '')}</Text>
-          </View>
-          <View style={styles.hudItem}><Text style={styles.hudVal}>{'⟡ ' + tokenText()}</Text></View>
-        </ScrollView>
-      </View>
+      {/* P33·①：原顶部横滑状态条整条下线 —— 数值与天气/节日/时钟改在侧栏抽屉里看 */}
 
       <ScrollView
         ref={scrollRef}

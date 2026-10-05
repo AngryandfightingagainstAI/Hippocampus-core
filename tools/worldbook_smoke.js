@@ -583,7 +583,7 @@ function runQ() {
     ['engine/wb/world_setting.js', 8647, 'D0869881B785B3F935935AA878454C62'],
     ['engine/wb/map.js', 12226, '6C601F5C3393385B3C993B495721F2E9'],
     ['engine/num_editor.js', 11458, '01E7BED6AA56DA94FDC3CACFD89C9968'],
-    ['engine/web_search.js', 12200, '8A06F6976DC21798B142BF8C82834587']
+    ['engine/web_search.js', 11903, 'D769A793DE3484CCED48AAA588299D2B']
   ];
   REF.forEach(function (b) {
     var p = path.join(root, b[0]);
@@ -591,9 +591,10 @@ function runQ() {
       fs.statSync(p).size === b[1] && md5(p) === b[2]);
   });
   // 三锁定基线（RN 本仓；prompt_builder 50772 为 P18·GM 提示词正向化（用户 m04975 批准）后的现盘值）
+  //  P30 重记（同 num_editor_smoke）：gamestate 旧记录早于 RN 仓首次提交；prompt_builder 因 P26/P27/P28 改动而变
   var LOCK = [
-    ['engine/core/gamestate.js', 10383, 'DE10B95F1849A894ADC59AD5F2359A14'],
-    ['engine/core/prompt_builder.js', 50772, '59DB55795079CA1D52551228D2E143F6'],
+    ['engine/core/gamestate.js', 10142, 'B8D49056F2DD4BD692CA5802434A324D'],
+    ['engine/core/prompt_builder.js', 51020, '0AB162A92D1BBBCF1C273C369339C567'],
     ['engine/info_feed.js', 40628, 'B4533EC5ED9249BE1AA3C46CACF1DF22']
   ];
   LOCK.forEach(function (b) {

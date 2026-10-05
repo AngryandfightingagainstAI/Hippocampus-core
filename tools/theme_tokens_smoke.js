@@ -41,7 +41,7 @@ function scanBad(node, path, acc) {
 console.log('---- 真链：rn_bootstrap ----');
 var boot = require('../rn/rn_bootstrap.js');
 // P4 同步 50→51：rn_bootstrap 新增 LogQuery（P4·S2 query_log 检索入口），断言随模块清单同步
-check('BOOTSTRAP 63/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块）', boot.ok === 63 && boot.failed === 0,
+check('BOOTSTRAP 64/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background）', boot.ok === 64 && boot.failed === 0,
   'ok=' + boot.ok + ' failed=' + boot.failed);
 
 var Theme = require('../engine/theme.js');

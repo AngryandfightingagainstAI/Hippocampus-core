@@ -258,6 +258,31 @@ function computeEntries(panelId) {
   }
 }
 
+// P33·②：卡带自定义面板里属于「人物卡 / 人物素质 / 个人素质 / 素质 / 属性」的那些
+//   并成一条，由「角色」面板统一承载（用户裁决：人物素质与人物卡不要分开放）。
+// 返回 { label, ids, others }：label = 合并行的显示名（无匹配时为空串，调用方回落「角色」）；
+// ids = 被并入的面板 id（CharacterPanel 按序渲染其条目）；others = 仍单列的自定义面板。
+var CHAR_PANEL_RE = /^(人物卡|人物素质|个人素质|素质|属性)$/;
+// P33·②：只有「人物卡 / 人物素质」这类命名才接管合并行的行名；「个人素质 / 属性 /
+//   素质」被并进来但不改行名 —— 否则一行里装着整个人物卡却叫「个人素质」，反而更乱。
+var CHAR_ROW_NAME_RE = /^(人物卡|人物素质)$/;
+
+function computeMergedCharPanels() {
+  var all = computePanelList();
+  var ids = [];
+  var rowName = '';
+  var others = [];
+  for (var i = 0; i < all.length; i++) {
+    var p = all[i];
+    var key = String(p.name || '').replace(/\s/g, '');
+    if (CHAR_PANEL_RE.test(key)) {
+      ids.push(p.id);
+      if (!rowName && CHAR_ROW_NAME_RE.test(key)) rowName = p.name;
+    } else others.push(p);
+  }
+  return { label: rowName, ids: ids, others: others };
+}
+
 // 卡带自定义面板列表（侧栏入口用；按 num 排序）
 function computePanelList() {
   try {
@@ -532,6 +557,67 @@ function computeChangeProposals() {
     return { proposals: out, emptyText: '', header: '有 ' + out.length + ' 条变更提议等待确认。' };
   } catch (e) {
     return { proposals: [], emptyText: '提议模块未加载。' };
+  }
+}
+
+// ---------- P27 · 产出物（对应引擎 engine/outputs.js）----------
+// 面板只渲染本函数的返回；引擎写操作（create/update/review/settle）留在组件动作里。
+// 关：全局设置 settings.outputs.enabled（Storage.getGlobal()），默认关。
+// 字段：review.state = none/pending/included/revised/rejected；fate = fermenting/settled。
+function computeOutputs() {
+  var empty = {
+    enabled: false, count: 0, fermenting: 0, items: [],
+    emptyText: '产出物系统当前未开启（设置 → 通用 → 产出物系统）。',
+    empty: '还没有产出物…'
+  };
+  try {
+    if (typeof Outputs === 'undefined') {
+      return {
+        enabled: false, count: 0, fermenting: 0, items: [],
+        emptyText: '产出物模块未加载。',
+        empty: '还没有产出物…'
+      };
+    }
+    if (!Outputs.isEnabled()) return empty;
+    var list = [];
+    try { list = Outputs.listAll() || []; } catch (e) { list = []; }
+    if (!Array.isArray(list)) list = [];
+    var labels = {
+      none: '已纳入剧情', pending: '待审', included: '已纳入',
+      revised: '已修改并纳入', rejected: '已驳回'
+    };
+    var out = [];
+    var fermenting = 0;
+    for (var i = 0; i < list.length; i++) {
+      var o = list[i] || {};
+      var review = o.review || {};
+      var st = review.state || 'none';
+      if (o.fate === 'fermenting') fermenting++;
+      out.push({
+        id: o.id || '',
+        title: o.title || o.name || '',
+        name: o.name || '',
+        desc: o.desc || '',
+        content: o.content || '',
+        reviewState: st,
+        label: labels[st] || labels.none,
+        fate: o.fate || 'fermenting',
+        progress: (typeof o.progress === 'number') ? o.progress : 0,
+        type: o.type || '',
+        reason: review.reason || ''
+      });
+    }
+    return {
+      enabled: true,
+      count: out.length,
+      fermenting: fermenting,
+      items: out,
+      emptyText: '',
+      empty: '还没有产出物…',
+      header: out.length ? ('共 ' + out.length + ' 件产出物，发酵中 ' + fermenting + ' 件。') : ''
+    };
+  } catch (e) {
+    return empty;
   }
 }
 
@@ -951,6 +1037,7 @@ module.exports = {
   computeDiceHistory: computeDiceHistory,
   computeCharacter: computeCharacter,
   computeEntries: computeEntries,
+  computeMergedCharPanels: computeMergedCharPanels,
   computePanelList: computePanelList,
   computeShopIndex: computeShopIndex,
   computeTasks: computeTasks,
@@ -958,7 +1045,8 @@ module.exports = {
   computeEndings: computeEndings,
   computeStoryNodes: computeStoryNodes,
   computeEventProposals: computeEventProposals,
-  computeChangeProposals: computeChangeProposals,
+  computeChangeProposals: computeChangeProposals,  computeOutputs: computeOutputs,
+
   computeNpc: computeNpc,
   computeErrorLog: computeErrorLog,
   clearErrorLog: clearErrorLog,

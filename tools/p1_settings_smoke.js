@@ -403,10 +403,12 @@ async function runD() {
   if (!fs.existsSync(p)) return;
 
   var buf = fs.readFileSync(p);
-  eq('P1F-2 字节数 2457（= 桌面同值）', buf.length, 2457);
-  eq('P1F-3 MD5 逐字节同桌面',
+  //  P30：原来拿「桌面冻结值」锁 RN 文件（2457/AA393C3F…），但桌面是 CRLF、RN 是 LF（同内容），
+  //    行尾归一后两份逐字符相同（见 p30_baseline_probe.js），故改锁 RN 自己的现盘值。
+  eq('P1F-2 RN 侧字节数 2407（桌面同内容 CRLF 版为 2457）', buf.length, 2407);
+  eq('P1F-3 RN 侧 MD5（桌面同内容 CRLF 版为 AA393C3F50A4C2FD0F732D29C95115C4）',
     crypto.createHash('md5').update(buf).digest('hex').toUpperCase(),
-    'AA393C3F50A4C2FD0F732D29C95115C4');
+    'E7937FAC502B33328E2AED7A8CFBD19C');
 
   var CARDS = require(p);
   check('P1F-4 导出 CARDS["demo_v1"]（示例卡带）',

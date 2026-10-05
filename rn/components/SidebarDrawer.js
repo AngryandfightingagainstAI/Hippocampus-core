@@ -34,6 +34,8 @@ var TouchableOpacity = RN.TouchableOpacity;
 var useTheme = require('../use_theme.js').useTheme;
 var StoryStore = require('../story_store.js');
 var NavStore = require('../nav_store.js');
+// P33·②：卡带自定义面板的合并规则（人物卡 / 个人素质 / 属性 / 素质）在数据层单一来源。
+var PanelData = require('../panels/panel_data.js');
 
 // Electron 进度条类名 → token 色键（index.html L587-592）
 var EXPLICIT_BAR = {
@@ -70,21 +72,40 @@ function readPrompt() {
   } catch (e) { return null; }
 }
 
-// H4：卡带自定义 panels（GameState.currentState.panels，gamestate.js:70-72 初始化）
-// 按 num 排序，只取有 name 的条目；id 作为 openPanel 路由键（entries:<panelId>）。
-function readCustomPanels() {
+// P33·①：原叙事屏顶栏的横滑状态条（HUD / 天气 / 节日 / 游戏时间 / 累计 token）
+//   整条下线，数据改由本抽屉「数值」区显示；读数逻辑从 StoryScreen 原样搬来。
+function readHud() {
   try {
     var st = GameState.currentState;
-    var panels = (st && st.panels) || {};
-    var list = [];
-    var keys = Object.keys(panels);
-    for (var i = 0; i < keys.length; i++) {
-      var p = panels[keys[i]];
-      if (p && p.name) list.push({ id: keys[i], name: p.name, num: p.num || 0 });
-    }
-    list.sort(function (a, b) { return a.num - b.num; });
-    return list;
+    var hud = (st && Array.isArray(st.hud)) ? st.hud : [];
+    return hud.map(function (h) {
+      var hasBoth = (h.max != null && h.current != null);
+      var pct = hasBoth ? Math.max(0, Math.min(100, (h.current / h.max) * 100)) : null;
+      return { name: h.name || '', val: hasBoth ? (h.current + '/' + h.max) : '—', pct: pct, color: h.color };
+    });
   } catch (e) { return []; }
+}
+
+function readHudInfo() {
+  var parts = [];
+  try { parts.push(GameState.formatGameTime() || ''); } catch (e) { parts.push(''); }
+  try {
+    if (typeof Weather !== 'undefined' && Weather.getCurrent) {
+      var w = Weather.getCurrent();
+      if (w && w.type) parts.push(w.type);
+    }
+  } catch (e) {}
+  try {
+    if (typeof Calendar !== 'undefined' && Calendar.isDisplayEnabled && Calendar.isDisplayEnabled()) {
+      var hs = Calendar.getTodayHolidays() || [];
+      if (hs.length) parts.push(hs.map(function (h) { return h.name; }).join('、'));
+    }
+  } catch (e) {}
+  var t = 0;
+  try { t = GameState._totalTokens || 0; } catch (e) { t = 0; }
+  var tok = (t < 1000) ? String(t) : (t < 1000000 ? (t / 1000).toFixed(1) + 'k' : (t / 1000000).toFixed(2) + 'M');
+  parts.push('⟡ ' + tok);
+  return parts.filter(function (x) { return !!x; }).join(' · ');
 }
 
 function SidebarDrawer() {
@@ -148,6 +169,7 @@ function SidebarDrawer() {
     track: { height: 3, backgroundColor: c.hair, marginBottom: 4, overflow: 'hidden' },
     desc: { fontSize: f.xs, color: c.faint, lineHeight: Math.round(f.xs * 1.6) },
     empty: { fontSize: f.sm, color: c.faint, paddingHorizontal: 14, paddingVertical: 18 },
+    info: { fontSize: f.xs, color: c.faint, paddingHorizontal: 14, paddingVertical: 6, lineHeight: Math.round(f.xs * 1.6) },
     panelItem: {
       flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
       paddingHorizontal: 14, paddingVertical: 12,
@@ -194,7 +216,12 @@ function SidebarDrawer() {
     ? (prompt.est > 8000 ? c.danger : (prompt.est > 4000 ? c.warning : c.success))
     : null;
 
-  var customPanels = readCustomPanels();
+  // P33·②：卡带自定义面板里属于「人物卡 / 个人素质 / 属性 / 素质」的那些并入「角色」
+  //   面板，不再单列（用户裁决：人物素质与人物卡不要分开放）。
+  var charMerge = PanelData.computeMergedCharPanels();
+  var customPanels = charMerge.others;
+  var hudItems = readHud();
+  var hudInfo = readHudInfo();
 
   // H6：endings / storyNodes 条件渲染（两层判定之一：侧栏入口可见性）
   var endingsEnabled = false;
@@ -267,18 +294,44 @@ function SidebarDrawer() {
                 {sidebar.length ? sidebar.map(function (s, i) { return renderItem(s, i, false); })
                   : <Text style={styles.empty}>{'暂无状态条'}</Text>}
 
+                {hudItems.length || hudInfo ? (
+                  <View>
+                    <Text style={styles.section}>{'数值'}</Text>
+                    {hudItems.map(function (h, i) {
+                      return (
+                        <View key={'hud' + i} style={styles.item}>
+                          <Text style={styles.icon}>{'◇'}</Text>
+                          <View style={styles.body}>
+                            <View style={styles.itemHead}>
+                              <Text style={styles.name} numberOfLines={1}>{h.name}</Text>
+                              <Text style={styles.val}>{h.val}</Text>
+                            </View>
+                            {h.pct != null ? (
+                              <View style={styles.track}>
+                                <View style={{ height: 3, width: h.pct + '%', backgroundColor: barColor(h, h.pct) }} />
+                              </View>
+                            ) : null}
+                          </View>
+                        </View>
+                      );
+                    })}
+                    {hudInfo ? <Text style={styles.info}>{hudInfo}</Text> : null}
+                  </View>
+                ) : null}
+
                 <Text style={styles.section}>{'面板'}</Text>
                 {panelRow('statusCard', '状态卡')}
                 {panelRow('log', '日志')}
                 {panelRow('diceHistory', '骰子历史')}
-                {panelRow('character', '角色')}
+                {panelRow('character', charMerge.label || '角色')}
                 {panelRow('shop', '商店')}
                 {panelRow('infoPhone', '手机', infoUnread)}
                 {panelRow('npc', '人物')}
                 {panelRow('tasks', '任务')}
                 {panelRow('achievements', '成就')}
                 {panelRow('eventProposals', '事件提议')}
-                {panelRow('changeProposals', '变更提议')}
+                {panelRow('changeProposals', '变更提议')}                {panelRow('outputs', '产出物')}
+
                 {endingsEnabled ? panelRow('endings', '结局') : null}
                 {storyNodesEnabled ? panelRow('storyNodes', '剧情节点') : null}
                 {panelRow('errorLog', '报错')}

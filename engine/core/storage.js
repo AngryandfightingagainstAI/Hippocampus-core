@@ -72,6 +72,7 @@ var Storage = {
       npcDeduction: { enabled: false, profileId: null, autoTrigger: false },
       settings: {
         outputs: { enabled: false },
+        background: { enabled: true },
         theme: { activeId: 'paper-white', custom: null, overrides: {}, backgroundOverrides: {} },
         diceMode: true, typewriter: false,
         dice: {

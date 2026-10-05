@@ -92,11 +92,19 @@ function fieldFallback(f, isAttr) {
   return (f.default != null) ? f.default : (isAttr && f.min != null ? f.min : '');
 }
 
-// renderForm:756-763 等效：把 fallback 同步进 data（用户没动过输入框时也有值）
+// P23·①：输入框显示值 —— 只在「没填过」（null / undefined）时回落默认值。
+//   玩家显式清空（''）必须显示空，否则删掉默认数字的瞬间它就弹回来了（RG-1）。
+function shownValue(f, val, isAttr) {
+  return (val != null) ? val : fieldFallback(f, isAttr);
+}
+
+// renderForm:756-763 等效：把 fallback 同步进 data（用户没动过输入框时也有值）。
+// P23·①：判据由「null / 空串」收紧为「null」——空串是玩家清空的动作，不是「没填过」；
+//   继续按 fallback 回填会让「清空 → 默认值」在切步/重渲染时反复发生（RG-1）。
 function syncDefaults(step, data, isAttr) {
   (step.fields || []).forEach(function (f) {
     var fb = fieldFallback(f, isAttr);
-    if ((data[f.key] == null || data[f.key] === '') && fb !== '' && fb != null) {
+    if (data[f.key] == null && fb !== '' && fb != null) {
       data[f.key] = fb;
     }
   });
@@ -276,6 +284,7 @@ module.exports = {
   filterSteps: filterSteps,
   nextIndex: nextIndex,
   fieldFallback: fieldFallback,
+  shownValue: shownValue,
   syncDefaults: syncDefaults,
   clampNumber: clampNumber,
   validateStep: validateStep,

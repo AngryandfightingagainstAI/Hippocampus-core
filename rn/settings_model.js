@@ -144,7 +144,7 @@ function saveDiceConfig(cfg) {
 // {
 //   logging: { enabled, windowRounds, summaryInject },
 //   thinking: { showReasoning, showSearch, showUsage },
-//   endingsEnabled, nodesEnabled, outputsEnabled: bool,
+//   endingsEnabled, nodesEnabled, outputsEnabled, backgroundEnabled: bool,
 //   strictness: 'soft'|'normal'|'hard',
 //   proposalCheck: { enabled, profileId, triggerAfterRounds },
 //   npcDeduction: { enabled, profileId, autoTrigger }
@@ -172,6 +172,7 @@ function loadGeneralState() {
     endingsEnabled: !(s.endings && s.endings.enabled === false),
     nodesEnabled: !!(s.storyNodes && s.storyNodes.enabled === true),
     outputsEnabled: !!(s.outputs && s.outputs.enabled === true),
+    backgroundEnabled: !(s.background && s.background.enabled === false),
     strictness: (g.gm && g.gm.strictness) || 'normal',
     proposalCheck: {
       enabled: !!pc.enabled,
@@ -202,6 +203,7 @@ function saveGeneralState(st) {
     g.settings.endings = { enabled: !!st.endingsEnabled };
     g.settings.storyNodes = { enabled: !!st.nodesEnabled };
     g.settings.outputs = { enabled: !!st.outputsEnabled };
+    g.settings.background = { enabled: !!(st.backgroundEnabled !== false) };
     g.gm = g.gm || {};
     g.gm.strictness = st.strictness;
     g.proposalCheck = g.proposalCheck || {};

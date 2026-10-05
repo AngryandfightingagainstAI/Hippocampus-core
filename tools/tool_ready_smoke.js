@@ -5,7 +5,7 @@
 //   「未知工具：xxx」；而未知工具要连续失败 3 次才会提示 AI，中间它会反复重试同一个
 //   不存在的工具、白烧 token。
 // 断言：① 16 个文件里不再有 setTimeout(..., 非 0) 形式的错峰注册；
-//       ② 按真实装载顺序跑完所有 module body 后，白名单立刻就是 76 项（15 内置 + 61 惰性）；
+//       ② 按真实装载顺序跑完所有 module body 后，白名单立刻就是 78 项（16 内置 + 62 惰性）；
 //       ③ 两仓装载顺序里 ToolExecutor 都排在这些模块之前。
 //
 // 用法：node tools/tool_ready_smoke.js         （cwd 随意，根目录由 __dirname 推）
@@ -24,7 +24,7 @@ function ok(name, cond, detail) {
 // ---------- 期望的工具账 ----------
 var BUILTIN = ['modify_hud', 'modify_sidebar', 'modify_entry', 'modify_relation', 'add_item', 'remove_item',
   'query_player', 'query_npc', 'query_faction', 'query_map', 'query_worldsetting', 'roll_dice', 'roll_check',
-  'roll_opposed', 'web_search'];
+  'roll_opposed', 'web_search', 'query_source'];
 
 // 模块 -> 该模块注册的工具（顺序 = 文件内出现顺序）
 var MODULE_TOOLS = [
@@ -185,7 +185,7 @@ console.log('--- TR-4 运行时就绪（T0，任何 timer 之前）---');
   ok('TR-4 T0 白名单总数 = ' + EXPECT_TOTAL + '（实测 ' + ks.length + '）', ks.length === EXPECT_TOTAL);
 
   var missB = BUILTIN.filter(function (n) { return ks.indexOf(n) < 0; });
-  ok('TR-4 T0 内置 15 项齐全', missB.length === 0, '缺: ' + missB.join(','));
+  ok('TR-4 T0 内置 ' + BUILTIN.length + ' 项齐全', missB.length === 0, '缺: ' + missB.join(','));
   var missL = LAZY.filter(function (n) { return ks.indexOf(n) < 0; });
   ok('TR-4 T0 惰性 ' + LAZY.length + ' 项齐全（不再等 timer）', missL.length === 0, '缺: ' + missL.join(','));
 

@@ -30,6 +30,9 @@ function eq(name, actual, expected) {
 function md5(p) { return crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex').toUpperCase(); }
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 
+// P30：桌面仓文件是 CRLF、RN 仓是 LF —— 同源判定按内容比（行尾归一），不再比字节
+function lfText(p) { return fs.readFileSync(p, 'utf8').split('\r\n').join('\n'); }
+
 // ================= 内存 harness =================
 function installMemLocalStorage() {
   var mem = {};
@@ -575,8 +578,8 @@ function runF() {
     pd.indexOf('搜索/清空按钮不搬（DOM 依赖）') < 0);
   check('F12 rn_bootstrap.js 装载 LogQuery',
     read(path.join(root, 'rn', 'rn_bootstrap.js')).indexOf("load('LogQuery'") >= 0);
-  check('F13 桌面 vfs/logger.js 与 RN 同源（同源补丁已落，只读自证）',
-    md5(path.join(DESK, 'vfs', 'logger.js')) === md5(path.join(root, 'vfs', 'logger.js')));
+  check('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 20301 B CRLF / RN 19817 B LF）',
+    lfText(path.join(DESK, 'vfs', 'logger.js')) === lfText(path.join(root, 'vfs', 'logger.js')));
 }
 
 // ================= G RN 本仓基线自证（P12·S1 方案 A 本仓化） =================
@@ -587,9 +590,12 @@ function runG() {
   //   凭空把本套弄红（P11 已实际发生一次）。桌面同名件只打软提示，不参与断言。
 //   P18·GM 提示词正向化（用户 m04975 批准）后，prompt_builder.js 基线更新为 59DB55795079CA1D52551228D2E143F6。
   //   跨仓同源哨兵（F13 于 :578-579、info_feed 两仓同源于下文末条）保持不变。
+  //   P30 重记两条基线（见 p30_baseline_align_patch.js 的查证）：
+  //     · gamestate.js：旧记录 10383/DE10B95F… 早于 RN 仓首次提交 44a15e4（git 证该文件自那以后未动）
+  //     · prompt_builder.js：P26 query_source 协议行 / P27 产出物 title,content,desc / P28 后台进程注入 之后的现盘值
   var bases = [
-    ['engine/core/gamestate.js', 'DE10B95F1849A894ADC59AD5F2359A14'],
-    ['engine/core/prompt_builder.js', '59DB55795079CA1D52551228D2E143F6'],
+    ['engine/core/gamestate.js', 'B8D49056F2DD4BD692CA5802434A324D'],
+    ['engine/core/prompt_builder.js', '0AB162A92D1BBBCF1C273C369339C567'],
     ['engine/info_feed.js', 'B4533EC5ED9249BE1AA3C46CACF1DF22']
   ];
   bases.forEach(function (b) {

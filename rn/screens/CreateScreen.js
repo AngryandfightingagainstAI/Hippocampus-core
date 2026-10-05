@@ -384,7 +384,8 @@ function CreateScreen() {
         {(s.fields || []).map(function (fd) {
           var key = fd.key;
           var val = data[key];
-          var shown = (val != null && val !== '') ? val : CF.fieldFallback(fd, isAttr);
+          // P23·①：显式清空（''）不回填默认值，否则删掉默认数字后没法重输
+          var shown = CF.shownValue(fd, val, isAttr);
           return (
             <View key={key} style={styles.fieldWrap}>
               <Text style={styles.fieldLabel}>{(fd.label || key) + (fd.required ? '（必填）' : '')}</Text>

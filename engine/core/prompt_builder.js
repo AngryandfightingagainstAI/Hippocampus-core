@@ -129,6 +129,10 @@ var PromptBuilder = {
     lines.push('【世界设定】');
     lines.push('游戏：' + card.game.title);
     if (card.game.background) lines.push('背景：' + card.game.background);
+    // P26：导入资料生成的卡带，背景只是资料开头一段；这里明确告知 AI 全文可检索
+    if (card._import && card._import.importId) {
+      lines.push('导入资料：本卡带由导入资料生成（来源 ' + (card._import.sourceName || '未知') + '），上面「背景」只是资料开头的一段；需要人物、地名、事件、设定的原文细节时，用 query_source 工具检索全文，不要凭印象编造。');
+    }
     if (card.game.eraRange) {
       const er = card.game.eraRange;
       if (Array.isArray(er[0])) lines.push('时代范围：' + er.map(p => p[0] + '-' + p[1]).join(' / '));
@@ -201,7 +205,7 @@ var PromptBuilder = {
     lines.push('放在【正文】之后、【时间】之前。可多个。');
     lines.push('数值：modify_hud(key, delta) / modify_sidebar(key, delta) / modify_entry(panelId, key, delta) / modify_relation(from, to, delta)');
     lines.push('物品：add_item(category, name, desc)（category: bar/common/story/rare）/ remove_item(name)');
-    lines.push('查询：query_player() / query_npc(id) / query_faction(id) / query_map(id) / query_worldsetting() / query_log({keyword, from?, to?})');
+    lines.push('查询：query_player() / query_npc(id) / query_faction(id) / query_map(id) / query_worldsetting() / query_log({keyword, from?, to?}) / query_source({keyword?|offset?|limit?})');
     lines.push('NPC 管理：add_keyword(id, keyword) / npc_enter(id) / npc_leave(id, to?)（to 可选 "dormant"|"offstage"，默认 dormant）');
     lines.push('NPC 知识：npc_knows(id, text, source?, sourceNote?, origin?, unverified?)（source: witness/told/rumor/public/deduced/misconception/manual/legacy，默认 deduced；玩家本人告诉 NPC 的事用 origin:"player" + unverified:true，表示「玩家这么说过」而非「已确认的事实」）');
     // P9·S1：信息层（手机）工具协议 4 行，逐字搬自桌面 engine/core/prompt_builder.js:191-194。
@@ -235,7 +239,8 @@ var PromptBuilder = {
     lines.push('元层提议：玩家说“应该加/应该改/不该再”时，调 propose_change 把变更落成提议（叙事里的口头答应不算）。');
     lines.push('');
     // P10·B6：output_publish 仅 name 必填（CONTRACTS.md:269-271）。
-    lines.push('产出物：output_publish({name, type?, keywords?, audience?}) / output_stir({outputId, npcId, action}) / output_settle({id, verdict}) / query_outputs()');
+    lines.push('产出物：output_publish({name, title?, content?, desc?, type?, keywords?, audience?}) / output_stir({outputId, npcId, action}) / output_settle({id, verdict}) / query_outputs()');
+    lines.push('产出物正文：title 是标题、content 是正文、desc 是一句描述（都要写全，玩家面板里会看到）；玩家可在「产出物」面板新建或改写并送一轮 AI 审核，审核通过（included / revised）的产出物会带着描述与正文出现在【产出物发酵中】里，直接当剧情素材用，不要另起炉灶。');
     lines.push('');
     lines.push('注意：');
     lines.push('- 结局 / 节点 / 伏笔 / NPC 舞台这类“剧情驱动的操作”是你在正常叙事里直接调的，');
@@ -662,6 +667,11 @@ var PromptBuilder = {
       var outLine = Outputs.formatForPrompt();
       if (outLine) lines.push(on('recent1') ? this._keepFirstItem(outLine) : outLine);
     }
+      // 后台进程（降级档 recent1：只留最近 1 条）
+      if (typeof Background !== 'undefined') {
+        var bgLine = Background.formatForPrompt();
+        if (bgLine) lines.push(on('recent1') ? this._keepFirstItem(bgLine) : bgLine);
+      }
 
     // 日志摘要（降级档 sum2 / sum1 / sum0：3 → 2 → 1 → 0）
     if (GameState.currentCardId && GameState.currentSaveId && typeof Logger !== 'undefined') {

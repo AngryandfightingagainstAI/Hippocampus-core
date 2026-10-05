@@ -14,12 +14,24 @@ var Text = RN.Text;
 var TouchableOpacity = RN.TouchableOpacity;
 
 var PanelData = require('./panel_data.js');
+// P33·②：被并入「角色」的卡带自定义面板（人物卡 / 个人素质 / 属性 …）直接用
+//   条目面板渲染，避免两处重复实现。
+var EntriesPanel = require('./EntriesPanel.js');
 
 function CharacterPanel(props) {
   var tk = props.tokens;
   var c = tk.colors;
   var f = tk.fontSizes;
   var view = PanelData.computeCharacter();
+  // P33·②：被并入的面板按序渲染在「属性」之后；空面板不占位。
+  var mergedViews = [];
+  try {
+    var mergedIds = PanelData.computeMergedCharPanels().ids;
+    for (var mi = 0; mi < mergedIds.length; mi++) {
+      var mv = PanelData.computeEntries(mergedIds[mi]);
+      if (mv.entries.length) mergedViews.push({ id: mergedIds[mi], name: mv.name || mergedIds[mi] });
+    }
+  } catch (e) { mergedViews = []; }
 
   var styles = RN.StyleSheet.create({
     section: { marginBottom: 14 },
@@ -113,6 +125,15 @@ function CharacterPanel(props) {
           })}
         </View>
       ) : null}
+
+      {mergedViews.map(function (mv) {
+        return (
+          <View key={mv.id} style={styles.section}>
+            <Text style={styles.secTitle}>{mv.name}</Text>
+            <EntriesPanel panelId={mv.id} tokens={tk} />
+          </View>
+        );
+      })}
 
       {view.talents.length ? (
         <View style={styles.section}>

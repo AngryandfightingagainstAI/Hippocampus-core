@@ -1,4 +1,4 @@
-import { StatusBar, StyleSheet, Text, View, ScrollView } from 'react-native';
+import { StatusBar, StyleSheet, Text, View, ScrollView, BackHandler } from 'react-native';
 import { useEffect } from 'react';
 
 // 关键：Metro 的 inlineRequires 会把 `const boot = require(...)` 延迟到首次
@@ -18,6 +18,8 @@ const THEME_IDS: Array<string> = ThemeModule.BUILTIN_THEMES.map((t: any) => t.id
 const SafeAreaModule: any = require('react-native-safe-area-context');
 const SafeAreaProvider: any = SafeAreaModule.SafeAreaProvider;
 const NavigationModule: any = require('./rn/navigation');
+// P33·③：Android 硬件返回键要回「上一屏」而不是退出应用 —— 路由栈在 nav_store。
+const NavStoreModule: any = require('./rn/nav_store');
 const HomeScreenModule: any = require('./rn/screens/HomeScreen');
 // 4-3：叙事页 + 根层浮层 Host（confirmAsync 确认框；toast/busy 等 4-3b 追加）
 const StoryScreenModule: any = require('./rn/screens/StoryScreen');
@@ -84,6 +86,12 @@ function PlaceholderScreen({ label, hint }: { label: string; hint: string }) {
 // （confirmAsync 等），任意路由下壳弹窗都有真实渲染链路。
 function Root() {
   const nav = NavigationModule.useNavigation();
+  // P33·③：返回键优先「返回上一屏」，栈空（在主页）时才交还系统退出应用。
+  //   抽屉 / 面板 / 确认框都是带 onRequestClose 的 Modal，返回键先被 Modal 吃掉。
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => NavStoreModule.goBack());
+    return () => { try { if (sub && sub.remove) sub.remove(); } catch (e) { /* 卸载失败不得影响切屏 */ } };
+  }, []);
   let screen: any;
   if (nav.currentScreen === 'home') screen = <HomeScreenModule.HomeScreen />;
   else if (nav.currentScreen === '__boot') screen = <BootScreen />;

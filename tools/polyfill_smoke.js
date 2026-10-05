@@ -40,7 +40,7 @@ console.log('---- A 层：rn_bootstrap 真链 ----');
 var result = require('../rn/rn_bootstrap.js');
 
 // P4 同步 50→51：rn_bootstrap 新增 LogQuery（P4·S2 query_log 检索入口），断言随模块清单同步
-check('BOOTSTRAP 63/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块）', result.ok === 63 && result.failed === 0,
+check('BOOTSTRAP 64/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background）', result.ok === 64 && result.failed === 0,
   'ok=' + result.ok + ' failed=' + result.failed);
 check('result.localStoragePolyfill === true', result.localStoragePolyfill === true);
 check('typeof globalThis.localStorage === object',

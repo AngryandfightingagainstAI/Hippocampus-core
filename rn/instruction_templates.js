@@ -179,7 +179,11 @@ function part1() {
     '    // 例：[ { "id": "end_truth", "name": "真相结局", "type": "good",',
     '    //     "desc": "你揭开了全部真相", "locked": true, "priority": 10,',
     '    //     "trigger": { "type": "value", "key": "truth", "op": ">=", "value": 100 },',
+    '    //     "minRound": 2, "requireEvents": [],',
     '    //     "epilogue": "" } ]',
+    '    // minRound（可选）：从第几轮起才允许触发，默认 2 —— 防「开场数值就达标、秒结局」。',
+    '    //   想让结局第 1 轮就能结，显式写 "minRound": 1。',
+    '    // requireEvents（可选）：要求先达成这些事件（填事件 id），默认 []。',
     '',
     '    "npcs": [',
     '      {',
@@ -243,6 +247,11 @@ function part2() {
     '  · 把 mapNodes 每个节点的 tags 填好（公开/隐蔽/危险/安全/神圣/禁忌 等）',
     '  · 引擎会根据这些 tags 让事件在合适的地点漂移',
     '',
+    '★ 后台进程（引擎自带，卡带无需声明）：',
+    '  · 3 条常驻进程 —— 世界自转（每 2 轮评估）/ NPC 主动（每 3 轮）/ 世界压力（每 4 轮），默认开启',
+    '  · 每次按「权重 × 关键词命中 × 冷却」挑 0-1 条，作为世界自己的动向交给 AI 带出',
+    '  · 卡带不用写任何字段；玩家可在设置里整体关闭',
+    '',
   ].join('\n');
 }
 
@@ -282,7 +291,8 @@ function part4() {
     '- worldbook.shops 2-4 个（有商店时，hud 里必须有货币数值项，shops[].currencyId 填它的 key）',
     '- worldbook.events 留空数组 []',
     '- worldbook.storyNodes 留空数组 []（如果做模组可填）',
-    '- worldbook.endings 留空数组 []（如果做结局可填）',
+    '- worldbook.endings 留空数组 []（如果做结局可填；结局默认第 2 轮起才可能触发，',
+    '  想让开局就能结就写 "minRound": 1）',
     '- calendar 不填（用引擎默认节日） / 填 []（这个世界没有节日） / 填自定义节假日',
     '- game.startDate 可选，留空则开场日期随机（避免每次都从 1 月 1 日开始）',
     '',
@@ -483,10 +493,13 @@ function part5() {
     '· 填完整内容 → 卡带指定默认池',
     '',
     'AI 工具（游戏中自动可用）：',
-    '· output_publish({name, type, keywords, audience}) —— 发布产出物',
+    '· output_publish({name, title?, content?, desc?, type?, keywords?, audience?}) —— 发布产出物',
+
     '· output_stir({outputId, npcId, action}) —— 记录一次 NPC 引动（action 自由，npcId 由引擎给候选池）',
     '· output_settle({id, verdict}) —— 主动定论（少见）',
     '· query_outputs() —— 查询发酵中的产出物',
+    '· title/content/desc 会作为产出物的标题/正文/描述；面板里人工提交的产出物要过一轮 AI 审核才纳入剧情',
+
     '',
   ].join('\n');
 }

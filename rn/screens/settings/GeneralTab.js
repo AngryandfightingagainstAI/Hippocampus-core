@@ -279,6 +279,17 @@ function GeneralTab() {
 
       React.createElement(
         Controls.SetCard,
+        { title: '后台进程' },
+        React.createElement(Controls.SetSwitchRow, {
+          label: '启用后台进程',
+          desc: '默认开。开启后引擎每隔几轮按权重挑一条「世界自己在动」的进程交给 AI 带出（卡带可用 worldbook.background.processes 自定义权重与间隔）。',
+          value: gs.backgroundEnabled,
+          onValueChange: function (v) { setState({ backgroundEnabled: v }); }
+        })
+      ),
+
+      React.createElement(
+        Controls.SetCard,
         { title: 'AI 强硬度' },
         React.createElement(
           Controls.SetNote,

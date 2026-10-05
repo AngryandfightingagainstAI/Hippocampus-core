@@ -57,6 +57,73 @@
       const wb = GameState.currentCard.worldbook || {};
       return { ok: true, type: 'query', queryType: 'worldsetting', data: wb.worldSetting || {} };
     }},
+    query_source: { run: function(a) {
+      // P26：导入资料的全文检索。card.game.background 只留开头一段，
+      //   资料全文在原件保管库（ImportVault），这里按关键词或块序号把原文取回来。
+      a = a || {};
+      var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
+      var imp = card && card._import;
+      if (!imp || !imp.importId) return { ok: false, reason: '当前卡带没有导入资料（无 _import.importId）' };
+      if (typeof ImportVault === 'undefined' || !ImportVault || typeof ImportVault.loadImd !== 'function') {
+        return { ok: false, reason: 'ImportVault 不可用（导入层未加载）' };
+      }
+      var imd = null;
+      try { imd = ImportVault.loadImd(imp.importId); } catch (e) { imd = null; }
+      if (!imd || !Array.isArray(imd.blocks)) return { ok: false, reason: '导入资料已不存在（importId=' + imp.importId + '）' };
+      var docs = [], totalChars = 0;
+      for (var i = 0; i < imd.blocks.length; i++) {
+        var b = imd.blocks[i];
+        var t = (b && typeof b.text === 'string') ? b.text : '';
+        if (!t) continue;
+        docs.push({ n: i, type: String((b && b.type) || ''), text: t });
+        totalChars += t.length;
+      }
+      if (!docs.length) return { ok: false, reason: '导入资料里没有可检索的文本块' };
+      var clip = function(s, n) { s = String(s); return s.length > n ? (s.slice(0, n) + '…') : s; };
+      var limit = Math.max(1, Math.min(5, parseInt(a.limit, 10) || 2));
+      var chars = Math.max(60, parseInt(a.chars, 10) || 220);
+      if (limit * chars > 700) chars = Math.max(60, Math.floor(700 / limit));
+      var src = { id: imp.importId, sourceName: imp.sourceName || '', blocks: docs.length, chars: totalChars };
+      if (a.keyword != null && String(a.keyword) !== '') {
+        var kw = String(a.keyword).toLowerCase();
+        var from = parseInt(a.from, 10);
+        if (isNaN(from)) from = -1;
+        var items = [], scanned = 0, more = false;
+        for (var j = 0; j < docs.length; j++) {
+          if (from >= 0 && docs[j].n < from) continue;
+          scanned = j + 1;
+          if (docs[j].text.toLowerCase().indexOf(kw) >= 0) {
+            items.push({ n: docs[j].n, text: clip(docs[j].text, chars) });
+            if (items.length >= limit) {
+              for (var k = j + 1; k < docs.length; k++) {
+                if (docs[k].text.toLowerCase().indexOf(kw) >= 0) { more = true; break; }
+              }
+              break;
+            }
+          }
+        }
+        return { ok: true, type: 'query', queryType: 'source', id: imp.importId,
+          data: { source: src, keyword: a.keyword, scanned: scanned, items: items, more: more,
+            hint: items.length ? (more ? '还有更多命中，带 from = 本页最后一段的 n + 1 继续查' : '命中已列完') : '没找到这个词；换成更短的关键词（只用一个词，别用整句）再试一次' } };
+      }
+      if (a.offset == null && a.index == null) {
+        var heads = [];
+        for (var h = 0; h < docs.length && heads.length < 10; h++) {
+          if (docs[h].type === 'heading') heads.push(docs[h].n + ':' + clip(docs[h].text, 24));
+        }
+        return { ok: true, type: 'query', queryType: 'source', id: imp.importId,
+          data: { source: src, headings: heads,
+            hint: '找内容：query_source({keyword:"词"})；读原文：query_source({offset:块序号, limit:2})' } };
+      }
+      var off = parseInt(a.offset != null ? a.offset : a.index, 10) || 0;
+      if (off < 0) off = 0;
+      var page = docs.slice(off, off + limit).map(function(d) { return { n: d.n, type: d.type, text: clip(d.text, chars) }; });
+      var next = page.length ? (off + page.length) : null;
+      return { ok: true, type: 'query', queryType: 'source', id: imp.importId,
+        data: { source: src, offset: off, items: page,
+          nextOffset: (next != null && next < docs.length) ? next : null,
+          hint: 'nextOffset 为 null 表示已到资料末尾' } };
+    }},
     roll_dice: { run: function(a) {
       const cfg = getDiceConfig();
       if (!cfg.enabled) return { ok: false, reason: '骰子系统未开启' };

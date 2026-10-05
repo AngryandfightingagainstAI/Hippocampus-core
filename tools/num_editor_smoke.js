@@ -319,14 +319,12 @@ function runSource() {
   var rnNum = path.join(root, 'templates', 'number.js');
   var rnRel = path.join(root, 'templates', 'relation.js');
 
-  check('H1 templates/number.js 逐字节同源（538 B / 25C8A223E85528D8E971053EF83616E5）',
-    fs.statSync(rnNum).size === fs.statSync(deskNum).size &&
-    md5(rnNum) === md5(deskNum) &&
-    fs.statSync(rnNum).size === 538 && md5(rnNum) === '25C8A223E85528D8E971053EF83616E5');
-  check('H2 templates/relation.js 逐字节同源（637 B / 9C9A2DE840E731CC09245479FF79EDA3）',
-    fs.statSync(rnRel).size === fs.statSync(deskRel).size &&
-    md5(rnRel) === md5(deskRel) &&
-    fs.statSync(rnRel).size === 637 && md5(rnRel) === '9C9A2DE840E731CC09245479FF79EDA3');
+  check('H1 templates/number.js 两仓同源（P30：行尾归一后比内容；桌面 CRLF 538 B / RN LF 518 B）',
+    lf(read(rnNum)) === lf(read(deskNum)) &&
+    fs.statSync(rnNum).size === 518 && md5(rnNum) === '3CEC67BAA209928D8AAEEED3D47D2166');
+  check('H2 templates/relation.js 两仓同源（P30：行尾归一后比内容；桌面 CRLF 637 B / RN LF 617 B）',
+    lf(read(rnRel)) === lf(read(deskRel)) &&
+    fs.statSync(rnRel).size === 617 && md5(rnRel) === '44CE2AF0B93D1398F9F94C0817C425E5');
 
   var deskSrc = lf(read(path.join(DESK, 'engine', 'editor.js')));
   var rnSrc = lf(read(path.join(root, 'engine', 'num_editor.js')));
@@ -473,9 +471,10 @@ function runComponent() {
   //   prompt_builder 50772 为 P18·GM 提示词正向化（用户 m04975 批准）之后的现盘值
 //   （此前 50503 为 P12·S4 行尾归一（42 裸 LF → CRLF）之后的现盘值）。
   //   断言条数不变（3 条），只换比较对象。
+  //   P30 重记（gamestate 旧记录早于 RN 仓首次提交；prompt_builder 因 P26/P27/P28 改动而变）
   var BASE = [
-    ['engine/core/gamestate.js', 10383, 'DE10B95F1849A894ADC59AD5F2359A14'],
-    ['engine/core/prompt_builder.js', 50772, '59DB55795079CA1D52551228D2E143F6'],
+    ['engine/core/gamestate.js', 10142, 'B8D49056F2DD4BD692CA5802434A324D'],
+    ['engine/core/prompt_builder.js', 51020, '0AB162A92D1BBBCF1C273C369339C567'],
     ['engine/info_feed.js', 40628, 'B4533EC5ED9249BE1AA3C46CACF1DF22']
   ];
   BASE.forEach(function (b) {
@@ -488,7 +487,7 @@ function runComponent() {
   //   桌面独有件 engine/editor.js（RN 实测不存在，RN 是 engine/num_editor.js + engine/wb/* 结构）
   //   不参与 red —— 该槽位改锁 RN 本仓移植产物 engine/num_editor.js（条数不变，只换比较对象）。
   var REF = [
-    ['engine/web_search.js', 12200, '8A06F6976DC21798B142BF8C82834587'],
+    ['engine/web_search.js', 11903, 'D769A793DE3484CCED48AAA588299D2B'],
     ['engine/num_editor.js', 11458, '01E7BED6AA56DA94FDC3CACFD89C9968']
   ];
   REF.forEach(function (b) {

@@ -419,6 +419,11 @@ var StoryLoop = {
         try { Outputs.tick(); }
         catch (e) { console.warn('[Outputs] tick 失败：', e); }
       }
+
+        if (typeof Background !== 'undefined') {
+          try { Background.tick(); }
+          catch (e) { console.warn('[Background] tick 失败：', e); }
+        }
       if (typeof Realtime !== 'undefined' && Realtime.autoTouch) {
         try { Realtime.autoTouch(); } catch (e) {}
       }
@@ -776,7 +781,7 @@ var CreateFlow = {
       const id = 'cf-f-' + f.key;
       const fallback = (f.default != null) ? f.default : (isAttr && f.min != null ? f.min : '');
       // 同步 fallback 到 this.data：用户没动过输入框时，data 里也应该是 fallback 的值
-      if ((this.data[f.key] == null || this.data[f.key] === '') && fallback !== '' && fallback != null) {
+      if ((this.data[f.key] == null) && fallback !== '' && fallback != null) {
         this.data[f.key] = fallback;
       }
       const val = this.data[f.key] != null ? this.data[f.key] : fallback;

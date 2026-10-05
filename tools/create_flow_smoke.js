@@ -228,6 +228,30 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
   eq('A11e 空 data 无条目', CF.summaryEntries(card, {}).length, 0);
 })();
 
+// A12 P23·①：数值输入框「清空不回填默认值」（RG-1「默认值5，删掉5后准备重新输入，5会强制回归」）
+(function () {
+  check('A12a shownValue 已导出（P23 新增）', typeof CF.shownValue === 'function');
+  if (typeof CF.shownValue !== 'function') {
+    check('A12b 显式清空显示空串（不是默认值 5）', false);
+    check('A12c 没填过时仍显示默认值（min=5）', false);
+    check('A12d 没填过时显示 default', false);
+  } else {
+    eq('A12b 显式清空显示空串（不是默认值 5）', CF.shownValue({ key: 'a', min: 5 }, '', true), '');
+    eq('A12c 没填过时仍显示默认值（min=5）', CF.shownValue({ key: 'a', min: 5 }, undefined, true), 5);
+    eq('A12d 没填过时显示 default', CF.shownValue({ key: 'a', default: 7 }, null, false), 7);
+  }
+  var step = { type: 'form', fields: [{ key: 'attr_a', type: 'number', min: 5, max: 20 }] };
+  var cleared = { attr_a: '' };
+  CF.syncDefaults(step, cleared, true);
+  eq('A12e syncDefaults 不回填玩家清空的字段', cleared.attr_a, '');
+  var fresh = {};
+  CF.syncDefaults(step, fresh, true);
+  eq('A12f syncDefaults 仍补没填过的字段', fresh.attr_a, 5);
+  var zero = { attr_a: 0 };
+  CF.syncDefaults(step, zero, true);
+  eq('A12g syncDefaults 不覆盖 0', zero.attr_a, 0);
+})();
+
 // ================= B. 文案逐字（CreateScreen.js 源码）=================
 (function () {
   var src = readSrc('rn/screens/CreateScreen.js') || '';
@@ -245,6 +269,9 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
   check('B12 汇总空态', src.indexOf("'（没有填写任何内容）'") >= 0);
   check('B13 未知步骤类型', src.indexOf("'（未知步骤类型：' + String(step.type) + '）'") >= 0);
   check('B14 不含「本批未支持」', src.indexOf('本批未支持：') < 0);
+  check('B15 数值输入显示值走 CF.shownValue（清空不回填）',
+    src.indexOf('var shown = CF.shownValue(fd, val, isAttr);') >= 0 &&
+    src.indexOf("var shown = (val != null && val !== '') ? val : CF.fieldFallback(fd, isAttr);") < 0);
 })();
 
 // ================= C. S6 输出上限 =================

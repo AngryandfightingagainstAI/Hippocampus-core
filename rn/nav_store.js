@@ -56,10 +56,13 @@ function navigate(screenId) {
   replaceState({ screen: id, stack: state.stack.concat([state.screen]) });
 }
 
+// P33·③：返回布尔给调用方（Android 硬件返回键用）—— 栈空返回 false，交还系统
+// （在主页按返回键＝退出应用）；回退成功返回 true。
 function goBack() {
-  if (!state.stack.length) return;
+  if (!state.stack.length) return false;
   var next = state.stack[state.stack.length - 1];
   replaceState({ screen: next, stack: state.stack.slice(0, -1) });
+  return true;
 }
 
 // Platform.ui.showScreen(id) 的 Electron id 入口；返回实际落到的 RN 屏 id。

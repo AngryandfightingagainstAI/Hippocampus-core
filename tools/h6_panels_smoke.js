@@ -494,5 +494,45 @@ check('F5 UI_Portrait 文件含 generate', upSrc.indexOf('generate') >= 0);
 check('F6 UI_Portrait 挂 globalThis', upSrc.indexOf('globalThis.UI_Portrait') >= 0);
 
 // ============================================================
+
+// ============================================================
+// H. 产出物面板（P27 收尾）：OutputsPanel 文件 + 全接线点 + 引擎接口引用
+//    H-1 文件在盘 / H-2 PanelHost 三处（require + TITLE_MAP + 分派）/
+//    H-3 SidebarDrawer 入口 / H-4 panel_data 导出 / H-5 引擎调用非空壳
+//    + 审核状态文案 / H-6 babel 可编
+// ============================================================
+var opRel = 'rn/panels/OutputsPanel.js';
+var opAbs = path.join(root, opRel);
+var opSrc = fs.existsSync(opAbs) ? fs.readFileSync(opAbs, 'utf8') : '';
+check('H1 文件存在 ' + opRel, fs.existsSync(opAbs));
+
+check('H2 PanelHost require OutputsPanel', phSrc.indexOf("require('../panels/OutputsPanel.js')") >= 0);
+check('H3 TITLE_MAP outputs', phSrc.indexOf("outputs: '产出物'") >= 0);
+check('H4 PanelHost 分派 outputs', phSrc.indexOf("panelId === 'outputs' ? <OutputsPanel") >= 0);
+
+check('H5 SidebarDrawer outputs 入口', sdSrc.indexOf("panelRow('outputs'") >= 0);
+
+var pdSrc = fs.readFileSync(path.join(root, 'rn', 'panels', 'panel_data.js'), 'utf8');
+check('H6 panel_data 定义 computeOutputs', pdSrc.indexOf('function computeOutputs') >= 0);
+check('H7 panel_data 导出 computeOutputs', typeof pd.computeOutputs === 'function');
+
+check('H8 OutputsPanel 引用 Outputs.create', opSrc.indexOf('Outputs.create') >= 0);
+check('H9 OutputsPanel 引用 Outputs.update', opSrc.indexOf('Outputs.update') >= 0);
+check('H10 OutputsPanel 引用 Outputs.review', opSrc.indexOf('Outputs.review') >= 0);
+check('H11 OutputsPanel 引用 Outputs.settle', opSrc.indexOf('Outputs.settle') >= 0);
+check('H12 OutputsPanel 含审核状态文案（待审/已纳入/已驳回 至少两个）',
+  ['待审', '已纳入', '已驳回'].filter(function (s) { return opSrc.indexOf(s) >= 0; }).length >= 2);
+
+try {
+  babel.transformFileSync(path.join(root, opRel), {
+    cwd: root,
+    configFile: path.join(root, 'babel.config.js')
+  });
+  check('H13 babel transform ' + opRel, true);
+} catch (e) {
+  check('H13 babel transform ' + opRel, false);
+  console.log('  ERROR: ' + e.message);
+}
+
 console.log('\nH6_PANELS_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
 process.exit(fail > 0 ? 1 : 0);

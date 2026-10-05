@@ -487,11 +487,15 @@ function CardsScreen() {
           value={matName}
           onChangeText={setMatName}
         />
+        <Text style={styles.sectionOverline}>{'或 从 手 机 选 文 件'}</Text>
+        <Text style={styles.hint}>{'二进制资料（docx / odt / epub / pdf / zip）点这个按钮从手机里挑，挑好后再回到下面的「解析资料」。'}</Text>
         <View style={styles.btnRow}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={doPickMaterialFile} disabled={matBusy}>
-            <Text style={styles.primaryBtnText}>{'选择文件…'}</Text>
+          <TouchableOpacity style={styles.curBtn} onPress={doPickMaterialFile} disabled={matBusy}>
+            <Text style={styles.curBtnText}>{'选择文件…'}</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.divider} />
+        <Text style={styles.sectionOverline}>{'解 析 与 落 库'}</Text>
         <View style={styles.btnRow}>
           <TouchableOpacity style={styles.primaryBtn} onPress={doParseMaterial}>
             <Text style={styles.primaryBtnText}>{'解析资料'}</Text>
