@@ -604,7 +604,8 @@ function computeOutputs() {
         fate: o.fate || 'fermenting',
         progress: (typeof o.progress === 'number') ? o.progress : 0,
         type: o.type || '',
-        reason: review.reason || ''
+        reason: review.reason || '',
+        raw: review.raw || ''
       });
     }
     return {

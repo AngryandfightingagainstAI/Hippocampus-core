@@ -238,8 +238,130 @@ function runInject() {
     includes('O-7f 协议行声明了 title?/content?/desc?', proto, 'title?, content?, desc?');
     includes('O-7g 协议段说明面板送审与「审核通过即素材」', pb, '产出物正文：');
 
-    console.log('');
-    console.log('OUTPUTS_REVIEW_SMOKE: ' + okN + ' ok, ' + failN + ' failed');
-    if (failN > 0) process.exit(1);
+    // ============ O-8 审核解析鲁棒化 + 判据跟卡带走（P39）============
+    return section8().then(section9).then(function () {
+      console.log('');
+      console.log('OUTPUTS_REVIEW_SMOKE: ' + okN + ' ok, ' + failN + ' failed');
+      if (failN > 0) process.exit(1);
+    });
   });
+}
+
+// ============================================================
+// O-8 段（P39 加固）：真机报「AI 回复无法解析为裁决」——模型经常
+//   （a）用中文裁决词（b）在 JSON 字符串里塞裸换行（c）revise 的长正文写超
+//   max_tokens 被截断（d）在 JSON 前后继续解释。旧解析只做「去围栏 + 取第一个 {
+//   到最后一个 }」+ JSON.parse，这些全都判成「无法解析」。
+// ============================================================
+function section8() {
+  section('O-8 审核解析鲁棒化（P39）');
+  function P(t) {
+    try { return Outputs.parseReviewVerdict(t) || {}; } catch (e) { return { ok: false, err: String(e && e.message) }; }
+  }
+
+  var pCn = P('{"verdict":"纳入","reason":"与设定一致"}');
+  ok('O-8a 中文裁决词「纳入」归一化为 include', !!(pCn.ok && pCn.verdict === 'include'), JSON.stringify(pCn));
+  var pCn2 = P('{"verdict":"修改后纳入","reason":"措辞要改"}');
+  ok('O-8b 中文裁决词「修改后纳入」归一化为 revise', !!(pCn2.ok && pCn2.verdict === 'revise'), JSON.stringify(pCn2));
+  var pCn3 = P('{"verdict":"驳回","reason":"与设定冲突"}');
+  ok('O-8c 中文裁决词「驳回」归一化为 reject', !!(pCn3.ok && pCn3.verdict === 'reject'), JSON.stringify(pCn3));
+
+  var rawNl = '{"verdict":"revise","reason":"要分行","title":"新标题","content":"第一行\n第二行","desc":""}';
+  var pNl = P(rawNl);
+  ok('O-8d 字符串里裸换行也能解析（内容按换行还原）',
+    !!(pNl.ok && pNl.verdict === 'revise' && String(pNl.content).indexOf('第一行') >= 0), JSON.stringify(pNl).slice(0, 200));
+
+  var cut = '{"verdict":"revise","reason":"措辞与设定冲突","title":"夜禁令","content":"入夜后钟楼三里内禁止通行';
+  var pCut = P(cut);
+  ok('O-8e 被 max_tokens 截断的 JSON 仍能抢救出裁决', !!(pCut.ok && pCut.verdict === 'revise'), JSON.stringify(pCut).slice(0, 200));
+  ok('O-8f 截断 JSON 抢救出原因与标题', !!(/冲突/.test(String(pCut.reason)) && pCut.title === '夜禁令'), JSON.stringify({ r: pCut.reason, t: pCut.title }));
+
+  var chatty = '好的，我的判断如下：\n```json\n{"verdict":"include","reason":"可以"}\n```\n（说明：上面 JSON 的 } 就是结束）';
+  var pCh = P(chatty);
+  ok('O-8g 围栏 + 前后闲聊 + 尾随花括号仍能解析', !!(pCh.ok && pCh.verdict === 'include'), JSON.stringify(pCh).slice(0, 200));
+
+  var nested = P('{"review":{"verdict":"include","reason":"嵌套也认"}}');
+  ok('O-8h 嵌套形态 {"review":{...}} 也能解析', !!(nested.ok && nested.verdict === 'include'), JSON.stringify(nested).slice(0, 200));
+
+  var src = fs.readFileSync(path.join(ROOT, 'engine', 'outputs.js'), 'utf8');
+  ok('O-8i 源码：有中文裁决词归一化', /_normalizeVerdict/.test(src));
+  ok('O-8j 源码：有字符串感知的括号扫描', /_firstJsonObject/.test(src));
+  ok('O-8k 源码：有手动裁决出口 force()', /force: function\(id, state, reason\)/.test(src));
+
+  fresh();
+  var c = Outputs.create({ name: '重试案', content: '内容', fromPanel: true });
+  var calls = 0;
+  var seq = [];
+  var chat = function (msgs, opts) {
+    calls++;
+    seq.push({ msgs: msgs, opts: opts });
+    return Promise.resolve({ content: calls === 1 ? '我觉得还行' : '{"verdict":"include","reason":"第二次成了"}' });
+  };
+  return rev(c.id, { chat: chat }).then(function (r) {
+    ok('O-8l 第一次解析失败会自动重试一次并成功', !!(r.ok === true && r.verdict === 'include'), JSON.stringify(r));
+    ok('O-8m 确实调用了两次模型', calls === 2, 'calls=' + calls);
+    ok('O-8n 第二次把上次回复回灌并强调「只回 JSON」',
+      !!(seq[1] && JSON.stringify(seq[1].msgs).indexOf('只') >= 0 && JSON.stringify(seq[1].msgs).indexOf('我觉得还行') >= 0));
+    var o1 = (seq[0] && seq[0].opts) || {};
+    ok('O-8o 送审参数：jsonMode=true 且 max_tokens >= 1200', !!(o1.jsonMode === true && Number(o1.max_tokens) >= 1200), JSON.stringify(o1));
+    ok('O-8p 状态置 included 且原因来自第二次回复',
+      !!(stateOf(c.id) === 'included' && /第二次成了/.test(String(get(c.id).review.reason))), stateOf(c.id));
+
+    var c2 = Outputs.create({ name: '全坏案', content: 'x', fromPanel: true });
+    return rev(c2.id, { chat: function () { return Promise.resolve({ content: '不知道' }); } }).then(function (r2) {
+      var o2 = get(c2.id);
+      ok('O-8q 两次都失败：返回失败', r2.ok === false, JSON.stringify(r2));
+      ok('O-8r 两次都失败：状态仍 pending', stateOf(c2.id) === 'pending', stateOf(c2.id));
+      ok('O-8s 两次都失败：AI 原话落进 review.raw（面板能显示）',
+        !!(o2.review && String(o2.review.raw || '').indexOf('不知道') >= 0), JSON.stringify(o2.review && o2.review.raw));
+
+      var f1 = (typeof Outputs.force === 'function') ? Outputs.force(c2.id, 'included', '我自己说了算') : { ok: false, reason: 'force 未实现' };
+      ok('O-8t force(id,"included") 手动纳入生效', !!(f1.ok === true && stateOf(c2.id) === 'included'), JSON.stringify(f1));
+      var f2 = (typeof Outputs.force === 'function') ? Outputs.force(c2.id, '驳回') : { ok: false };
+      ok('O-8u force 接受中文状态词', !!(f2.ok === true && stateOf(c2.id) === 'rejected'), JSON.stringify(f2));
+      var f3 = (typeof Outputs.force === 'function') ? Outputs.force(c2.id, '不存在态') : { ok: false };
+      ok('O-8v force 拒绝不认识的状态', f3.ok === false, JSON.stringify(f3));
+
+      GameState.currentCard.worldbook = {
+        outputs: { types: ['器物', '政令'], audiences: ['城中百姓'], fermentInterval: 'season', settleRules: { when: { type: 'progress-full' } } },
+        npcs: [{ id: 'npc_a', name: '打更人' }],
+        locations: [{ id: 'loc_a', name: '钟楼' }]
+      };
+      var c3 = Outputs.create({ name: '判据案', content: '内容', fromPanel: true });
+      var prompt = String(Outputs.buildReviewPrompt(get(c3.id)) || '');
+      includes('O-8w 提示词带上卡带的产出物类型', prompt, '器物');
+      includes('O-8x 提示词带上卡带预置受众', prompt, '城中百姓');
+      includes('O-8y 提示词带上定论条件', prompt, 'progress');
+      includes('O-8z 提示词带上卡带里已有的事物（世界书条目）', prompt, '打更人');
+      includes('O-8aa 提示词带上当前游戏时间', prompt, '第1天');
+      return null;
+    });
+  }).then(function () { return null; }).catch(function (e) {
+    ok('O-8 段异常：' + (e && e.message), false);
+    return null;
+  });
+}
+
+// ============ O-9 面板出口（P39：手动纳入 / 手动驳回 / AI 原话） ============
+function section9() {
+  section('O-9 面板出口（手动纳入/驳回 + AI 原话）');
+  var isRN = fs.existsSync(path.join(ROOT, 'rn', 'panels', 'OutputsPanel.js'));
+  if (isRN) {
+    var panel = fs.readFileSync(path.join(ROOT, 'rn', 'panels', 'OutputsPanel.js'), 'utf8');
+    includes('O-9a 手机面板有 onForce（不依赖 AI 的手动裁决）', panel, 'function onForce');
+    includes('O-9b 手机面板有「手动纳入」按钮', panel, '手动纳入');
+    includes('O-9c 手机面板有「手动驳回」按钮', panel, '手动驳回');
+    includes('O-9d 手机面板显示 AI 原话（o.raw）', panel, 'o.raw');
+    ok('O-9e 手机面板按钮行允许换行（窄屏不再挤掉按钮）', /btnRow: \{[^}]*flexWrap/.test(panel), (panel.match(/btnRow: \{[^}]*\}/) || [''])[0]);
+    var pd = fs.readFileSync(path.join(ROOT, 'rn', 'panels', 'panel_data.js'), 'utf8');
+    includes('O-9f computeOutputs 暴露 review.raw', pd, 'raw: review.raw');
+  } else {
+    var ui = fs.readFileSync(path.join(ROOT, 'engine', 'ui_core.js'), 'utf8');
+    includes('O-9a 桌面有 UI.outputsForce', ui, 'outputsForce(');
+    includes('O-9b 桌面有「手动纳入」按钮', ui, '手动纳入');
+    includes('O-9c 桌面有「手动驳回」按钮', ui, '手动驳回');
+    includes('O-9d 桌面显示 AI 原话（o.review.raw）', ui, 'o.review.raw');
+    includes('O-9e 桌面失败提示指向手动出口', ui, '手动纳入 / 手动驳回');
+  }
+  return Promise.resolve();
 }

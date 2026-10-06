@@ -116,7 +116,7 @@ function OutputsPanel(props) {
       color: c.text, fontSize: f.sm
     },
     inputArea: { minHeight: 64, textAlignVertical: 'top' },
-    btnRow: { flexDirection: 'row', marginTop: 10 },
+    btnRow: { flexDirection: 'row', marginTop: 10, flexWrap: 'wrap', gap: 8 },
     btn: {
       flex: 1, paddingVertical: 8, borderRadius: tk.radius.sm || 4,
       alignItems: 'center', justifyContent: 'center', marginRight: 8
@@ -224,6 +224,26 @@ function OutputsPanel(props) {
     }
   }
 
+  // ⑤b P39：不依赖 AI 的手动裁决（AI 判得不合意 / 审核解析失败时的出口）
+  function onForce(o, state) {
+    try {
+      if (typeof Outputs.force !== 'function') {
+        StoryStore.pushToast('引擎不支持手动裁决（需要 P39 引擎）', { type: 'error' });
+        return;
+      }
+      var r = Outputs.force(o.id, state, '手动裁决');
+      if (r && r.ok) {
+        var w = r.state === 'included' ? '已纳入' : (r.state === 'revised' ? '已按修改纳入' : (r.state === 'rejected' ? '已驳回' : '已置待审'));
+        StoryStore.pushToast('手动裁决：《' + (o.title || o.name || '') + '》' + w, { type: 'success' });
+      } else {
+        StoryStore.pushToast('手动裁决失败：' + ((r && r.reason) || '未知原因'), { type: 'error' });
+      }
+    } catch (e) {
+      StoryStore.pushToast('手动裁决异常：' + (e && e.message || e), { type: 'error' });
+    }
+    refresh();
+  }
+
   // ⑥ 定论（不可逆 → 二次确认）
   function onSettle(o) {
     var name = o.title || o.name || '';
@@ -314,6 +334,7 @@ function OutputsPanel(props) {
             {o.desc ? <Text style={styles.desc}>{o.desc}</Text> : null}
             {o.content ? <Text style={styles.content}>{truncate(o.content, 200)}</Text> : null}
             {o.reason ? <Text style={styles.reason}>{'审核意见：' + o.reason}</Text> : null}
+            {o.raw ? <Text style={styles.reason}>{'AI 原话：' + truncate(o.raw, 200)}</Text> : null}
             <Text style={styles.progress}>{'发酵进度 ' + String(o.progress || 0)}</Text>
 
             {editing ? (
@@ -381,6 +402,20 @@ function OutputsPanel(props) {
                   onPress={function () { onSettle(o); }}
                 >
                   <Text style={styles.btnTextLight}>{'定论'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnGhost]}
+                  activeOpacity={0.7}
+                  onPress={function () { onForce(o, 'included'); }}
+                >
+                  <Text style={styles.btnTextGhost}>{'手动纳入'}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.btn, styles.btnGhost]}
+                  activeOpacity={0.7}
+                  onPress={function () { onForce(o, 'rejected'); }}
+                >
+                  <Text style={styles.btnTextGhost}>{'手动驳回'}</Text>
                 </TouchableOpacity>
               </View>
             )}
