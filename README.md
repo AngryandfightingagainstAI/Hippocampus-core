@@ -7,14 +7,29 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：26 套 RN smoke 共 2061 条断言全绿；桌面版另有 14 项预检 + 38 套回归
+- **测试**：36 套 RN smoke 共 2474 条断言全绿；桌面版另有 14 项预检 + 47 套回归
+- **版本**：1.2.0（本仓 `package.json` 与 `android/app/build.gradle` 的 `versionName` 同步为 1.2.0，`versionCode` 10200，已真机装机复核）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
 
 ---
 
-## 目录
+## 手机直接下载安装（不用电脑）
 
+**👉 [点这里下载最新 APK](https://github.com/AngryandfightingagainstAI/Hippocampus-core/releases/latest)**（当前 `v1.2.0`，62.95 MB，Android 7.0+）
+
+1. 手机点开上面的链接，下载 `HippocampusRN-1.2.0-release-universal-p49.apk`。
+2. 点开安装（首次要在系统里允许「安装未知来源应用 / 来自此来源的应用」）。
+3. 打开 App → 设置里填**你自己的**模型 API key（OpenAI / DeepSeek / Gemini / 通义 等任意兼容接口）。
+4. 首屏「导入卡带」粘贴或选择卡带 JSON，也可以直接用内置示例卡带先跑一把 → 开始叙事。
+
+> 每个 Release 都会写明版本号（`versionName` / `versionCode`）与 APK 的 SHA256，可以自行核对。
+> 只想玩的话到这里就够了；下面的「快速开始 / 打包 APK / 跑测试」是**开发者**从源码跑起来和编译的步骤，需要电脑。
+
+---
+
+
+- [手机直接下载安装（不用电脑）](#手机直接下载安装不用电脑)
 - [它是什么](#它是什么)
 - [截图](#截图)
 - [功能清单](#功能清单)
@@ -71,8 +86,8 @@
 
 ### 工具调用（AI 能改世界的唯一通道）
 
-- 同步白名单 15 项：`modify_hud`、`modify_sidebar`、`modify_entry`、`modify_relation`、`add_item`、`remove_item`、`query_player`、`query_npc`、`query_faction`、`query_map`、`query_worldsetting`、`roll_dice`、`roll_check`、`roll_opposed`、`web_search`。
-- 另有 62 项由各 `engine/` 模块注册（与内置 15 项合计 **77 项**）：`open_shop`/`buy_item`/`sell_item`、`trigger_event`、`add_task`/`complete_task`、成就、结局、剧情节点、`propose_change`、`info_send`/`info_broadcast`/`info_read`/`info_promote`、立绘等。**全部在模块加载时同步挂上，没有启动空窗**——以前这批工具是 `setTimeout` 错峰注册的，冷启动头两秒 AI 调用它们会被判「未知工具」。
+- 同步白名单 18 项：`modify_hud`、`modify_sidebar`、`modify_entry`、`modify_relation`、`add_item`、`remove_item`、`query_player`、`query_npc`、`query_faction`、`query_map`、`query_worldsetting`、`roll_dice`、`roll_check`、`roll_opposed`、`web_search`、`set_location`、`list_destinations`。
+- 另有 62 项由各 `engine/` 模块注册（与内置 18 项合计 **80 项**）：`open_shop`/`buy_item`/`sell_item`、`trigger_event`、`add_task`/`complete_task`、成就、结局、剧情节点、`propose_change`、`info_send`/`info_broadcast`/`info_read`/`info_promote`、立绘等。**全部在模块加载时同步挂上，没有启动空窗**——以前这批工具是 `setTimeout` 错峰注册的，冷启动头两秒 AI 调用它们会被判「未知工具」。
 - **超长工具块保护**：单个工具块超过 12000 字符时**保留原文但不执行**，并在叙事流给出可见信号，避免截断造成状态错乱。
 - **查询结果结构化截断**：`query_*` 回显超过 800 字符时摘关键字段；`query_player` 回显剔除立绘与开场提示词。
 
@@ -115,7 +130,8 @@
 
 ---
 
-## 快速开始
+> ⚠️ 下面「快速开始 / 打包 APK」是**开发者**用的（需要电脑 + Node 22 / JDK 17 / Android SDK）。只想在手机上玩，请看最上面的「[手机直接下载安装（不用电脑）](#手机直接下载安装不用电脑)」。
+
 
 ### 环境要求
 
