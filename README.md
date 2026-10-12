@@ -195,7 +195,11 @@ node tools/settings_smoke.js
 node tools/longline_token_smoke.js
 ```
 
-当前基线：**37 套 / 2502 ok / 0 failed**。
+当前基线：**37 套 / 2502 ok / 0 failed**（两仓同在的本机环境）。
+
+CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：
+CI 里看不到桌面仓，于是 10 条跨仓同源断言自动降级为 SKIP —— CI 实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**，
+本机两仓同在时是 2502 ok / 0 failed / `TOTAL_SKIP=0`。降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 
 > ⚠️ 必须在仓库根目录下跑（部分套件对 `cwd` 敏感）。
 

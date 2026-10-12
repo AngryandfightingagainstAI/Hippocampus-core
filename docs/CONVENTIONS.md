@@ -363,6 +363,8 @@ node tools\import_smoke.js                # 导入层（与 RN 同源，130 条�
 - **CI**：`.github/workflows/smoke.yml` —— `main` push / PR / 手动触发，Node 22，
   `npm ci --ignore-scripts --no-audit --no-fund` 之后跑 `node tools/run_all_smokes.js`（37 套）。
   桌面仓**暂不接 CI**（19 套 e2e 需要 Electron + 显示），发布前在本机跑 `node tools/run_batch.js` 全量。
+  跨仓断言在**单仓环境**（CI 只有手机仓）下自动降级为 SKIP，汇总行输出 `TOTAL_SKIP=`：
+  CI 实测 **10 条 SKIP / 2485 ok / 0 failed**；本机两仓同在时 `TOTAL_SKIP=0` / 2502 ok。
 - **文档数字**：README / 本文件 / `tools/README.md` 里的套数、断言数、同源三桶计数都由
   桌面 `tests/unit/test_p53_license_docs.js` 现算比对；改数字必须连同文档一起改，否则批跑红。
 
