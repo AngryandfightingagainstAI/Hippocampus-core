@@ -18,9 +18,36 @@ var CardValidator = {
     if (!Array.isArray(card.attributes)) return { ok: false, msg: 'attributes 必须是数组' };
     const nums = card.panels.map(p => p.num).sort();
     for (const n of [2,3,4,5]) if (!nums.includes(n)) return { ok: false, msg: 'panels 缺少 num=' + n };
+    // P43：兼容字段归一（顶层 npcs → worldbook.npcs），只报 warnings，不拦导入
+    const moved = this.normalizeCard(card);
     // P24·④：结局「开局即满足」静态自查（只报 warnings，不拦导入）
     const warnings = this.auditEndingsAtStart(card);
+    for (const m of moved) warnings.push(m);
     return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
+  },
+
+  // ============ P43 · 兼容字段归一（让文档承诺成真） ============
+  // 模板承诺（ui_cards.js / rn/instruction_templates.js「兼容 / 保留字段」段）：
+  //   「只有 worldbook.npcs 缺失时，引擎才读顶层 npcs。」
+  // 实际：运行期读取口全是 wb.npcs（npc_runtime.js:337 等 14 处），只有卡片编辑器 editor.js:36 读 card.npcs
+  //   ⇒ 只写顶层 npcs 的卡带「编辑器里看得到人物，游戏里一个都没有」，且不报错。
+  // 修法：在 validate() 里统一并入（validate 是两仓所有导入路径的必经点）+ gamestate.loadFromSave 对老存档同样处理。
+  normalizeCard(card) {
+    const moved = [];
+    if (!card || typeof card !== 'object') return moved;
+    const wb = (card.worldbook && typeof card.worldbook === 'object' && !Array.isArray(card.worldbook)) ? card.worldbook : null;
+    const top = Array.isArray(card.npcs) ? card.npcs : null;
+    const note = '兼容字段：顶层 npcs（' + (top ? top.length : 0) + ' 个）已并入 worldbook.npcs —— 运行期只读 worldbook.npcs，顶层写法在游戏里不生效';
+    if (top && top.length) {
+      if (!wb) { card.worldbook = { npcs: top.slice() }; moved.push(note); }
+      else if (!Array.isArray(wb.npcs) || wb.npcs.length === 0) { wb.npcs = top.slice(); moved.push(note); }
+    }
+    if (wb) {
+      if (!Array.isArray(wb.npcs)) wb.npcs = [];
+      if (!Array.isArray(wb.events)) wb.events = [];
+      if (!Array.isArray(wb.storyNodes)) wb.storyNodes = [];
+    }
+    return moved;
   },
 
   // ============ P24·④ 结局「开局即满足」自查 ============

@@ -34,6 +34,8 @@ var ScrollView = RN.ScrollView;
 var Pressable = RN.Pressable;
 
 var useTheme = require('../../use_theme.js').useTheme;
+// P42（用户 m09047）：多行输入跟着内容长高（不再写死 4 行高、长文看不到前后）
+var AutoInput = require('../AutoInput.js').AutoInput;
 
 // ------------------------------------------------------------
 // hooks 前置：每个控件独立取 tokens（无全局样式表，页面级 useMemo
@@ -397,6 +399,33 @@ function SetTextInput(props) {
   var c = tk.colors;
   var f = tk.fontSizes;
   var lines = props.multiline ? (props.rows || 4) : 1;
+  var lineH = Math.round(f.sm * 1.7);
+  var style = {
+    borderWidth: 1,
+    borderColor: c.hairStrong,
+    borderRadius: tk.radius.sm,
+    paddingHorizontal: 12,
+    paddingTop: props.multiline ? 8 : 0,
+    paddingBottom: props.multiline ? 8 : 0,
+    minHeight: props.multiline ? lineH * lines + 16 : 38,
+    fontSize: f.sm,
+    color: c.text,
+    backgroundColor: c.bg
+  };
+  // P42：多行框 1~12 行跟内容长高，超过才在框内滚
+  if (props.multiline) {
+    return React.createElement(AutoInput, {
+      style: style,
+      value: props.value,
+      onChangeText: props.onChangeText,
+      placeholder: props.placeholder || '',
+      placeholderTextColor: c.faint,
+      minLines: lines,
+      maxLines: props.maxLines || 12,
+      lineHeight: lineH,
+      paddingV: 8
+    });
+  }
   return React.createElement(
     TextInput,
     {
@@ -405,21 +434,10 @@ function SetTextInput(props) {
       placeholder: props.placeholder || '',
       placeholderTextColor: c.faint,
       secureTextEntry: !!props.secure,
-      multiline: !!props.multiline,
-      numberOfLines: lines,
-      textAlignVertical: props.multiline ? 'top' : 'center',
-      style: {
-        borderWidth: 1,
-        borderColor: c.hairStrong,
-        borderRadius: tk.radius.sm,
-        paddingHorizontal: 12,
-        paddingTop: props.multiline ? 8 : 0,
-        paddingBottom: props.multiline ? 8 : 0,
-        minHeight: props.multiline ? Math.round(f.sm * 1.7) * lines + 16 : 38,
-        fontSize: f.sm,
-        color: c.text,
-        backgroundColor: c.bg
-      }
+      multiline: false,
+      numberOfLines: 1,
+      textAlignVertical: 'center',
+      style: style
     }
   );
 }

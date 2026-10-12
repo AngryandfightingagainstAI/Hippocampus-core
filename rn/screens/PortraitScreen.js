@@ -2,8 +2,9 @@
 // H6 G9 · 人设屏（B 类，RN 组件）
 // RN 独有。承载 UI_Portrait 的 RN 侧交互：
 //   - TextInput 让用户手填人设总述（或编辑 AI 生成结果）
-//   - 「让 AI 生成」→ Portrait.buildPrompt + ApiManager.getActive +
-//     ApiClient.chat + Portrait.parseResponse
+//   - 「让 AI 生成」→ ApiManager.getActive + UI_Portrait.generate（两阶段审核：
+//     先 audit 后 generate；conflict 阻断确认，concern 提示后放行）
+//   - P47·1：讨论发送 → UI_Portrait.sendAndGenerate（同两阶段）
 //   - 「确认」→ Portrait.save + UI_Portrait.complete（回叙事页 + appendHint）
 //   - 「跳过」→ UI_Portrait.skip（Portrait.fallback 兜底）
 //   - 「取消」→ UI_Portrait.cancel（回叙事页，不写档）
@@ -76,6 +77,12 @@ function PortraitScreen() {
   var portrait = portraitState[0];
   var setPortrait = portraitState[1];
 
+  // P47·1.4：最近一次审核结果（{ verdict, issues, comment } | null）
+  //   conflict → onConfirm 阻断；concern → 展示建议但放行；ok → 正常
+  var auditState = React.useState(null);
+  var audit = auditState[0];
+  var setAudit = auditState[1];
+
   var busyState = React.useState(false);
   var busy = busyState[0];
   var setBusy = busyState[1];
@@ -95,45 +102,61 @@ function PortraitScreen() {
     });
   }
 
-  // 让 AI 生成：buildPrompt + ApiManager.getActive + ApiClient.chat + parseResponse
+  // P47·1.2/1.3：两阶段审核结果的统一处理
+  //   result = { audit, portrait }
+  //   conflict → 讨论区列出问题、不填 portrait、阻断确认
+  //   concern  → 讨论区列出建议 + 填 portrait（允许确认）
+  //   ok       → 直接填 portrait
+  function handleGenResult(result) {
+    if (!result) { setBusy(false); return; }
+    var a = result.audit;
+    var p = result.portrait;
+    setAudit(a || null);
+    if (a && a.verdict === 'conflict') {
+      var issueText = '⚠️ 人设存在以下问题，请先与 AI 沟通修改：\n';
+      (a.issues || []).forEach(function (iss) {
+        issueText += '· [' + iss.field + '] ' + iss.reason + (iss.suggestion ? '\n  → 建议：' + iss.suggestion : '') + '\n';
+      });
+      appendMsg('ai', issueText);
+      setErr('人设存在冲突，请先沟通修改后再确认。');
+      setBusy(false);
+      return; // conflict → 不填 portrait
+    }
+    if (a && a.verdict === 'concern' && a.issues && a.issues.length) {
+      var concernText = '人设基本合理，但有以下小建议：\n';
+      a.issues.forEach(function (iss) {
+        concernText += '· [' + iss.field + '] ' + iss.reason + '\n';
+      });
+      appendMsg('ai', concernText);
+    }
+    if (p) {
+      setPortrait(p);
+      setText(String(p.summary || ''));
+      appendMsg('ai', '已生成人设总述，可以在下方直接修改。\n\n' + String(p.summary || ''));
+    }
+    setBusy(false);
+  }
+
+  // 让 AI 生成（P47·1.2：改走 UI_Portrait.generate 两阶段审核）
   function onGenerate() {
     if (busy) return;
     setBusy(true);
     setErr('');
-    try {
-      var playerData = UI_Portrait.getPlayerData();
-      var profile = ApiManager.getActive();
-      if (!profile) {
-        failToast('请先在设置 → AI 添加并启用一个 API 配置。');
-        setBusy(false);
-        return;
-      }
-      var prompt = Portrait.buildPrompt(playerData, []);
-      var messages = [{ role: 'user', content: prompt }];
-      ApiClient.chat(messages, { jsonMode: true })
-        .then(function (raw) {
-          var p = Portrait.parseResponse(raw);
-          if (!p) {
-            failToast('AI 返回的人设无法解析，请重试或直接手填。');
-            setBusy(false);
-            return;
-          }
-          setPortrait(p);
-          setText(String(p.summary || ''));
-          appendMsg('ai', '已生成人设总述，可以在下方直接修改。\n\n' + String(p.summary || ''));
-          setBusy(false);
-        })
-        .catch(function (e) {
-          failToast('生成失败：' + (e && e.message ? e.message : String(e)));
-          setBusy(false);
-        });
-    } catch (e) {
-      failToast('生成失败：' + (e && e.message ? e.message : String(e)));
+    var profile = ApiManager.getActive();
+    if (!profile) {
+      failToast('请先在设置 → AI 添加并启用一个 API 配置。');
       setBusy(false);
+      return;
     }
+    UI_Portrait.generate()
+      .then(handleGenResult)
+      .catch(function (e) {
+        failToast('生成失败：' + (e && e.message ? e.message : String(e)));
+        setBusy(false);
+      });
   }
 
-  // P10·A5 · 讨论发送：多轮迭代（桌面 ui_portrait.js send():141-162 同链）
+  // P10·A5 · 讨论发送：多轮迭代（P47·1.3：改走 UI_Portrait.sendAndGenerate 两阶段审核）
   function onSend() {
     if (busy) return;
     var t = String(discInput || '').trim();
@@ -142,35 +165,29 @@ function PortraitScreen() {
     appendMsg('user', t);
     setBusy(true);
     setErr('');
-    try {
-      var profile = ApiManager.getActive();
-      if (!profile) {
-        failToast('请先在设置 → AI 添加并启用一个 API 配置。');
-        setBusy(false);
-        return;
-      }
-      UI_Portrait.sendAndGenerate(t)
-        .then(function (p) {
-          if (!p) { setBusy(false); return; }
-          setPortrait(p);
-          setText(String(p.summary || ''));
-          appendMsg('ai', '已生成人设总述，可以在下方直接修改。\n\n' + String(p.summary || ''));
-          setBusy(false);
-        })
-        .catch(function (e) {
-          appendMsg('ai', '（出错：' + (e && e.message ? e.message : String(e)) + '）');
-          failToast('生成失败：' + (e && e.message ? e.message : String(e)));
-          setBusy(false);
-        });
-    } catch (e) {
-      failToast('生成失败：' + (e && e.message ? e.message : String(e)));
+    var profile = ApiManager.getActive();
+    if (!profile) {
+      failToast('请先在设置 → AI 添加并启用一个 API 配置。');
       setBusy(false);
+      return;
     }
+    UI_Portrait.sendAndGenerate(t)
+      .then(handleGenResult)
+      .catch(function (e) {
+        appendMsg('ai', '（出错：' + (e && e.message ? e.message : String(e)) + '）');
+        failToast('生成失败：' + (e && e.message ? e.message : String(e)));
+        setBusy(false);
+      });
   }
 
   // 确认：用 AI 生成的 portrait，或手填文本构造；Portrait.save + complete
   function onConfirm() {
     if (busy) return;
+    // P47·1.4：审核 conflict 时阻断确认（先沟通修改）
+    if (audit && audit.verdict === 'conflict') {
+      failToast('人设存在冲突，请先在讨论区与 AI 沟通修改后再确认。');
+      return;
+    }
     var p = portrait;
     var trimmed = String(text || '').trim();
     if (!p) {
@@ -233,6 +250,14 @@ function PortraitScreen() {
         minHeight: 120, textAlignVertical: 'top'
       },
       err: { fontSize: f.sm, color: c.danger, marginBottom: 10 },
+      // P47·1.4：审核状态块（颜色走 tokens，无字面量色值字号）
+      auditBox: {
+        borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
+        backgroundColor: c.panel, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 12
+      },
+      auditTitle: { fontSize: f.sm, color: c.ink, fontWeight: '600', marginBottom: 4 },
+      auditBody: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.7), marginBottom: 4 },
+      auditIssue: { fontSize: f.xs, color: c.danger, lineHeight: Math.round(f.xs * 1.7) },
       // P10·A5：讨论区 / 输入行 / 开场白（样式走 tokens，无字面量色值字号）
       discBox: {
         borderWidth: 1, borderColor: c.hair, borderRadius: tk.radius.sm,
@@ -326,6 +351,25 @@ function PortraitScreen() {
             <Text style={styles.sendBtnText}>{'发送'}</Text>
           </TouchableOpacity>
         </View>
+
+        {/* P47·1.4：当前审核状态（conflict 红 / concern 提示 / ok 通过） */}
+        {audit ? (
+          <View style={styles.auditBox}>
+            <Text style={styles.auditTitle}>
+              {audit.verdict === 'conflict'
+                ? '⚠️ 审核未通过：人设存在冲突'
+                : (audit.verdict === 'concern' ? '审核通过（有建议）' : '✓ 审核通过')}
+            </Text>
+            {audit.comment ? <Text style={styles.auditBody}>{String(audit.comment)}</Text> : null}
+            {(audit.issues && audit.issues.length) ? audit.issues.map(function (iss, i) {
+              return (
+                <Text key={'au' + i} style={styles.auditIssue}>
+                  {'· [' + iss.field + '] ' + iss.reason}
+                </Text>
+              );
+            }) : null}
+          </View>
+        ) : null}
 
         <Text style={styles.fieldLabel}>{'人设总述'}</Text>
         <TextInput

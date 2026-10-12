@@ -159,5 +159,185 @@ check('U-6d 解析 / AI 补全 / 落库三按钮仍在',
   cards.indexOf("'解析资料'") >= 0 && cards.indexOf("'让 AI 补全'") >= 0 &&
   cards.indexOf("'落库为卡带'") >= 0);
 
+// ============================================================
+// ⑦ P42·输入体验（用户 m09047）
+//   ① 打字时看不到自己在打什么：键盘盖住输入条 + 输入框不长高
+//   ② 内容太长时卡带页滑不动：多行框吃掉竖直拖动
+//   ③ 其他输入过长「一条到底」：没有扩充 / 回缩
+// ============================================================
+section('U-7 输入框自动增高与键盘避让（⑦）');
+var metricsPath = path.join(root, 'rn', 'ui_input_metrics.js');
+check('U-7a 度量模块存在（纯 JS，可被本守卫直接 require）', fs.existsSync(metricsPath));
+var M = require(metricsPath);
+eq('U-7b 低于下限抬到下限', M.clampHeight(10, 40, 200).height, 40);
+eq('U-7c 区间内跟内容走', M.clampHeight(88, 40, 200).height, 88);
+eq('U-7d 超上限夹到上限并标记 clipped', M.clampHeight(900, 40, 200).height, 200);
+eq('U-7e 超上限时 clipped=true（交给输入框自己滚）', M.clampHeight(900, 40, 200).clipped, true);
+eq('U-7f 未超上限 clipped=false（手势留给外层滚动）', M.clampHeight(88, 40, 200).clipped, false);
+eq('U-7g 上限小于下限时按上限=下限夹（不反转）', M.clampHeight(500, 40, 10).height, 40);
+eq('U-7h 行数换算高度（3 行 × 22 + 2×8）', M.linesToHeight(3, 22, 8), 82);
+eq('U-7i 键盘没弹时不补底距', M.resolveKeyboardInset(0, 800, 800), 0);
+eq('U-7j 窗口已被系统压短（正好压掉键盘高度）⇒ 不再二次抬升',
+  M.resolveKeyboardInset(600, 800, 200), 0);
+eq('U-7k 窗口没被压短（edge-to-edge）⇒ 按键盘高度补底距',
+  M.resolveKeyboardInset(600, 800, 800), 600);
+eq('U-7l 窗口只压了一点点 ⇒ 仍按键盘高度补',
+  M.resolveKeyboardInset(600, 800, 700), 600);
+eq('U-7m 键盘高度缺失兜底为 0', M.resolveKeyboardInset(undefined, 800, 800), 0);
+
+var autoSrc = fs.existsSync(path.join(root, 'rn', 'components', 'AutoInput.js'))
+  ? read('rn/components/AutoInput.js') : '';
+check('U-7n AutoInput 组件存在', autoSrc.length > 0);
+check('U-7o 用「隐藏测量文本 + onLayout」跟内容走（onContentSizeChange 真机实测是视图高度，会自喂）',
+  autoSrc.indexOf('pointerEvents') >= 0 && /opacity: 0/.test(autoSrc) &&
+  autoSrc.indexOf('onLayout') >= 0 && autoSrc.indexOf('contentSize') < 0);
+check('U-7p 没超上限时关掉内部滚动（外层才滑得动）',
+  /scrollEnabled: fit\.clipped/.test(autoSrc));
+check('U-7q 高度按夹取结果写死（height）', /height: fit\.height/.test(autoSrc));
+check('U-7r 支持折叠/展开（collapsedLines + 展开文案）',
+  autoSrc.indexOf('collapsedLines') >= 0 && autoSrc.indexOf('展开') >= 0 &&
+  autoSrc.indexOf('收起') >= 0);
+check('U-7s 多行文本顶部对齐（textAlignVertical）',
+  autoSrc.indexOf("textAlignVertical") >= 0);
+
+var kbSrc = fs.existsSync(path.join(root, 'rn', 'use_keyboard_inset.js'))
+  ? read('rn/use_keyboard_inset.js') : '';
+check('U-7t 键盘避让 hook 存在', kbSrc.length > 0);
+check('U-7u hook 订阅键盘显隐（Android didShow/didHide）',
+  kbSrc.indexOf('keyboardDidShow') >= 0 && kbSrc.indexOf('keyboardDidHide') >= 0);
+check('U-7v hook 走纯函数判据（不自己拍脑袋加）',
+  kbSrc.indexOf('resolveKeyboardInset') >= 0);
+
+check('U-7w 叙事屏输入框改用 AutoInput', story.indexOf('components/AutoInput.js') >= 0 &&
+  story.indexOf('<AutoInput') >= 0);
+check('U-7x 叙事屏接了键盘避让', story.indexOf('useKeyboardInset()') >= 0 &&
+  /paddingBottom[\s\S]{0,80}kbInset/.test(story));
+check('U-7y 叙事屏输入框不再写死 maxHeight 96', story.indexOf('maxHeight: 96') < 0);
+check('U-7z 叙事屏输入框给了 autoInput 行数档位',
+  /minLines=\{?1\}?/.test(story) && /maxLines=\{?5\}?/.test(story));
+
+var cards2 = read('rn/screens/CardsScreen.js');
+check('U-7aa 卡带库两个粘贴框改用 AutoInput',
+  cards2.indexOf('components/AutoInput.js') >= 0 &&
+  (cards2.match(/<AutoInput/g) || []).length >= 2);
+check('U-7ab 卡带库粘贴框可折叠/展开（默认收起，长文点展开）',
+  /collapsedLines=\{6\}/.test(cards2) && /maxLines=\{22\}/.test(cards2));
+check('U-7ac 卡带库 ScrollView 不再被键盘吞掉点击',
+  /keyboardShouldPersistTaps="handled"/.test(cards2));
+
+var controls = read('rn/components/settings/controls.js');
+check('U-7ad 设置/世界书多行输入一并自动增高',
+  controls.indexOf('AutoInput') >= 0 && /multiline/.test(controls));
+var overlay = read('rn/components/OverlayHost.js');
+check('U-7ae 全局弹窗的多行输入一并自动增高',
+  overlay.indexOf('AutoInput') >= 0);
+
+// ---- 真渲染：用 react-test-renderer 把 AutoInput 跑起来（不是 grep 源码） ----
+//   手法照 tools/theme_switch_smoke.js：Module._load 桩掉 react-native，react 用真的。
+//   覆盖：跟内容长高 → 到上限夹住并开内部滚 → 内容变短自己缩回 → 折叠/展开开关。
+globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+var Module = require('module');
+var origLoad = Module._load;
+var RNStub = {
+  Platform: { OS: 'android' },
+  View: 'View', Text: 'Text', TextInput: 'TextInput',
+  TouchableOpacity: 'TouchableOpacity', TouchableWithoutFeedback: 'TouchableWithoutFeedback',
+  StyleSheet: { create: function (o) { return o; }, flatten: function (o) { return o; } },
+  // 给键盘 hook 用：把监听器收下来，测试里手动发事件（真机 adb 弹不出输入法时的替代验法）
+  Keyboard: {
+    addListener: function (name, cb) {
+      RNStub.__kb[name] = cb;
+      return { remove: function () { delete RNStub.__kb[name]; } };
+    }
+  },
+  __kb: {},
+  Dimensions: { get: function () { return { width: 400, height: 800 }; } }
+};
+Module._load = function (request) {
+  if (request === 'react-native') return RNStub;
+  return origLoad.apply(this, arguments);
+};
+var React = require('react');
+var TestRenderer = require('react-test-renderer');
+var actFn = (typeof React.act === 'function') ? React.act : TestRenderer.act;
+var AutoInput = require(path.join(root, 'rn', 'components', 'AutoInput.js')).AutoInput;
+
+function mountInput(props) {
+  var holder = null;
+  actFn(function () { holder = TestRenderer.create(React.createElement(AutoInput, props)); });
+  return holder;
+}
+function inputNode(h) { return h.root.findByType('TextInput'); }
+function inputH(h) { return inputNode(h).props.style[1].height; }
+// 隐藏测量文本：pointerEvents=none 的那个 Text（开关文案也是 Text，靠这条区分）
+function measureNode(h) {
+  return h.root.findAllByType('Text').filter(function (n) {
+    return n.props && n.props.pointerEvents === 'none';
+  })[0];
+}
+function fireWidth(h, w) {
+  actFn(function () {
+    inputNode(h).props.onLayout({ nativeEvent: { layout: { width: w, height: 40 } } });
+  });
+}
+function fireSize(h, px) {
+  actFn(function () {
+    measureNode(h).props.onLayout({ nativeEvent: { layout: { width: 300, height: px } } });
+  });
+}
+function textOf(h) {
+  return h.root.findAllByType('Text').map(function (n) { return String(n.props.children); }).join('|');
+}
+
+// A. 叙事屏口径：1~5 行（行高 20 + 上下 10 ⇒ 下限 40 / 上限 120）
+var a = mountInput({ value: '', minLines: 1, maxLines: 5, lineHeight: 20, paddingV: 10, style: {} });
+fireWidth(a, 300);
+eq('U-7af 真渲染·初始高度=一行下限（40）', inputH(a), 40);
+fireSize(a, 100);
+eq('U-7ag 真渲染·内容变高后跟内容走（100）', inputH(a), 100);
+eq('U-7ah 真渲染·未超上限时内部滚动关闭（手势留给页面）', inputNode(a).props.scrollEnabled, false);
+fireSize(a, 400);
+eq('U-7ai 真渲染·超上限夹到 5 行（120）', inputH(a), 120);
+eq('U-7aj 真渲染·超上限才开内部滚动', inputNode(a).props.scrollEnabled, true);
+fireSize(a, 20);
+eq('U-7ak 真渲染·内容变短自己缩回下限（回缩）', inputH(a), 40);
+
+// B. 卡带库口径：默认收起 3 行（上限 80），点展开到 10 行（上限 220）
+var b = mountInput({
+  value: '', collapsedLines: 3, maxLines: 10, lineHeight: 20, paddingV: 10, style: {},
+  toggleStyle: {}, toggleTextStyle: {}
+});
+fireWidth(b, 300);
+eq('U-7al 真渲染·默认收起时高度=3 行上限（80）', inputH(b), 40);
+check('U-7am 真渲染·空内容不显示展开开关', textOf(b).indexOf('展开') < 0);
+fireSize(b, 400);
+eq('U-7an 真渲染·收起态塞满：夹在 3 行（80）', inputH(b), 80);
+check('U-7ao 真渲染·塞满后出现「展开 ▾」开关', textOf(b).indexOf('展开 ▾') >= 0);
+actFn(function () { b.root.findByType('TouchableOpacity').props.onPress(); });
+eq('U-7ap 真渲染·展开后上限抬到 10 行（220）', inputH(b), 220);
+check('U-7aq 真渲染·展开态文案变「收起 ▴」', textOf(b).indexOf('收起 ▴') >= 0);
+fireSize(b, 50);
+actFn(function () { b.root.findByType('TouchableOpacity').props.onPress(); });
+eq('U-7ar 真渲染·内容变短再收起 ⇒ 跟着内容落到 50', inputH(b), 50);
+check('U-7as 真渲染·内容不多时开关自己消失', textOf(b).indexOf('展开') < 0);
+
+// ---- C. 键盘 hook 真跑：手动发 didShow/didHide，看 inset 是否按纯函数判据走 ----
+//   为什么这么测：真机（vivo V2118A）这台机器 adb 里连输入法都弹不出来（原本一个输入法都没选），
+//   键盘避让只能这样验「事件 → 判据 → inset」这一条链；真机视觉仍要人手点一次。
+var useKeyboardInset = require(path.join(root, 'rn', 'use_keyboard_inset.js')).useKeyboardInset;
+function Harness() {
+  return React.createElement('Text', { p42inset: useKeyboardInset() });
+}
+var hv = null;
+actFn(function () { hv = TestRenderer.create(React.createElement(Harness)); });
+function insetOf() { return hv.root.findByType('Text').props.p42inset; }
+eq('U-7at 真渲染·键盘未弹时 inset=0', insetOf(), 0);
+actFn(function () { RNStub.__kb['keyboardDidShow']({ endCoordinates: { height: 300 } }); });
+eq('U-7au 真渲染·收到 didShow(300) 且窗口没被压短 ⇒ inset=300（叙事屏据此抬输入条）', insetOf(), 300);
+actFn(function () { RNStub.__kb['keyboardDidHide']({}); });
+eq('U-7av 真渲染·收到 didHide ⇒ inset 归零（输入条落回底部）', insetOf(), 0);
+check('U-7aw 真渲染·卸载后监听器已摘掉（不留悬挂回调）',
+  (actFn(function () { hv.unmount(); }), !RNStub.__kb['keyboardDidShow'] && !RNStub.__kb['keyboardDidHide']));
+
 console.log('\nMOBILE_UX_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
 if (fail > 0) process.exit(1);

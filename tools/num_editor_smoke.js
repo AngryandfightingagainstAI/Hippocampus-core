@@ -472,9 +472,10 @@ function runComponent() {
 //   （此前 50503 为 P12·S4 行尾归一（42 裸 LF → CRLF）之后的现盘值）。
   //   断言条数不变（3 条），只换比较对象。
   //   P30 重记（gamestate 旧记录早于 RN 仓首次提交；prompt_builder 因 P26/P27/P28 改动而变）
+  //   P45 重记（prompt_builder 因 Qwen 那轮补 set_location / list_destinations / output_publish 字段而变，51275 B）
   var BASE = [
-    ['engine/core/gamestate.js', 10142, 'B8D49056F2DD4BD692CA5802434A324D'],
-    ['engine/core/prompt_builder.js', 51020, '0AB162A92D1BBBCF1C273C369339C567'],
+    ['engine/core/gamestate.js', 10413, 'AABB3146FA76593DD35D992629863BE1'],
+    ['engine/core/prompt_builder.js', 51275, 'ED9AB8C65E72433D0CD11F718C6927C7'],
     ['engine/info_feed.js', 40628, 'B4533EC5ED9249BE1AA3C46CACF1DF22']
   ];
   BASE.forEach(function (b) {

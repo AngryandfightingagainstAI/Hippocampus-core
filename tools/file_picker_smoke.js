@@ -165,6 +165,17 @@ function runB() {
   var wrapped = b64OfBytes(rawBytes).replace(/(.{16})/g, '$1\n');
   var r8 = Import.run({ name: '设定.md', bytes: wrapped }, { vault: false });
   eq('B8 带换行的 base64 仍解析成功', r8.imd.source.bytes, rawBytes.length);
+
+  // B9/B10：卡带「从文件导入」那条路的回归靶（2026-10-08 真机缺陷）。
+  //   原生的 base64 必须经 text() 还原成**文本**；String(fromBase64(b64)) 得到的是
+  //   字节数字串（真机上 31,832 B → 113,271 字），这条断言把这个坑钉住。
+  var cardText = '{"cardId":"linjiang","cardName":"临江夜行"}';
+  var cardBytes = ImportDecode.toUTF8(cardText);
+  var dec = ImportDecode.text(b64OfBytes(cardBytes));
+  eq('B9 base64 → text() 还原出原文（中文可读）', dec.text, cardText);
+  var wrong = String(ImportDecode.fromBase64(b64OfBytes(cardBytes)));
+  check('B10 老写法（String(fromBase64)）得到的是字节数字串，不是文本',
+    wrong !== cardText && /^\d+(,\d+)*$/.test(wrong), 'wrong=' + wrong.slice(0, 48));
 }
 
 // ============ C 组：CardsScreen 接线 ============
@@ -192,6 +203,42 @@ function runC() {
     cs.indexOf('这个文件没读到内容：') >= 0);
   check('C10 取消（picked 为 null）时清掉提示、不报错',
     cs.indexOf('if (!picked) { setMatMsg(null); return; }') >= 0);
+
+  // ---- P46·RN-6：卡带 JSON 也要能从文件导入（对齐桌面 ui_cards.js:357 pickCardFile）----
+  // 桌面：<input type=file accept=.json> → FileReader.readAsText → 填进粘贴框（不自动导入）。
+  // RN：系统 SAF 把文件读成 base64 交回来，得自己 decode 成文本再填进粘贴框。
+  var cardStart = cs.indexOf('function doPickCardFile(');
+  check('C12 定义了 doPickCardFile（卡带 JSON 选文件）', cardStart >= 0);
+  check('C13 卡带路径也走 FilePicker.pickFile()（同一套 SAF）',
+    (cs.match(/FilePicker\.pickFile\(\)/g) || []).length >= 2,
+    'count=' + ((cs.match(/FilePicker\.pickFile\(\)/g) || []).length));
+  var cardFn = '';
+  if (cardStart >= 0) {
+    // 到下一个「顶层（缩进两空格）函数声明」为止 —— 函数体内有 .then(function (picked) {
+    // 这类回调，用裸 'function ' 找结尾会提前截断，把回调里的实现排除掉。
+    var nextFn = cs.indexOf('\n  function ', cardStart + 10);
+    cardFn = cs.slice(cardStart, nextFn > 0 ? nextFn : cs.length);
+  }
+  // C14：2026-10-08 真机实测暴露过一次线上缺陷 —— fromBase64() 返回的是 **Uint8Array**，
+  //   老代码 String(fromBase64(b64)) 把字节数组当字符串，粘贴框里就成了
+  //   "60,63,120,109,108,…" 这串字节数字（31,832 B 的 p20.xml → UI 报 113,271 字），
+  //   点「诊断并导入」必然失败。故这里锁两件事：必须走 text() 拿到文本；卡带路径里
+  //   不许再出现「把 fromBase64 结果直接 String()」的写法。
+  var bareFromB64 = cardFn.indexOf('String(ImportDecode.fromBase64(') >= 0;
+  check('C14 卡带路径用 decode.js 的 text() 把 base64 还原成**文本**（不再把字节数组当字符串）',
+    cardFn.indexOf('ImportDecode.text(') >= 0 && !bareFromB64,
+    'hasText=' + (cardFn.indexOf('ImportDecode.text(') >= 0) + ' bareFromBase64=' + bareFromB64);
+  check('C15 读入后填进粘贴框（setImportText），不自动导入',
+    cardFn.indexOf('setImportText(') >= 0 && cardFn.indexOf('doImport()') < 0);
+  check('C16 界面上有「从文件导入…」按钮接上 doPickCardFile',
+    cs.indexOf('onPress={doPickCardFile}') >= 0 && cs.indexOf("'从文件导入…'") >= 0);
+  check('C17 卡带选文件失败 / 空文件都有人话（不静默）',
+    cardFn.indexOf("'选文件失败：'") >= 0 && cardFn.indexOf('这个文件没读到内容：') >= 0 &&
+    /不是文本卡带 JSON/.test(cardFn));
+  check('C18 卡带有 busy 防重入（连点不会开两次系统选择器）',
+    cs.indexOf('cardBusy') >= 0 && cs.indexOf('setCardBusy(true)') >= 0 && cs.indexOf('disabled={cardBusy}') >= 0);
+  check('C19 提示里保留「确认后再点诊断并导入」的桌面口径（不替玩家拍板）',
+    cardFn.indexOf('诊断并导入') >= 0);
 
   // C11：光比字符串看不出「接线把 JSX 写坏了」。真拿仓内 babel 把这文件解析一遍，
   //   漏括号 / 标签不闭合 / 表达式语法错，这里必须红。

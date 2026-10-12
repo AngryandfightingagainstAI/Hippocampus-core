@@ -1152,6 +1152,7 @@
         if (!a.id) return { ok: false, reason: '缺少 id' };
         var r = N.focusNpc(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state', action: 'focus',
           npcId: r.id, label: 'NPC ' + r.id + ' 进入镜头'
@@ -1165,6 +1166,7 @@
         if (!a.id) return { ok: false, reason: '缺少 id' };
         var r = N.unfocusNpc(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state', action: 'unfocus',
           npcId: r.id, label: 'NPC ' + r.id + ' 移出镜头（回现场舞台）'
@@ -1178,6 +1180,7 @@
         if (!a.id) return { ok: false, reason: '缺少 id' };
         var r = N.sceneEnter(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state', action: 'scene_enter',
           npcId: r.id, label: 'NPC ' + r.id + ' 进入现场舞台'
@@ -1191,6 +1194,7 @@
         if (!a.id) return { ok: false, reason: '缺少 id' };
         var r = N.sceneLeave(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state', action: 'scene_leave',
           npcId: r.id, label: 'NPC ' + r.id + ' 离开现场舞台（回背景）'
@@ -1244,6 +1248,7 @@
         if (!a.id) return { ok: false, reason: '缺少 id' };
         var r = N.focusNpc(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state', action: 'enter',
           npcId: r.id, label: 'NPC ' + r.id + ' 登场'
@@ -1262,6 +1267,7 @@
         if (to === 'offstage') r = N.sceneLeave(a.id);
         else r = N.unfocusNpc(a.id);
         if (!r.ok) return r;
+        try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
         return {
           ok: true, type: 'npc_state',
           action: to === 'offstage' ? 'offstage' : 'leave',

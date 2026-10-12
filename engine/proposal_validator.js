@@ -17,16 +17,40 @@
       // 按类型分发
       var fn = this._handlers[type];
       if (typeof fn !== 'function') {
-        // 没有校验规则的，默认通过（不阻塞）
+        // 没有校验规则的，默认通过（不阻塞）——但放行要留痕（P53·③）
+        this._audit('unknown_op', type, pl);
         return { ok: true };
       }
       try {
         return fn.call(this, pl);
       } catch (e) {
-        // 校验器自身出错时不阻塞，只记警告
+        // 校验器自身出错时不阻塞，只记警告——并留审计痕（P53·③）
+        this._audit('crash', type, e);
         if (typeof console !== 'undefined') console.warn('[ProposalValidator] 校验异常：', e);
         return { ok: true };
       }
+    },
+
+    // 审计钩子（P53·③）：A 层是「静默 fail-open」的重灾区——未知类型与自身异常都直接放行，
+    // 玩家和开发者都看不见。把这两条路径写进行为日志，事后可从诊断报告反查校验缺口。
+    // 契约：ErrorLog 缺失（Node 单测 / 极早启动）时静默降级为 false，绝不因日志不可用而阻塞校验。
+    _audit: function(kind, type, detail) {
+      try {
+        if (typeof ErrorLog === 'undefined' || !ErrorLog || typeof ErrorLog.audit !== 'function') return false;
+        var tail = '';
+        try {
+          if (detail && typeof detail === 'object') {
+            if (detail.message) tail = ' ' + String(detail.message).slice(0, 120);
+            else {
+              var keys = Object.keys(detail).slice(0, 3);
+              if (keys.length) tail = ' keys=' + keys.join(',');
+            }
+          } else if (detail !== undefined && detail !== null) {
+            tail = ' ' + String(detail).slice(0, 120);
+          }
+        } catch (e2) {}
+        return !!ErrorLog.audit('proposal_validator', kind + ':' + type, tail || '（无详情）');
+      } catch (e3) { return false; }
     },
 
     // ============ 通用查表 ============

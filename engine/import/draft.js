@@ -54,12 +54,48 @@ var ImportDraft = {
     };
   },
 
-  // ---- 从文件名/标题推一个 cardId ----
-  makeCardId: function (title) {
+  // ---- FNV-1a 32 位：纯 JS，浏览器 / RN / Node 结果一致（不能用 crypto）----
+  hash32: function (s) {
+    var h = 0x811c9dc5;
+    s = String(s == null ? '' : s);
+    for (var i = 0; i < s.length; i++) {
+      h ^= s.charCodeAt(i);
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h >>> 0;
+  },
+
+  // ---- 内容指纹：优先用原件 sha256，没留原件就按块文本现算；两者都只看内容、不看时间 ----
+  contentSeed: function (imd) {
+    if (!imd) return '';
+    var src = imd.source || {};
+    if (src.sha256) return 'sha256:' + src.sha256;
+    var blocks = imd.blocks || [];
+    var h = 0x811c9dc5;
+    var total = 0;
+    for (var i = 0; i < blocks.length; i++) {
+      var t = String((blocks[i] && blocks[i].text) || '');
+      total += t.length;
+      for (var j = 0; j < t.length; j++) {
+        h ^= t.charCodeAt(j);
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+      }
+      h ^= 10;
+      h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return 'text:' + blocks.length + ':' + total + ':' + (h >>> 0).toString(16);
+  },
+
+  // ---- 从文件名/标题 + 内容推一个 cardId ----
+  //   P53：后缀原来是 Math.floor(Date.now()/1000)，于是同一内容两次解码跨过 1 秒边界就得到两个 id
+  //   （file_picker_smoke B1 整批跑时间歇红），而同一秒里两次不同导入又会撞同一个 id。
+  //   现在后缀 = 「标题 + 内容指纹」的短哈希：同内容 ⇒ 同 id（重复导入＝覆盖更新，index.js 按 cardId 覆盖），
+  //   不同内容 ⇒ 不同 id，且跨秒 / 跨进程稳定。
+  makeCardId: function (title, seed) {
     var base = String(title || 'imported').toLowerCase().replace(/[\s\/\\]+/g, '_').replace(/[^a-z0-9_\u4e00-\u9fa5]/g, '');
     if (!base) base = 'imported';
     if (base.length > 40) base = base.slice(0, 40);
-    return 'imported_' + base + '_' + Math.floor(Date.now() / 1000).toString(36);
+    return 'imported_' + base + '_' + ImportDraft.hash32(base + '|' + String(seed == null ? '' : seed)).toString(36);
   },
 
   // ---- 主入口：IMD -> { card, gaps, notes } ----
@@ -73,7 +109,7 @@ var ImportDraft = {
 
     var card = {
       schemaVersion: ImportDraft.SCHEMA_VERSION,
-      cardId: opts.cardId || ImportDraft.makeCardId(title),
+      cardId: opts.cardId || ImportDraft.makeCardId(title, ImportDraft.contentSeed(imd)),
       cardName: title,
       author: opts.author || '导入',
       description: '由「导入文游资料」生成' + (imd && imd.source && imd.source.name ? '：' + imd.source.name : ''),

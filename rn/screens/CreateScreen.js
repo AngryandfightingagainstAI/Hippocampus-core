@@ -213,6 +213,52 @@ function CreateScreen() {
     return p;
   }
 
+  // ---------- P47·批次2：天命系统（CoC 属性 N 选一）----------
+  //   卡带 worldbook.destiny 启用时，创角页顶部出现「掷天命」面板：
+  //   点一次 → Destiny.rollBatch 生成 N 组 → 选一组 → 属性写进创角 data
+  //   （buildPlayerData 深拷贝 data ⇒ 落进 playerData）；选完面板折叠显示最终属性。
+  var destinySetsState = React.useState(null);
+  var destinySets = destinySetsState[0];
+  var setDestinySets = destinySetsState[1];
+  var destinyPickState = React.useState(null);
+  var destinyPicked = destinyPickState[0];
+  var setDestinyPicked = destinyPickState[1];
+
+  var destinyOn = false;
+  var destinyAttrs = [];
+  try {
+    destinyOn = !!(typeof Destiny !== 'undefined' && Destiny && Destiny.enabled(card));
+    if (destinyOn) destinyAttrs = Destiny.attributes(card);
+  } catch (e) { destinyOn = false; destinyAttrs = []; }
+
+  function onRollDestiny() {
+    if (creating) return;
+    try {
+      setDestinyPicked(null);
+      setDestinySets(Destiny.rollBatch(destinyAttrs, Destiny.defaultSets(card)));
+    } catch (e) {
+      Platform.ui.toast('掷天命失败：' + (e && e.message ? e.message : String(e)), { type: 'error' });
+    }
+  }
+
+  function onPickDestiny(set) {
+    if (creating || !set || !set.values) return;
+    setDestinyPicked(set);
+    var next = Object.assign({}, data);
+    destinyAttrs.forEach(function (a) {
+      if (a && a.key && typeof set.values[a.key] === 'number') next[a.key] = set.values[a.key];
+    });
+    setData(next);
+    CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+  }
+
+  function destinyLabel(key) {
+    for (var i = 0; i < destinyAttrs.length; i++) {
+      if (destinyAttrs[i] && destinyAttrs[i].key === key) return destinyAttrs[i].name || key;
+    }
+    return key;
+  }
+
   function prev() {
     if (stepIdx <= 0) return;
     setErr('');
@@ -357,7 +403,27 @@ function CreateScreen() {
       },
       ghostBtnText: { fontSize: f.sm, color: c.muted, letterSpacing: 2 },
       btnDisabled: { opacity: 0.45 },
-      empty: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.7), paddingVertical: 20 }
+      empty: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.7), paddingVertical: 20 },
+      // P47·批次2：天命面板（颜色/字号只走 tokens）
+      destinyBox: {
+        borderWidth: 1, borderColor: c.seal, borderRadius: tk.radius.md,
+        backgroundColor: c.panel, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 14
+      },
+      destinyTitle: { fontFamily: fonts.kai, fontSize: f.lg, color: c.ink, marginBottom: 6 },
+      destinyHint: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.7), marginBottom: 8 },
+      destinyBtn: {
+        borderWidth: 1, borderColor: c.seal, backgroundColor: c.seal, borderRadius: tk.radius.sm,
+        paddingHorizontal: 14, paddingVertical: 8, alignSelf: 'flex-start', marginBottom: 8
+      },
+      destinyBtnText: { fontSize: f.sm, color: c.card, letterSpacing: 1, fontWeight: '600' },
+      destinyRow: {
+        borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
+        backgroundColor: c.card, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 6
+      },
+      destinyRowText: { fontSize: f.sm, color: c.text, lineHeight: Math.round(f.sm * 1.6) },
+      destinyRowTotal: { fontSize: f.xs, color: c.seal, marginTop: 3, fontWeight: '600' },
+      destinyLine: { fontSize: f.sm, color: c.text, lineHeight: Math.round(f.sm * 1.8) },
+      destinyName: { color: c.muted }
     });
   }, [tk, insets]);
 
@@ -577,6 +643,63 @@ function CreateScreen() {
     );
   }
 
+  // P47·批次2：天命面板（未选=列 N 组供选；已选=折叠显示最终属性 + 重掷）
+  function renderDestiny() {
+    if (!destinyOn) return null;
+    if (destinyPicked) {
+      return (
+        <View style={styles.destinyBox}>
+          <Text style={styles.destinyTitle}>{'🎲 天命'}</Text>
+          <Text style={styles.destinyHint}>{'已采用这组属性（可在下方步骤里继续手改）。'}</Text>
+          {destinyAttrs.map(function (a) {
+            var v = destinyPicked.values[a.key];
+            return (
+              <Text key={String(a.key)} style={styles.destinyLine}>
+                <Text style={styles.destinyName}>{(a.name || a.key) + '：'}</Text>
+                {String(v == null ? '—' : v)}
+              </Text>
+            );
+          })}
+          <Text style={styles.destinyLine}>
+            <Text style={styles.destinyName}>{'总和：'}</Text>
+            {String(destinyPicked.total)}
+          </Text>
+          <TouchableOpacity style={styles.destinyBtn} activeOpacity={0.6} onPress={onRollDestiny}>
+            <Text style={styles.destinyBtnText}>{'重掷天命'}</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+    return (
+      <View style={styles.destinyBox}>
+        <Text style={styles.destinyTitle}>{'🎲 天命'}</Text>
+        <Text style={styles.destinyHint}>
+          {'掷 ' + Destiny.defaultSets(card) + ' 组属性，挑一组作为你的天命。'}
+        </Text>
+        <TouchableOpacity style={styles.destinyBtn} activeOpacity={0.6} onPress={onRollDestiny}>
+          <Text style={styles.destinyBtnText}>{'掷天命'}</Text>
+        </TouchableOpacity>
+        {destinySets ? destinySets.map(function (set, i) {
+          return (
+            <TouchableOpacity
+              key={'ds' + i}
+              style={styles.destinyRow}
+              activeOpacity={0.6}
+              onPress={function () { onPickDestiny(set); }}
+            >
+              <Text style={styles.destinyRowText}>
+                {destinyAttrs.map(function (a) {
+                  return destinyLabel(a.key) + ' ' + String(set.values[a.key] == null ? '—' : set.values[a.key]);
+                }).join('  ·  ')}
+              </Text>
+              <Text style={styles.destinyRowTotal}>{'总和 ' + set.total}</Text>
+            </TouchableOpacity>
+          );
+        }) : null}
+      </View>
+    );
+  }
+
   function renderSummary() {
     var entries = CF.summaryEntries(card, data);
     if (!entries.length) {
@@ -649,6 +772,8 @@ function CreateScreen() {
             <Text style={styles.stepLine}>{'第 ' + (stepIdx + 1) + ' / ' + steps.length + ' 步'}</Text>
             {step ? <Text style={styles.stepTitle}>{step.title || step.id || ''}</Text> : null}
             {step && step.guide ? <Text style={styles.guide}>{step.guide}</Text> : null}
+
+            {ready ? renderDestiny() : null}
 
             {ready ? renderBody() : null}
 

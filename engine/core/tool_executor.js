@@ -4,6 +4,7 @@
 // 运行时依赖 GameState / getDiceConfig / DiceEngine / NpcRuntime /
 // WebSearchManager / ErrorLog / UI（均在方法体内解析，加载期不触碰）。
 // ============================================================
+// 平台依赖：UI.appendHint（通知回调）, GameState, DiceEngine, NpcRuntime, WebSearchManager, ErrorLog
 
 // ============================================================
 // 工具执行器
@@ -52,6 +53,35 @@
       const n = (wb.mapNodes || {})[a.id];
       if (!n) return { ok: false, reason: '节点不存在' };
       return { ok: true, type: 'query', queryType: 'map', id: a.id, data: n };
+    }},
+    set_location: { run: function(a) {
+      if (!a.locationId) return { ok: false, reason: '缺少 locationId' };
+      var wb = GameState.currentCard.worldbook || {};
+      var node = (wb.mapNodes || {})[a.locationId];
+      if (!node) return { ok: false, reason: '地点不存在：' + a.locationId };
+      if (typeof StatusCard !== 'undefined' && StatusCard.isEnabled()) {
+        StatusCard.setField('location', node.name || a.locationId);
+      }
+      if (GameState.playerData) GameState.playerData.locationId = a.locationId;
+      try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
+      return { ok: true, type: 'location', locationId: a.locationId, label: '移动到 ' + (node.name || a.locationId) };
+    }},
+    list_destinations: { run: function(a) {
+      var wb = GameState.currentCard.worldbook || {};
+      var nodes = wb.mapNodes || {};
+      var scope = (a && a.scope) || 'all';
+      var curLoc = '';
+      try { if (typeof StatusCard !== 'undefined' && StatusCard.isEnabled()) curLoc = StatusCard.getField('location') || ''; } catch(e){}
+      if (!curLoc) curLoc = (GameState.playerData || {}).locationId || '';
+      var curNode = nodes[curLoc] || null;
+      var result = [];
+      Object.keys(nodes).forEach(function(k) {
+        var n = nodes[k];
+        if (scope === 'children' && curNode && (n.parentId !== curLoc)) return;
+        if (scope === 'siblings' && curNode && (n.parentId !== curNode.parentId)) return;
+        result.push({ id: k, name: n.name || k, type: n.type || '', desc: (n.desc || '').slice(0, 80) });
+      });
+      return { ok: true, type: 'query', queryType: 'destinations', data: result };
     }},
     query_worldsetting: { run: function() {
       const wb = GameState.currentCard.worldbook || {};

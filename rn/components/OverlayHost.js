@@ -34,6 +34,8 @@ var useTheme = require('../use_theme.js').useTheme;
 var StoryStore = require('../story_store.js');
 var ShopStore = require('../shop_store.js');
 var ShopModal = require('./ShopModal.js').ShopModal;
+// P42（用户 m09047）：浮层里的多行输入也跟内容长高
+var AutoInput = require('./AutoInput.js').AutoInput;
 
 // toast 型 → token 色键（同 index.html L763-781）
 var TOAST_BG = {
@@ -215,17 +217,32 @@ function PromptModal(props) {
           <TouchableWithoutFeedback onPress={function () { /* 吞内容点击，不冒泡关框 */ }}>
             <View style={styles.box}>
               <Text style={styles.message}>{pending.message}</Text>
-              <TextInput
-                style={opts.multiline ? [styles.input, styles.inputMulti] : styles.input}
-                value={value}
-                onChangeText={setValue}
-                placeholder={opts.placeholder || ''}
-                placeholderTextColor={c.faint}
-                secureTextEntry={!!opts.password}
-                multiline={!!opts.multiline}
-                numberOfLines={opts.multiline ? (opts.rows || 5) : 1}
-                autoFocus
-              />
+              {opts.multiline ? (
+                <AutoInput
+                  style={[styles.input, styles.inputMulti]}
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder={opts.placeholder || ''}
+                  placeholderTextColor={c.faint}
+                  minLines={opts.rows || 5}
+                  maxLines={12}
+                  lineHeight={Math.round(f.sm * 1.7)}
+                  paddingV={10}
+                  autoFocus
+                />
+              ) : (
+                <TextInput
+                  style={styles.input}
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder={opts.placeholder || ''}
+                  placeholderTextColor={c.faint}
+                  secureTextEntry={!!opts.password}
+                  multiline={false}
+                  numberOfLines={1}
+                  autoFocus
+                />
+              )}
               <View style={styles.btnRow}>
                 <TouchableOpacity
                   style={styles.btn}

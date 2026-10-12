@@ -63,6 +63,12 @@ var StoryLoop = {
       ? Proposals.detectIntent(t)
       : { isMeta: false, keywords: [] };
     var _content = t;
+    // ★ 关键词线索附加：检测玩家输入中的词族命中，附加给 AI
+    var _kwHits = (typeof WordFamilies !== 'undefined' && WordFamilies.detect) ? WordFamilies.detect(t) : [];
+    if (_kwHits && _kwHits.length > 0) {
+      var _kwLabels = _kwHits.map(function(h) { return h.label + '(' + (h.matched || []).slice(0, 3).join('/') + ')'; });
+      _content = _content + '\n\n【系统 · 关键词线索】' + _kwLabels.join('、');
+    }
     if (_intent.isMeta) {
       _content = t + '\n\n【系统提示】玩家本轮说的是元层指令，不是剧情动作（关键词：' + _intent.keywords.join('、') + '）。\n这是指令，不是请求。必须调 propose_change({type, payload, reason}) 提议变更。\n不允许只在叙事里口头答应。不允许直接调 add_achievement 等原工具。';
       Platform.ui.appendHint('（检测到元层意图：' + _intent.keywords.join('、') + '）');
@@ -235,12 +241,44 @@ var StoryLoop = {
 
       try { PromptBuilder.updateEstimate(toSend.map(function(m){return m.content || '';}).join('\n')); } catch (e) {}
 
-      // P5 · S6-5：主调用显式带上当前配置的 max_tokens，不再吃 ApiClient 的 2048 兜底。
+      // P31（补齐 RN 的 P5·S6-5）：主调用显式带上当前配置的 max_tokens，不再吃 ApiClient 的 2048 兜底。
       // 思考模型的 reasoning_content 与正文共用同一个 completion 预算，
-      // 故需用 profile.max_tokens（默认已抬到 16384），思考链才不会挤掉正文。
-      var __activeProfile = (typeof ApiManager !== 'undefined' && ApiManager.getActive) ? ApiManager.getActive() : null;
-      var __chatOpts = (__activeProfile && __activeProfile.max_tokens != null) ? { max_tokens: __activeProfile.max_tokens } : {};
-      const content = await ApiClient.chat(toSend, __chatOpts);
+      // 所以要用 profile.max_tokens（默认已抬到 16384），思考链才不会挤掉正文。
+      const __activeProfile = (typeof ApiManager !== 'undefined' && ApiManager.getActive) ? ApiManager.getActive() : null;
+      const __chatOpts = (__activeProfile && __activeProfile.max_tokens != null) ? { max_tokens: __activeProfile.max_tokens } : {};
+      
+      // ★ 流式 API 支持：检查 profile.stream 标志
+      let content = '';
+      const useStream = __activeProfile && __activeProfile.stream === true;
+      
+      if (useStream && typeof ApiClient.chatStream === 'function') {
+        // 流式模式：实时渲染思考链
+        Platform.ui.showStoryLoading(false);
+        Platform.ui.streamStartLive();
+        
+        const streamResult = await ApiClient.chatStream(toSend, __chatOpts, {
+          onReasoning: function(chunk) {
+            Platform.ui.streamAppendReasoning(chunk);
+          },
+          onContent: function(chunk) {
+            // 可选：实时显示正文（暂未实现，保持与原逻辑一致）
+          },
+          onDone: function(result) {
+            // 流结束回调（可选）
+          }
+        });
+        
+        content = streamResult.content;
+        
+        // 流结束后，用最终的 meta 替换实时面板
+        const reasoning = streamResult.reasoning || '';
+        const usage = streamResult.usage || null;
+        Platform.ui.streamFinishLive({ reasoning: reasoning, usage: usage, ts: Date.now() });
+      } else {
+        // 非流式模式（原有逻辑）
+        content = await ApiClient.chat(toSend, __chatOpts);
+      }
+      
       if (myToken !== GameState._sessionToken) return;
 
       const reasoning = GameState._lastReasoning || '';
@@ -471,6 +509,9 @@ var StoryLoop = {
     const lg = g.logging || {};
     if (lg.enabled === false) return;
 
+    // ★ 快照当前游戏时间，防止压缩失败重试时日期漂移
+    var snapTime = GameState._gameTime ? { year: GameState._gameTime.year, month: GameState._gameTime.month, day: GameState._gameTime.day, hour: GameState._gameTime.hour, minute: GameState._gameTime.minute } : null;
+
     const totalMsgs = GameState.chatHistory.filter(m => m.role !== 'system').length;
     const lastCount = GameState._lastCompressMsgCount || 0;
     const accumulated = Math.max(0, totalMsgs - lastCount);
@@ -505,7 +546,7 @@ var StoryLoop = {
         cardId: GameState.currentCardId,
         saveId: GameState.currentSaveId,
         gameDate: GameState._gameTime,
-        startGameDate: GameState._lastCompressGameTime || null,
+        startGameDate: GameState._lastCompressGameTime || snapTime,
         msgFrom: batchMsgFrom,
         messages: toCompress
       });
@@ -660,6 +701,9 @@ var CreateFlow = {
   start(card, draft) {
     this.card = card;
     this.steps = (card.steps || []).filter(s => !this.isSkipped(s));
+    // P47·批次2：换卡带创角时清空上一轮天命结果
+    this._destinySets = null;
+    this._destinyPicked = null;
 
     if (draft && draft.data) {
       this.index = Math.max(0, Math.min(draft.index || 0, this.steps.length - 1));
@@ -747,6 +791,7 @@ var CreateFlow = {
 
   renderStep(step) {
     let html = '';
+    html += this.renderDestiny();
     if (step.guide) html += '<div class="guide">' + escapeHtml(step.guide) + '</div>';
     switch (step.type) {
       case 'form': html += this.renderForm(step); if (step.showCalendar) html += this.renderCalendar(step); break;
@@ -762,6 +807,54 @@ var CreateFlow = {
       default: html += '<p>（未知步骤类型：' + escapeHtml(step.type) + '）</p>';
     }
     return html;
+  },
+
+  // P47·批次2：天命面板（CoC 属性 N 选一）。逻辑与 RN CreateScreen 同源
+  //   （都走 engine/destiny.js）；未选=列 N 组供选，已选=折叠显示最终属性 + 重掷。
+  //   卡带未启用 worldbook.destiny 时返回空串，创角流程零变化。
+  renderDestiny() {
+    if (typeof Destiny === 'undefined' || !Destiny || !Destiny.enabled(this.card)) return '';
+    const attrs = Destiny.attributes(this.card);
+    let html = '<div class="cf-destiny-box"><div class="cf-destiny-title">🎲 天命</div>';
+    if (this._destinyPicked) {
+      html += '<div class="cf-destiny-hint">已采用这组属性（可在下方步骤里继续手改）。</div>';
+      attrs.forEach(a => {
+        const v = this._destinyPicked.values[a.key];
+        html += '<div class="cf-destiny-line"><span class="k">' + escapeHtml(a.name || a.key) + '：</span>' + String(v == null ? '—' : v) + '</div>';
+      });
+      html += '<div class="cf-destiny-line"><span class="k">总和：</span>' + String(this._destinyPicked.total) + '</div>';
+      html += '<button class="cf-destiny-btn" onclick="CreateFlow.rollDestiny()">重掷天命</button>';
+    } else {
+      html += '<div class="cf-destiny-hint">掷 ' + Destiny.defaultSets(this.card) + ' 组属性，挑一组作为你的天命。</div>';
+      html += '<button class="cf-destiny-btn" onclick="CreateFlow.rollDestiny()">掷天命</button>';
+      if (this._destinySets) {
+        this._destinySets.forEach((set, i) => {
+          const parts = attrs.map(a => escapeHtml(a.name || a.key) + ' ' + String(set.values[a.key] == null ? '—' : set.values[a.key]));
+          html += '<button class="cf-destiny-row" onclick="CreateFlow.pickDestiny(' + i + ')">' +
+            '<div class="cf-destiny-row-text">' + parts.join('  ·  ') + '</div>' +
+            '<div class="cf-destiny-row-total">总和 ' + String(set.total) + '</div></button>';
+        });
+      }
+    }
+    html += '</div>';
+    return html;
+  },
+
+  rollDestiny() {
+    if (typeof Destiny === 'undefined' || !Destiny) return;
+    this._destinyPicked = null;
+    this._destinySets = Destiny.rollBatch(Destiny.attributes(this.card), Destiny.defaultSets(this.card));
+    this.render();
+  },
+
+  pickDestiny(i) {
+    const set = (this._destinySets || [])[i];
+    if (!set) return;
+    this._destinyPicked = set;
+    Destiny.attributes(this.card).forEach(a => {
+      if (a && a.key && typeof set.values[a.key] === 'number') this.data[a.key] = set.values[a.key];
+    });
+    this.render();
   },
 
   renderForm(step) {

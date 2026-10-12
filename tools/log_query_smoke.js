@@ -593,9 +593,11 @@ function runG() {
   //   P30 重记两条基线（见 p30_baseline_align_patch.js 的查证）：
   //     · gamestate.js：旧记录 10383/DE10B95F… 早于 RN 仓首次提交 44a15e4（git 证该文件自那以后未动）
   //     · prompt_builder.js：P26 query_source 协议行 / P27 产出物 title,content,desc / P28 后台进程注入 之后的现盘值
+  //   P45 重记（2026-10-07）：补 Qwen 那轮加的「资料：query_source 用法行 / 位置：set_location +
+  //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
   var bases = [
-    ['engine/core/gamestate.js', 'B8D49056F2DD4BD692CA5802434A324D'],
-    ['engine/core/prompt_builder.js', '0AB162A92D1BBBCF1C273C369339C567'],
+    ['engine/core/gamestate.js', 'AABB3146FA76593DD35D992629863BE1'],
+    ['engine/core/prompt_builder.js', 'ED9AB8C65E72433D0CD11F718C6927C7'],
     ['engine/info_feed.js', 'B4533EC5ED9249BE1AA3C46CACF1DF22']
   ];
   bases.forEach(function (b) {

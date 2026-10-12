@@ -49,55 +49,93 @@ function send(text) {
   _discussion.push({ role: 'user', content: String(text) });
 }
 
-// AI 生成人设：buildPrompt + ApiClient.chat + parseResponse
-// 返回 Promise<portrait>；失败抛。PortraitScreen 也可直调引擎方法。
+// ★ 两阶段审核生成：
+//   阶段 1：buildAuditPrompt → parseAuditResponse → 得到 verdict/issues
+//   阶段 2（ok/concern）：buildGeneratePrompt → parseGenerateResponse → 得到 portrait
+//   conflict 时不进入阶段 2，返回 { audit, portrait: null }
+//   ok/concern 时返回 { audit, portrait }
+// 返回 Promise<{ audit, portrait }>；失败抛。
+var _auditResult = null;
+
 function generate() {
-  var pd = _playerData || (typeof GameState !== 'undefined' ? GameState.playerData : null) || {};
-  var prompt;
+  var pd = getPlayerData();
+  var auditPrompt;
   try {
-    prompt = Portrait.buildPrompt(pd, _discussion);
+    auditPrompt = Portrait.buildAuditPrompt(pd, _discussion);
   } catch (e) {
-    return Promise.reject(new Error('构造人设 prompt 失败：' + (e && e.message ? e.message : String(e))));
+    return Promise.reject(new Error('构造审核 prompt 失败：' + (e && e.message ? e.message : String(e))));
   }
-  var messages = [{ role: 'user', content: prompt }];
-  return ApiClient.chat(messages, { jsonMode: true })
-    .then(function (text) {
-      var p = Portrait.parseResponse(text);
-      if (!p) throw new Error('AI 返回的人设无法解析，请重试或手填。');
-      _portrait = p;
-      return p;
+  return ApiClient.chat([{ role: 'user', content: auditPrompt }], { jsonMode: true })
+    .then(function (auditText) {
+      var audit = Portrait.parseAuditResponse(auditText);
+      if (!audit) throw new Error('AI 审核结果无法解析，请重试。');
+      _auditResult = audit;
+      // conflict → 不进入生成阶段
+      if (audit.verdict === 'conflict') {
+        return { audit: audit, portrait: null };
+      }
+      // ok/concern → 进入生成阶段
+      var genPrompt;
+      try {
+        genPrompt = Portrait.buildGeneratePrompt(pd, audit);
+      } catch (e2) {
+        throw new Error('构造生成 prompt 失败：' + (e2 && e2.message ? e2.message : String(e2)));
+      }
+      return ApiClient.chat([{ role: 'user', content: genPrompt }], { jsonMode: true })
+        .then(function (genText) {
+          var p = Portrait.parseGenerateResponse(genText);
+          if (!p) throw new Error('AI 返回的人设无法解析，请重试或手填。');
+          _portrait = p;
+          return { audit: audit, portrait: p };
+        });
     });
 }
 
-// P10·A5 · 多轮讨论（桌面 ui_portrait.js send():141-162 同口径）：
-//   有上一版总述 ⇒ 走「玩家意见」改写 prompt；否则 buildPrompt + 【玩家补充说明】。
-//   返回 Promise<portrait>；失败抛。讨论记录进 _discussion（后续 generate 可复用）。
+// P10·A5 · 多轮讨论（两阶段版）：
+//   阶段 1：buildAuditPrompt → parseAuditResponse → verdict/issues
+//   阶段 2（ok/concern）：buildGeneratePrompt → parseGenerateResponse → portrait
+//   conflict 时返回 { audit, portrait: null }，玩家继续讨论后重试
 function sendAndGenerate(text) {
   var t = String(text == null ? '' : text).trim();
   if (!t) return Promise.resolve(null);
   _discussion.push({ role: 'user', content: t });
   var pd = getPlayerData();
-  var prompt;
-  if (_portrait && _portrait.summary) {
-    prompt = '玩家对你的上一版人设总述提出了意见：\n\n' +
-      '【当前总述】\n' + _portrait.summary + '\n\n' +
-      '【玩家意见】\n' + t + '\n\n' +
-      '请根据玩家意见修改，重新输出 JSON（含 summary 和 traits）。';
-  } else {
-    try {
-      prompt = Portrait.buildPrompt(pd, _discussion);
-    } catch (e) {
-      return Promise.reject(new Error('构造人设 prompt 失败：' + (e && e.message ? e.message : String(e))));
-    }
-    prompt += '\n\n【玩家补充说明】\n' + t;
+  // 阶段 1：重新审核
+  var auditPrompt;
+  try {
+    auditPrompt = Portrait.buildAuditPrompt(pd, _discussion);
+  } catch (e) {
+    return Promise.reject(new Error('构造审核 prompt 失败：' + (e && e.message ? e.message : String(e))));
   }
-  return ApiClient.chat([{ role: 'user', content: prompt }], { jsonMode: true })
-    .then(function (raw) {
-      var p = Portrait.parseResponse(raw);
-      if (!p) throw new Error('AI 返回的人设无法解析，请重试或手填。');
-      _portrait = p;
-      return p;
+  return ApiClient.chat([{ role: 'user', content: auditPrompt }], { jsonMode: true })
+    .then(function (auditText) {
+      var audit = Portrait.parseAuditResponse(auditText);
+      if (!audit) throw new Error('AI 审核结果无法解析，请重试。');
+      _auditResult = audit;
+      // conflict → 不进入生成阶段，让玩家继续讨论
+      if (audit.verdict === 'conflict') {
+        return { audit: audit, portrait: null };
+      }
+      // ok/concern → 进入生成阶段
+      var genPrompt;
+      try {
+        genPrompt = Portrait.buildGeneratePrompt(pd, audit);
+      } catch (e2) {
+        throw new Error('构造生成 prompt 失败：' + (e2 && e2.message ? e2.message : String(e2)));
+      }
+      return ApiClient.chat([{ role: 'user', content: genPrompt }], { jsonMode: true })
+        .then(function (genText) {
+          var p = Portrait.parseGenerateResponse(genText);
+          if (!p) throw new Error('AI 返回的人设无法解析，请重试或手填。');
+          _portrait = p;
+          return { audit: audit, portrait: p };
+        });
     });
+}
+
+// 获取当前审核结果（供 PortraitScreen 读取 verdict/issues 展示）
+function getAuditResult() {
+  return _auditResult;
 }
 
 // 统一收口：cb 存在 → 创角流程调 cb(result)；否则 → 重审人设回叙事页 + 提示
@@ -226,6 +264,7 @@ var UI_Portrait = {
   send: send,
   generate: generate,
   sendAndGenerate: sendAndGenerate,
+  getAuditResult: getAuditResult,
   confirm: confirm,
   skip: skip,
   cancel: cancel,

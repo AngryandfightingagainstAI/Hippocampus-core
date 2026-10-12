@@ -65,8 +65,11 @@ check('C8 导入走 Storage.getImportedCards',
   src.indexOf('Storage.getImportedCards') >= 0);
 check('C9 导入走 Storage.setImportedCards',
   src.indexOf('Storage.setImportedCards') >= 0);
-check('C10 粘贴 JSON 多行 TextInput',
-  src.indexOf('TextInput') >= 0 && src.indexOf('multiline') >= 0);
+// P42（用户 m09047）：粘贴框从「写死多行 TextInput」改成会自己长高、能展开/收起的 AutoInput；
+//   多行与高度语义改由 AutoInput 内部持有，故这里断言组件接线与档位（意图不变：粘贴大段 JSON）。
+check('C10 粘贴 JSON 输入框（P42：AutoInput 自动增高 + 可展开/收起）',
+  src.indexOf('components/AutoInput.js') >= 0 &&
+  /collapsedLines=\{6\}/.test(src) && /maxLines=\{22\}/.test(src));
 check('C11 成功文案（已导入）',
   src.indexOf('已导入') >= 0);
 check('C12 失败文案（校验失败）',

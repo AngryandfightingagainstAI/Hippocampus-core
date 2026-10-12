@@ -207,6 +207,11 @@ load('ImportVault',         function () { return require('../engine/import/vault
 load('ImportDraft',         function () { return require('../engine/import/draft.js'); });
 load('Import',              function () { return require('../engine/import/index.js'); });
 
+// P47·批次2：天命系统（A 类纯逻辑，两仓同源 engine/destiny.js）
+//   卡带 worldbook.destiny 声明属性表 + 掷骰公式；创角时「掷天命」N 选一。
+//   复用 DiceEngine 掷骰（NdM），故排在 DiceEngine 之后、UI 屏之前。
+load('Destiny',             function () { return require('../engine/destiny.js'); });
+
 // ============================================================
 // P9·S5：后台 / 定时落盘接线（对齐桌面 engine/ui.js:143-163 语义）。
 //   桌面在 window 上注册 onBackground / onPageHide + 30s interval，全部带

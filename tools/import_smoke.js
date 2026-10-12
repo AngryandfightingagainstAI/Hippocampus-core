@@ -594,6 +594,46 @@ section('IM-11 多文件与 AI 环节');
 })();
 
 // ============================================================
+// IM-12（P53）：cardId 必须是「内容函数」，不能带墙钟
+//   背景：file_picker_smoke B1（base64 与直接给字节必须产出同一 cardId）在整批跑里间歇红，
+//   根因是 draft.makeCardId 的后缀取 Math.floor(Date.now()/1000)：同一内容两次解码跨过 1 秒
+//   边界就得到两个 id；反过来同一秒里两次不同导入又会撞 id。这里把「跨秒不变」钉死。
+// ============================================================
+(function () {
+  var md = '# 世界观\n\n同一份内容，两次解码必须得到同一个 cardId。\n';
+  var raw = ImportDecode.toUTF8(md);
+
+  var runA = Import.run({ name: '钉住.md', bytes: raw }, { vault: false });
+  var idA = runA.draft.card.cardId;
+
+  var runB = Import.run({ name: '钉住.md', bytes: ImportDecode.toBase64(raw) }, { vault: false });
+  eq('IM-12a 同一内容（字节 vs base64）cardId 相同', runB.draft.card.cardId, idA);
+
+  var realNow = Date.now;
+  var idC, idT1, idT2;
+  try {
+    Date.now = function () { return realNow() + 7000; };
+    idC = Import.run({ name: '钉住.md', bytes: raw }, { vault: false }).draft.card.cardId;
+    idT1 = Import.run({ name: '钉住.md', text: md }, { vault: false }).draft.card.cardId;
+  } finally {
+    Date.now = realNow;
+  }
+  eq('IM-12b 跨秒（墙钟 +7s）不改 cardId —— 钉住 P53 修的那个 flake', idC, idA);
+
+  idT2 = Import.run({ name: '钉住.md', text: md }, { vault: false }).draft.card.cardId;
+  eq('IM-12c 粘贴路（无字节、走内容指纹兜底）同样不看墙钟', idT2, idT1);
+
+  var other = Import.run({ name: '钉住.md', bytes: ImportDecode.toUTF8('# 世界观\n\n另一份内容。\n') }, { vault: false });
+  ok('IM-12d 内容不同 ⇒ cardId 不同', other.draft.card.cardId !== idA, 'a=' + idA + ' b=' + other.draft.card.cardId);
+
+  var fnSrc = String(ImportDraft.makeCardId);
+  ok('IM-12e makeCardId 函数体不含 Date.now / Math.random',
+    fnSrc.indexOf('Date.now') < 0 && fnSrc.indexOf('Math.random') < 0, fnSrc.replace(/\s+/g, ' ').slice(0, 140));
+  ok('IM-12f draft.js 导出 contentSeed（内容指纹，供 cardId 用）', typeof ImportDraft.contentSeed === 'function');
+  ok('IM-12g cardId 形状仍是 imported_<标题>_<短哈希>', /^imported_[\u4e00-\u9fa5a-z0-9_]+_[0-9a-z]+$/.test(idA), idA);
+})();
+
+// ============================================================
 console.log('\n### 汇总');
 Promise.all([
   module.exports._promise || Promise.resolve(),

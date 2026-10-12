@@ -79,7 +79,14 @@
       var card = GameState.currentCard;
       if (!card) return null;
       var wb = card.worldbook || {};
-      return wb.outputs || null;
+      var cfg = wb.outputs || null;
+      // P43：模板承诺「填 "outputs": {} = 用引擎默认池」，但默认池原本没有 settleRules，
+      //   而 _checkSettleRule() 只认 settleRules.when ⇒ 声明了 outputs 的卡带里产出物永远不自动定论。
+      //   这里补最小默认：progress 满 100 自动定论；affects 保持为空（绝不擅自给属性）。
+      if (cfg && typeof cfg === 'object' && (!cfg.settleRules || typeof cfg.settleRules !== 'object')) {
+        return Object.assign({}, cfg, { settleRules: { when: { type: 'progress-full' } } });
+      }
+      return cfg;
     },
 
     // 启用与否由全局开关决定（settings.outputs.enabled）
@@ -116,6 +123,8 @@
         publishedAt: now,
         keywords: Array.isArray(def.keywords) ? def.keywords.slice() : [],
         audience: Array.isArray(def.audience) ? def.audience.slice() : [],
+        category: String(def.category || ''),
+        isFragment: !!def.isFragment,
         fate: 'fermenting',
         progress: 0,
         events: [],
@@ -761,7 +770,9 @@
           desc: a.desc,
           type: a.type || '',
           keywords: a.keywords || [],
-          audience: a.audience || []
+          audience: a.audience || [],
+          category: a.category || '',
+          isFragment: !!a.isFragment
         });
         if (!r.ok) return r;
         return {

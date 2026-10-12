@@ -33,7 +33,6 @@ var RN = require('react-native');
 var View = RN.View;
 var Text = RN.Text;
 var ScrollView = RN.ScrollView;
-var TextInput = RN.TextInput;
 var TouchableOpacity = RN.TouchableOpacity;
 var ActivityIndicator = RN.ActivityIndicator;
 var StatusBar = RN.StatusBar;
@@ -49,6 +48,9 @@ var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLaye
 var ThinkingBlock = require('../components/ThinkingBlock.js').ThinkingBlock;
 var SnapshotActions = require('../snapshot_actions.js');
 var NavStore = require('../nav_store.js');
+// P42（用户 m09047）：输入框自己长高 + 键盘不再盖住输入条
+var AutoInput = require('../components/AutoInput.js').AutoInput;
+var useKeyboardInset = require('../use_keyboard_inset.js').useKeyboardInset;
 
 function StoryScreen() {
   var themeApi = useTheme();
@@ -57,6 +59,8 @@ function StoryScreen() {
   var f = tk.fontSizes;
   var fonts = tk.fonts;
   var insets = SafeArea.useSafeAreaInsets();
+  // P42：键盘弹出时补多少底距（Android edge-to-edge 下 adjustResize 不缩窗口）
+  var kbInset = useKeyboardInset();
   var nav = useNavigation();
 
   var snap = React.useSyncExternalStore(StoryStore.subscribe, StoryStore.getSnapshot, StoryStore.getSnapshot);
@@ -77,6 +81,25 @@ function StoryScreen() {
 
   var scrollRef = React.useRef(null);
   var bootedRef = React.useRef(false);
+
+  // ★ 实时思考链：订阅 Platform.ui.streamSubscribe
+  var liveThinkingState = React.useState({ active: false, reasoning: '' });
+  var liveThinking = liveThinkingState[0];
+  var setLiveThinking = liveThinkingState[1];
+
+  React.useEffect(function () {
+    var handler = function (state) {
+      setLiveThinking({ active: state.active, reasoning: state.reasoning, meta: state.meta });
+    };
+    if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.streamSubscribe) {
+      Platform.ui.streamSubscribe(handler);
+    }
+    return function () {
+      if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.streamUnsubscribe) {
+        Platform.ui.streamUnsubscribe(handler);
+      }
+    };
+  }, []);
 
   // 挂载即续玩：进行中且 feed 空 → 原地重放；否则走主页 01 同一条 continueLast。
   React.useEffect(function () {
@@ -298,7 +321,7 @@ function StoryScreen() {
       input: {
         flex: 1, borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
         backgroundColor: c.bgCard, color: c.ink, fontSize: f.base,
-        paddingHorizontal: 12, paddingVertical: 8, maxHeight: 96
+        paddingHorizontal: 12, paddingVertical: 8
       },
       sendBtn: {
         borderWidth: 1, borderColor: c.seal, backgroundColor: c.seal,
@@ -495,30 +518,45 @@ function StoryScreen() {
           </View>
         ) : null}
         {loading ? <Text style={styles.loadingLine}>{'（AI 正在生成…）'}</Text> : null}
+        {liveThinking.active && liveThinking.reasoning ? (
+          <View style={{ marginTop: 8, padding: 12, backgroundColor: c.faint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
+            <Text style={{ fontSize: f.xs, color: c.muted, fontStyle: 'italic', marginBottom: 6 }}>🧠 AI 思考中…</Text>
+            <Text style={{ fontSize: f.sm, color: c.muted, fontStyle: 'italic', lineHeight: 18 }}>{liveThinking.reasoning}</Text>
+          </View>
+        ) : null}
       </ScrollView>
 
       {/* P10·A10：输入提示行（桌面 index.html:961 .input-hint 逐字） */}
       <Text style={styles.inputHint}>{'↑ 点选项继续剧情，也可以输入你想做的任何事（如"看向窗外""问她的名字"）'}</Text>
 
       {busy ? (
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, kbInset ? { paddingBottom: insets.bottom + 10 + kbInset } : null]}>
           <View style={styles.busyBar}>
             <ActivityIndicator size="small" color={c.seal} />
             <Text style={styles.busyText}>{'AI 思考中…'}</Text>
           </View>
+          {liveThinking.active && liveThinking.reasoning ? (
+            <View style={{ marginTop: 8, padding: 12, backgroundColor: c.faint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
+              <Text style={{ fontSize: f.sm, color: c.muted, fontStyle: 'italic', lineHeight: 18 }}>{liveThinking.reasoning}</Text>
+            </View>
+          ) : null}
         </View>
       ) : (
-        <View style={styles.inputBar}>
+        <View style={[styles.inputBar, kbInset ? { paddingBottom: insets.bottom + 10 + kbInset } : null]}>
           <TouchableOpacity style={styles.rollBtn} activeOpacity={0.6} onPress={onRollDice} disabled={rolling}>
             <Text style={styles.rollText}>{'掷骰'}</Text>
           </TouchableOpacity>
-          <TextInput
+          {/* P42：1~5 行跟内容长高，超过 5 行才在框内滚（此前写死 maxHeight 96 ⇒ 打字看不到自己打的字） */}
+          <AutoInput
             style={styles.input}
             value={input}
             onChangeText={setInput}
             placeholder="自定义行动…（/ra50 /1d100 /search 关键词）"
             placeholderTextColor={c.faint}
-            multiline
+            minLines={1}
+            maxLines={5}
+            lineHeight={Math.round(f.base * 1.45)}
+            paddingV={8}
           />
           <TouchableOpacity style={styles.sendBtn} activeOpacity={0.6} onPress={function () { send(input); }}>
           <Text style={styles.sendText}>{'发送'}</Text>

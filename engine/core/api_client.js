@@ -4,6 +4,7 @@
 // 解析响应，并把 reasoning / usage / content 写回 GameState。
 // 本地地址判断见 _isLocalUrl（URL 解析，非正则）。
 // ============================================================
+// 平台依赖：Platform.http, ApiManager
 
 var ApiClient = {
   async chat(messages, options = {}) {
@@ -100,6 +101,115 @@ var ApiClient = {
     const c = data.choices[0];
     const m = c.message || c;
     return { content: m.content || '', reasoning: m.reasoning_content || m.reasoning || '', finishReason: c.finish_reason, raw: rawText, usage: data.usage };
+  },
+
+  // ★ 流式对话：SSE 逐 token 推送，reasoning/content 实时回调
+  // callbacks: { onReasoning(chunk), onContent(chunk), onDone(result) }
+  // 返回与非流式 _request 相同结构的 Promise
+  async chatStream(messages, options, callbacks) {
+    callbacks = callbacks || {};
+    var profile = null;
+    if (options.profileId && typeof ApiManager !== 'undefined' && ApiManager.getById) {
+      profile = ApiManager.getById(options.profileId);
+    }
+    if (!profile && typeof ApiManager !== 'undefined') {
+      profile = ApiManager.getActive();
+    }
+    if (!profile) throw new Error('API 未配置');
+    var url = ApiManager.buildUrl(profile.baseUrl);
+    var key = profile.apiKey || '';
+    var model = profile.model;
+    if (!url) throw new Error('API Base URL 为空');
+    if (!model) throw new Error('模型名为空');
+    if (!key && !this._isLocalUrl(profile.baseUrl)) throw new Error('API Key 为空');
+
+    var maxTok = options.max_tokens != null ? options.max_tokens : (profile.max_tokens || 2048);
+    var temp = options.temperature != null ? options.temperature : (profile.temperature != null ? profile.temperature : 0.8);
+    var topP = options.top_p != null ? options.top_p : (profile.top_p != null ? profile.top_p : 0.95);
+
+    var body = { model: model, messages: messages, temperature: temp, max_tokens: maxTok, stream: true };
+    if (topP != null) body.top_p = topP;
+    var headers = { 'Content-Type': 'application/json' };
+    if (key) headers['Authorization'] = 'Bearer ' + key;
+
+    var resp;
+    try {
+      if (typeof Platform === 'undefined' || !Platform.httpStream) throw new Error('Platform.httpStream 不可用');
+      resp = await Platform.httpStream(url, { method: 'POST', headers: headers, body: JSON.stringify(body) });
+    } catch (e) { throw new Error('网络请求失败：' + e.message); }
+
+    if (!resp.ok) {
+      var errText = await resp.text();
+      var msg = 'HTTP ' + resp.status;
+      try { var j = JSON.parse(errText); msg += '：' + (j.error && j.error.message ? j.error.message : errText.slice(0, 300)); } catch (e) { msg += '：' + errText.slice(0, 300); }
+      throw new Error(msg);
+    }
+    if (!resp.body || !resp.body.getReader) {
+      throw new Error('此 API 不支持流式输出，请在配置中关闭 stream');
+    }
+
+    var reader = resp.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = '';
+    var fullContent = '';
+    var fullReasoning = '';
+    var usage = null;
+    var finishReason = null;
+
+    while (true) {
+      var chunk = await reader.read();
+      if (chunk.done) break;
+      buffer += decoder.decode(chunk.value, { stream: true });
+
+      // 按行切分 SSE 事件
+      var lines = buffer.split('\n');
+      buffer = lines.pop(); // 最后一个不完整的行留在 buffer
+      for (var i = 0; i < lines.length; i++) {
+        var line = lines[i].trim();
+        if (!line || line === 'data: [DONE]') continue;
+        if (line.indexOf('data: ') !== 0) continue;
+        var jsonStr = line.slice(6);
+        try {
+          var data = JSON.parse(jsonStr);
+          // 取 usage（有些 provider 在最后一个 chunk 里给）
+          if (data.usage) usage = data.usage;
+          if (!data.choices || !data.choices.length) continue;
+          var c = data.choices[0];
+          if (c.finish_reason) finishReason = c.finish_reason;
+          var delta = c.delta || {};
+          // reasoning chunk
+          var rc = delta.reasoning_content || delta.reasoning || '';
+          if (rc) {
+            fullReasoning += rc;
+            if (callbacks.onReasoning) callbacks.onReasoning(rc);
+          }
+          // content chunk
+          var cc = delta.content || '';
+          if (cc) {
+            fullContent += cc;
+            if (callbacks.onContent) callbacks.onContent(cc);
+          }
+        } catch (e) {
+          // 单行解析失败，跳过
+        }
+      }
+    }
+
+    // 流结束后的 usage/统计回调
+    if (usage) {
+      GameState._lastUsage = usage;
+      GameState._totalTokens += (usage.total_tokens || 0);
+      var cacheUsage = this._cacheUsage(usage);
+      GameState._lastCacheUsage = cacheUsage;
+      GameState._totalCachedTokens += cacheUsage.cached;
+      GameState._totalCacheWriteTokens += cacheUsage.creation;
+    }
+    GameState._lastReasoning = fullReasoning;
+    GameState._lastContent = fullContent;
+
+    var result = { content: fullContent, reasoning: fullReasoning, finishReason: finishReason, usage: usage };
+    if (callbacks.onDone) callbacks.onDone(result);
+    return result;
   },
 
   // P17·A 缓存用量归一化：各家 Provider 的字段名不同，这里统一成

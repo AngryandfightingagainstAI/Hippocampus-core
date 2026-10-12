@@ -482,10 +482,15 @@ function runB67() {
     st.indexOf('set_weather(type, icon?)') >= 0 && st.indexOf('set_weather(type, icon)') < 0);
   check('B6b npc_reveal(id, reason?)（reason 可选，CONTRACTS.md:114）',
     st.indexOf('npc_reveal(id, reason?)') >= 0);
-  check('B6c output_publish({name, title?, content?, desc?, type?, keywords?, audience?})（仅 name 必填）',
-    st.indexOf('output_publish({name, title?, content?, desc?, type?, keywords?, audience?})') >= 0);
+  check('B6c output_publish({name, title?, content?, desc?, type?, keywords?, audience?, category?, isFragment?})（仅 name 必填）',
+    st.indexOf('output_publish({name, title?, content?, desc?, type?, keywords?, audience?, category?, isFragment?})') >= 0);
   check('B6d ban_event / unban_event 在静态协议段可见',
     st.indexOf('ban_event(id, duration?, reason?)') >= 0 && st.indexOf('unban_event(id)') >= 0);
+  // P45：Qwen 那轮给内联白名单加了这两个工具，静态协议段必须同步声明（否则 AI 不知道能用）
+  check('B6e 静态协议段声明 set_location / list_destinations',
+    st.indexOf('set_location(locationId, reason?)') >= 0 && st.indexOf('list_destinations(scope?)') >= 0);
+  check('B6f 静态协议段有「资料：query_source」用法行（搜索/分页/目录）',
+    st.indexOf('资料：query_source({keyword:"词"}) 搜索资料') >= 0 && st.indexOf('query_source() 看目录') >= 0);
 
   check('B7a propose_change type 口径 = 任何可直接调用的工具（异步除外）',
     st.indexOf('任何可直接调用的工具；异步工具除外') >= 0);

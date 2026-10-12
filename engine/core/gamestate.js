@@ -26,6 +26,10 @@ var GameState = {
     this.currentCardId = cardId;
     this.currentSaveId = saveId;
     this.currentCard = data.card;
+    // P43：老存档里的卡带也走一次兼容归一（顶层 npcs → worldbook.npcs）
+    try {
+      if (typeof CardValidator !== 'undefined' && CardValidator && CardValidator.normalizeCard) CardValidator.normalizeCard(this.currentCard);
+    } catch (eNorm) {}
     this.playerData = data.player.playerData || {};
     if (!this.playerData.inventory) this.playerData.inventory = { bar: [], common: [], story: [], rare: [] };
     if (typeof Alias !== 'undefined') Alias.normalize(this.playerData);

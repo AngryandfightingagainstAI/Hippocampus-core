@@ -1,6 +1,6 @@
 // ============================================================
 // 报错 & 行为日志系统 v3 · 核心层（A 类，纯逻辑零 DOM）
-// 双挂载：浏览器挂 window.ErrorLog（由 error_log_dom.js 重建六键契约），
+// 双挂载：浏览器挂 window.ErrorLog（由 error_log_dom.js 重建七键契约，P53·③ 起含 audit），
 //         Node/RN 走 module.exports（rn_bootstrap 挂载名仍为 ErrorLog）。
 // DOM 能力（高亮按钮/Toast/当前屏幕）经 hooks 槽由 dom 层 _bind 注入。
 // ============================================================
@@ -8,13 +8,15 @@
 (function() {
   var MAX_ERRORS = 100;
   var MAX_ACTIONS = 200;
+  var AUDIT_LIMIT = 5;   // 审计槽：同一 kind+type 每局最多记 5 条（P53·③，防刷屏）
   var STORAGE_KEY = 'ai_tg_error_log';
 
   var state = {
     errors: [],
     actions: [],
     lastCrash: null,
-    _capturing: false
+    _capturing: false,
+    _auditCounts: {}   // P53·③ 审计限流计数（只活在内存，每局从零开始）
   };
 
   // DOM 注入槽：null 表示运行在无 DOM 环境（Node/RN），core 自身不做环境守卫
@@ -115,6 +117,26 @@
     } catch (e) {}
   }
 
+  // 审计槽（P53·③）：给「静默 fail-open / 静默降级」这类**不报错但值得事后发现**的分支留痕。
+  // 与 record 的分工：只进 actions（不落 errors、不触发高亮/Toast），因此不会把正常放行渲染成故障。
+  // 限流：同一 kind+type 每局最多 AUDIT_LIMIT 条，超出只在跨过上限那一条留 audit_limited 汇总。
+  function audit(kind, type, detail) {
+    try {
+      var k = String(kind || '?') + '/' + String(type || '?');
+      var n = state._auditCounts[k] || 0;
+      if (n >= AUDIT_LIMIT) {
+        if (n === AUDIT_LIMIT) {
+          state._auditCounts[k] = n + 1;
+          recordAction('audit_limited', k + ' 同类已限流（每局上限 ' + AUDIT_LIMIT + ' 条）');
+        }
+        return false;
+      }
+      state._auditCounts[k] = n + 1;
+      recordAction('audit:' + k, detail);
+      return true;
+    } catch (e) { return false; }
+  }
+
   function persistToStorage() {
     try {
       var data = {
@@ -141,6 +163,7 @@
     state.errors = [];
     state.actions = [];
     state.lastCrash = null;
+    state._auditCounts = {};
     if (hooks.onButton) { try { hooks.onButton(false); } catch (hookErr) {} }
   }
 
@@ -217,10 +240,11 @@
   var api = {
     record: recordError,
     action: recordAction,
+    audit: audit,
     getReport: generateReport,
     clear: clearStorage,
     dump: function() { console.log(generateReport()); },
-    // —— 以下划线装配槽仅供 error_log_dom.js 闭包内使用，不进 window.ErrorLog 六键契约 ——
+    // —— 以下划线装配槽仅供 error_log_dom.js 闭包内使用，不进 window.ErrorLog 七键契约 ——
     _bind: bindHooks,
     _load: function() { loadFromStorage(); return state.errors.length; },
     _rediagnose: reDiagnose,

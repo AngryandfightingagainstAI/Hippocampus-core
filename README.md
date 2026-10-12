@@ -7,8 +7,8 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：36 套 RN smoke 共 2474 条断言全绿；桌面版另有 14 项预检 + 47 套回归
-- **版本**：1.2.0（本仓 `package.json` 与 `android/app/build.gradle` 的 `versionName` 同步为 1.2.0，`versionCode` 10200，已真机装机复核）
+- **测试**：37 套 RN smoke 共 2502 条断言全绿；桌面版另有 14 项预检 + 51 套回归
+- **版本**：1.3.0（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10300，已真机装机复核）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
 
@@ -16,9 +16,9 @@
 
 ## 手机直接下载安装（不用电脑）
 
-**👉 [点这里下载最新 APK](https://github.com/AngryandfightingagainstAI/Hippocampus-core/releases/latest)**（当前 `v1.2.0`，62.95 MB，Android 7.0+）
+**👉 [点这里下载最新 APK](https://github.com/AngryandfightingagainstAI/Hippocampus-core/releases/latest)**（Android 7.0+；每次发版的文件名与 SHA256 都写在对应 Release 里）
 
-1. 手机点开上面的链接，下载 `HippocampusRN-1.2.0-release-universal-p49.apk`。
+1. 手机点开上面的链接，在 Release 页里下载最新那个 `HippocampusRN-<版本>-release-universal-<批次>.apk`（认最新一条 Release）。
 2. 点开安装（首次要在系统里允许「安装未知来源应用 / 来自此来源的应用」）。
 3. 打开 App → 设置里填**你自己的**模型 API key（OpenAI / DeepSeek / Gemini / 通义 等任意兼容接口）。
 4. 首屏「导入卡带」粘贴或选择卡带 JSON，也可以直接用内置示例卡带先跑一把 → 开始叙事。
@@ -188,14 +188,14 @@ android/app/build/outputs/apk/release/app-release.apk
 测试**不依赖真机**，全是 Node 跑的 smoke（少量用仓内 babel 做 JSX 语法校验）：
 
 ```sh
-node tools/cards_smoke.js           # 以及 tools/ 下其余 25 套
+node tools/cards_smoke.js           # 以及 tools/ 下其余 36 套（也可以直接 node tools/run_all_smokes.js 一键全跑）
 node tools/p10_smoke.js
 node tools/info_phone_smoke.js
 node tools/settings_smoke.js
 node tools/longline_token_smoke.js
 ```
 
-当前基线：**26 套 / 2061 ok / 0 failed**。
+当前基线：**37 套 / 2502 ok / 0 failed**。
 
 > ⚠️ 必须在仓库根目录下跑（部分套件对 `cwd` 敏感）。
 
@@ -228,8 +228,8 @@ HippocampusRN/
 │   ├── components/         SidebarDrawer / PanelHost / ThinkingBlock / InfoPhonePanel …
 │   ├── panels/             15 个面板 + panel_data.js
 │   ├── rn_platform.js      引擎 → 平台桥（Platform.ui.*）
-│   └── rn_bootstrap.js     按序加载 63 个引擎模块
-├── tools/                  26 套 smoke 测试
+│   └── rn_bootstrap.js     按序加载 65 个引擎模块
+├── tools/                  37 套 smoke 测试
 └── docs/                   报告与真机截图
 ```
 
@@ -261,8 +261,8 @@ HippocampusRN/
 - **Android 优先**：`android/` 完整可打包，iOS 未做验证。
 - **信息层仍是概率性的**（25 分钟冷却 + 25%），所以「连着好些回合没有短信」是正常表现；只有**第一条**有触达保证。
 - **农历节日不做**（每年日期不同，引擎暂不支持）。
-- **导入文游资料**在手机版目前只能**粘贴文本类资料**；docx / odt / epub / PDF / ZIP 需要「选文件」，RN 侧的文件选择器还没接（桌面版已可直读本地文件）。
-- **创角流程**、**结局触发**、**元层提议**的自动化覆盖较薄，主要靠人工真机验证。
+- **导入文游资料**在手机版：文本类可以粘贴，也可以点「从文件导入…」走系统文件选择器（卡带 JSON 与资料文件都已接）；docx / odt / epub / PDF / ZIP 这类压缩包格式建议在桌面版导入后再导出卡带。
+- **创角流程**、**结局触发**、**元层提议**已有自动化覆盖（`tools/create_flow_smoke.js` 115 条、`tools/endings_gate_smoke.js` 27 条、`tools/proposal_audit_smoke.js` 19 条），但真机人工验证仍是主要手段。
 - 设置页「未保存就切 tab」目前只拦**涉及世界书的切换**（从世界书离开、或切进世界书时弹确认）；其他页之间切换仍不拦，因为那些页是即时生效的。
 
 ---
@@ -272,4 +272,4 @@ HippocampusRN/
 - 引擎、桥接层与 UI 壳为本项目自研。
 - 运行时依赖：React Native、`@op-engineering/op-sqlite`、`react-native-mmkv`、`react-native-image-picker`、`react-native-safe-area-context`。
 
-> 仓库当前未附 LICENSE。若打算公开分发，建议先补一个（MIT / Apache-2.0 / 私有均可），并确认所引用的卡带素材（若有）的授权。
+> 本项目以 **MIT** 许可发布，全文见仓内 [`LICENSE`](LICENSE)。所引用的卡带素材（若有）请以各素材来源的授权为准。

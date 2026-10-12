@@ -20,6 +20,14 @@
       return window.fetch(url, options);
     },
 
+    // 流式 fetch：返回原始 Response 对象，调用方通过 response.body.getReader() 读取 SSE
+    // 用法：const resp = await Platform.httpStream(url, { method, headers, body });
+    //        const reader = resp.body.getReader();
+    // RN 侧实现为 fetch（RN 0.73+ 支持 TextDecoder streaming）
+    httpStream: function(url, options) {
+      return window.fetch(url, options);
+    },
+
     dialog: {
       // 告警提示：收口到 Platform.ui.toast（非阻塞提示条）
       // 同步签名 void：调用点保持同步语义（不依赖返回值），改内部实现无传染。
@@ -138,7 +146,8 @@
         'setBusy', 'showStoryLoading', 'renderTopbar',
         'renderSidebarExpanded', 'appendProposalCard', 'updateTokenBadge',
         'showStoryError', '_currentRoundNum', 'showSettingsTab',
-        'showHome', 'renderGame', 'renderChapterHead', 'clearStory'
+        'showHome', 'renderGame', 'renderChapterHead', 'clearStory',
+        'streamStartLive', 'streamAppendReasoning', 'streamFinishLive'
       ];
       var ui = {};
       NAMES.forEach(function(name) {
@@ -153,6 +162,33 @@
       ui.openShop = function(shopId) {
         if (typeof UI_Shop !== 'undefined' && UI_Shop.open) return UI_Shop.open(shopId);
         return null;
+      };
+      // 流式思考链：RN 侧实现（管理 live thinking 状态，供 StoryScreen 订阅）
+      var _liveThinking = { active: false, reasoning: '', meta: null, listeners: [] };
+      ui.streamStartLive = function() {
+        _liveThinking.active = true;
+        _liveThinking.reasoning = '';
+        _liveThinking.meta = null;
+        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
+        return true;
+      };
+      ui.streamAppendReasoning = function(chunk) {
+        if (!_liveThinking.active) return false;
+        _liveThinking.reasoning += chunk;
+        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
+        return true;
+      };
+      ui.streamFinishLive = function(meta) {
+        _liveThinking.active = false;
+        _liveThinking.meta = meta;
+        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
+        return true;
+      };
+      ui.streamSubscribe = function(fn) {
+        if (typeof fn === 'function') _liveThinking.listeners.push(fn);
+      };
+      ui.streamUnsubscribe = function(fn) {
+        _liveThinking.listeners = _liveThinking.listeners.filter(function(l) { return l !== fn; });
       };
       return ui;
     })()

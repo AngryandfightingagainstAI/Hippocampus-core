@@ -266,7 +266,7 @@ var draftSrc = fs.readFileSync(path.join(ROOT, 'engine/import/draft.js'), 'utf8'
 ok('S-5a draft.js 里不再有 `backgroundChars || 900` 死线', !/backgroundChars\s*\|\|\s*900/.test(draftSrc));
 ok('S-5b draft.js 里记了 sourceChars', draftSrc.indexOf('sourceChars') >= 0);
 var pbSrc = fs.readFileSync(path.join(ROOT, 'engine/core/prompt_builder.js'), 'utf8');
-var protoLine = pbSrc.split('\n').filter(function (l) { return l.indexOf('查询：query_player()') >= 0; }).join('\n');
+var protoLine = pbSrc.split('\n').filter(function (l) { return l.indexOf('查询：query_player()') >= 0 || l.indexOf('资料：query_source') >= 0; }).join('\n');
 includes('S-5c 工具协议查询行声明了 query_source', protoLine, 'query_source');
 var teSrc = fs.readFileSync(path.join(ROOT, 'engine/core/tool_executor.js'), 'utf8');
 ok('S-5d tool_executor.js 里有 query_source 实作', teSrc.indexOf('query_source:') >= 0);

@@ -56,7 +56,7 @@ function ApiTab() {
     return {
       name: c0.name || '', baseUrl: c0.baseUrl || '', apiKey: c0.apiKey || '',
       model: c0.model || '', temperature: c0.temperature, top_p: c0.top_p,
-      max_tokens: c0.max_tokens, jsonMode: c0.jsonMode || 'auto'
+      max_tokens: c0.max_tokens, jsonMode: c0.jsonMode || 'auto', stream: !!c0.stream
     };
   }
 
@@ -283,6 +283,15 @@ function ApiTab() {
               { value: 'off', label: '关闭' }
             ],
             onChange: function (v) { setField('jsonMode', v); }
+          }),
+          React.createElement(Controls.SetSelect, {
+            label: '流式输出',
+            value: cs.stream ? 'on' : 'off',
+            options: [
+              { value: 'off', label: '关闭（一次性返回）' },
+              { value: 'on', label: '开启（实时显示思考链）' }
+            ],
+            onChange: function (v) { setField('stream', v === 'on'); }
           }),
           React.createElement(
             View,

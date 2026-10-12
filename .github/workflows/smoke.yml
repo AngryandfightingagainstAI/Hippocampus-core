@@ -1,0 +1,35 @@
+name: smokes
+
+# 手机仓（RN）全量 smoke —— P53·④ 入库。
+#
+# 为什么需要它：仓库里 37 套 smoke 是「改 engine/** 之前先跑一遍」的唯一防线，
+# 但此前没有仓库内入口（一键全跑是交付目录里的临时脚本）。接上 CI 后，
+# 任何人在任何机器上 push / 提 PR 都会先被这 37 套拦一遍，不再依赖「我记得在本机跑过」。
+#
+# 为什么先 npm ci：有 4 套 smoke 真的 require('react') / require('react-test-renderer')
+#   （需要在 Node 里转译 JSX 组件），干净 runner 上不装依赖会直接红。
+# 为什么只跑 smoke：真机 UI 走 adb/模拟器，不在 CI 范围（见 docs/CONVENTIONS.md §4）。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  rn-smokes:
+    name: RN 全量 smoke（37 套）
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装依赖（react / react-test-renderer 供 JSX 类 smoke 使用）
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: 全量 smoke（tools/run_all_smokes.js）
+        run: node tools/run_all_smokes.js

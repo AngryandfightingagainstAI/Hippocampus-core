@@ -45,6 +45,8 @@ var ExportUtil = require('../export_util.js');
 var FilePicker = require('../file_picker.js');
 // P10·A7：空态文案单一来源（同一场景同一句，逐字照桌面）
 var EmptyTexts = require('../empty_texts.js');
+// P42（用户 m09047）：粘贴框自己长高、默认收起（不再写死 140 高，也不吃掉拖动）
+var AutoInput = require('../components/AutoInput.js').AutoInput;
 
 function CardsScreen() {
   var themeApi = useTheme();
@@ -64,6 +66,10 @@ function CardsScreen() {
   var importMsgState = React.useState(null);
   var importMsg = importMsgState[0];
   var setImportMsg = importMsgState[1];
+  // P46·RN-6：卡带 JSON 选文件时的忙状态（防连点开两次系统选择器）
+  var cardBusyState = React.useState(false);
+  var cardBusy = cardBusyState[0];
+  var setCardBusy = cardBusyState[1];
   // P15：导入文游资料（engine/import/**，两仓同源的纯 JS 层）
   var matTextState = React.useState('');
   var matText = matTextState[0];
@@ -294,6 +300,51 @@ function CardsScreen() {
     });
   }
 
+  // P46·RN-6：卡带 JSON 从文件导入 —— 对齐桌面 ui_cards.js:357 pickCardFile。
+  //   桌面用 <input type=file accept=".json"> + FileReader.readAsText 读成文本填进粘贴框；
+  //   RN 没有 FileReader，系统 SAF 把文件读成 base64 交回来（rn/file_picker.js），
+  //   这里用 engine/import/decode.js 把 base64 还原成文本：注意 fromBase64() 返回的是
+  //   **Uint8Array 字节**（不是字符串），必须再走 text()（内部先 toBytes 还原字节、
+  //   再按 UTF-8/GBK/UTF-16 判编码）才拿得到可粘贴的卡带 JSON。
+  //   这里**只填进粘贴框、不自动导入** —— 与桌面一样让玩家先确认再点「诊断并导入」。
+  function doPickCardFile() {
+    if (!FilePicker.available()) {
+      setImportMsg({ type: 'warn', text: '这个构建没有接上文件选择器（请用带文件选择器的安装包）' });
+      return;
+    }
+    if (cardBusy) return;
+    setCardBusy(true);
+    setImportMsg({ type: 'info', text: '正在等你在系统里挑一个卡带 JSON…' });
+    FilePicker.pickFile().then(function (picked) {
+      setCardBusy(false);
+      if (!picked) { setImportMsg(null); return; }
+      if (!picked.base64) {
+        setImportMsg({ type: 'warn', text: '这个文件没读到内容：' + picked.name });
+        return;
+      }
+      var text = '';
+      var encWarn = '';
+      try {
+        // base64 → 字节 → 文本（decode.js 判编码）。**不能**直接把 fromBase64 的
+        // Uint8Array 交给 String()：那会得到 "60,63,120,…" 这样的字节数字串。
+        if (typeof ImportDecode !== 'undefined' && ImportDecode && ImportDecode.text) {
+          var dec = ImportDecode.text(picked.base64);
+          text = String(dec && dec.text != null ? dec.text : '');
+          if (dec && dec.warnings && dec.warnings.length) encWarn = '｜' + dec.warnings.join('；');
+        }
+      } catch (e) { text = ''; }
+      if (!text.replace(/\s/g, '')) {
+        setImportMsg({ type: 'warn', text: '这个文件不是文本卡带 JSON（读不出内容）：' + picked.name });
+        return;
+      }
+      setImportText(text);
+      setImportMsg({ type: 'success', text: '已读入 ' + picked.name + '（' + text.length + ' 字），确认无误后点「诊断并导入」' + encWarn });
+    }).catch(function (e) {
+      setCardBusy(false);
+      setImportMsg({ type: 'error', text: '选文件失败：' + (e && e.message ? e.message : String(e)) });
+    });
+  }
+
   function doAiEnrichMaterial() {
     var r = matRes.current;
     if (!r) { setMatMsg({ type: 'warn', text: '先点一次「解析资料」' }); return; }
@@ -388,6 +439,9 @@ function CardsScreen() {
         padding: 12, minHeight: 140, fontSize: f.sm, color: c.text,
         fontFamily: fonts.mono, textAlignVertical: 'top', marginBottom: 10
       },
+      // P42：粘贴框「展开 / 收起」开关
+      growToggle: { alignSelf: 'flex-start', paddingVertical: 6, paddingRight: 10, marginBottom: 10 },
+      growToggleText: { fontSize: f.xs, color: c.muted, letterSpacing: 1 },
       msgOk: { fontSize: f.sm, color: c.success, lineHeight: Math.round(f.sm * 1.6), marginTop: 8 },
       msgWarn: { fontSize: f.sm, color: c.warning, lineHeight: Math.round(f.sm * 1.6), marginTop: 8 },
       msgErr: { fontSize: f.sm, color: c.danger, lineHeight: Math.round(f.sm * 1.6), marginTop: 8 },
@@ -408,7 +462,8 @@ function CardsScreen() {
         <Text style={styles.title}>{'卡 带 库'}</Text>
         <Text style={styles.count}>{cardIds.length + ' 张'}</Text>
       </View>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+      {/* P42：keyboardShouldPersistTaps ⇒ 键盘弹着也能直接点按钮（原来第一下只收键盘） */}
+      <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
         <View style={styles.topAction}>
           <TouchableOpacity style={styles.primaryBtn} onPress={function () { setInstrOpen(true); }}>
             <Text style={styles.primaryBtnText}>{'生成卡带指令'}</Text>
@@ -453,15 +508,23 @@ function CardsScreen() {
 
         <View style={styles.divider} />
         <Text style={styles.sectionOverline}>{'导 入'}</Text>
-        <Text style={styles.hint}>{'粘贴卡带 JSON（exportCard 导出格式）。导入前会 CardValidator.validate 校验必填字段、panels num 完整性。'}</Text>
-        <TextInput
+        <Text style={styles.hint}>{'粘贴卡带 JSON（exportCard 导出格式），或从文件导入 .json。导入前会 CardValidator.validate 校验必填字段、panels num 完整性。'}</Text>
+        <AutoInput
           style={styles.textarea}
-          multiline
           placeholder="粘贴卡带 JSON..."
           placeholderTextColor={c.faint}
           value={importText}
           onChangeText={setImportText}
+          collapsedLines={6}
+          maxLines={22}
+          lineHeight={20}
+          paddingV={12}
+          toggleStyle={styles.growToggle}
+          toggleTextStyle={styles.growToggleText}
         />
+        <TouchableOpacity style={styles.curBtn} onPress={doPickCardFile} disabled={cardBusy}>
+          <Text style={styles.curBtnText}>{cardBusy ? '等待选择…' : '从文件导入…'}</Text>
+        </TouchableOpacity>
         <TouchableOpacity style={styles.primaryBtn} onPress={doImport}>
           <Text style={styles.primaryBtnText}>{'诊断并导入'}</Text>
         </TouchableOpacity>
@@ -474,13 +537,18 @@ function CardsScreen() {
         <View style={styles.divider} />
         <Text style={styles.sectionOverline}>{'导 入 文 游 资 料'}</Text>
         <Text style={styles.hint}>{'把写好的设定资料直接变成卡带：粘贴 txt / md / csv / tsv / html / json / yaml / xml / rtf 的正文，引擎先解析成中间格式，再按世界书结构生成草稿并列出缺口。docx / odt / epub / pdf / zip 这类二进制资料点下面的「选择文件…」直接从手机里挑。'}</Text>
-        <TextInput
+        <AutoInput
           style={styles.textarea}
-          multiline
           placeholder="粘贴设定资料正文..."
           placeholderTextColor={c.faint}
           value={matText}
           onChangeText={setMatText}
+          collapsedLines={6}
+          maxLines={22}
+          lineHeight={20}
+          paddingV={12}
+          toggleStyle={styles.growToggle}
+          toggleTextStyle={styles.growToggleText}
         />
         <TextInput
           style={styles.nameInput}

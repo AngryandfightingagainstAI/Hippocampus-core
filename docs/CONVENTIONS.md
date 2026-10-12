@@ -42,7 +42,7 @@
 | `engine/**` | 引擎逻辑（大多数与桌面仓同源，见【二】） |
 | `vfs/**` | VFS、`logger.js`、`saves.js`、`storage_adapter.js` |
 | `platform/platform_adapter.js` | 宿主适配（两仓同源） |
-| `tools/*_smoke.js` | 26 套冒烟（见【四】） |
+| `tools/*_smoke.js` | 37 套冒烟（见【四】） |
 
 ### 1.2 硬规则
 
@@ -66,33 +66,109 @@
 ================================================================
 
 **判定口径**：同一相对路径在两仓都存在，且字节内容**完全一致**（Node 逐文件 md5 相等）。
-判定脚本不能靠记忆，必须现算（`%TEMP%\p13b_shared.js` 就是干这个的：遍历两仓 `.js`，
-排除 `node_modules` / `android` / `build` / `dist` / `docs`，列三张表：同源 / 同名不同 / 仅一仓有）。
+判定脚本不能靠记忆，必须现算（`%TEMP%\p13b_shared.js`；P53 口径：遍历两仓 `.js`，排除
+`node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
+对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算结果：**47 个文件逐字节相同**。
+最近一次实算（P53）：**逐字节相同 38 个**、**仅行尾不同 22 个**、**真差异 18 个**，
+合计 78 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
+`tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-```
-engine/achievements.js            engine/import/report.js          engine/story_nodes.js
-engine/alias.js                   engine/import/unzip.js           engine/tasks.js
-engine/calendar.js                engine/import/vault.js           engine/words.js
-engine/card_diagnose.js           engine/info_feed.js              platform/platform_adapter.js
-engine/card_display.js            engine/log_query.js              templates/number.js
-engine/core/card_validator.js     engine/npc_runtime.js            templates/relation.js
-engine/core/cards_demo.js         engine/outputs.js                tools/claim_fact_smoke.js
-engine/dice.js                    engine/portrait.js               tools/import_smoke.js
-engine/dice_history.js            engine/proposal_semantic_check.js vfs/local_store.js
-engine/endings.js                 engine/proposal_validator.js     vfs/logger.js
-engine/error_log_core.js          engine/proposals.js              vfs/storage_adapter.js
-engine/events.js                  engine/runtime_repair.js
-engine/import/decode.js           engine/shop.js
-engine/import/draft.js            engine/snapshots.js
-engine/import/formats.js          engine/status_card.js
+**逐字节相同**（38 个；改任何一个都必须两仓同步、连行尾一起）：
+
+```text
+# 逐字节相同
+engine/background.js
+engine/card_display.js
+engine/core/api_client.js
+engine/core/tool_executor.js
+engine/destiny.js
+engine/error_log_core.js
+engine/import/decode.js
+engine/import/draft.js
+engine/import/formats.js
 engine/import/index.js
 engine/import/middle.js
 engine/import/parsers/archive.js
 engine/import/parsers/pdf.js
 engine/import/parsers/textlike.js
 engine/import/pipeline.js
+engine/import/report.js
+engine/import/unzip.js
+engine/import/vault.js
+engine/info_feed.js
+engine/log_query.js
+engine/npc_runtime.js
+engine/outputs.js
+engine/portrait.js
+engine/proposals.js
+engine/story.js
+engine/words.js
+tools/background_smoke.js
+tools/claim_fact_smoke.js
+tools/endings_gate_smoke.js
+tools/import_smoke.js
+tools/info_tick_smoke.js
+tools/outputs_review_smoke.js
+tools/proposal_audit_smoke.js
+tools/source_readable_smoke.js
+tools/tool_ready_smoke.js
+tools/version_sync_smoke.js
+vfs/local_store.js
+vfs/storage_adapter.js
+```
+
+**仅行尾不同**（22 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
+这类**不是内容不同**：P13 时曾把其中一部分误列进「内容不同」）：
+
+```text
+# 仅行尾不同
+engine/achievements.js
+engine/alias.js
+engine/calendar.js
+engine/card_diagnose.js
+engine/core/card_validator.js
+engine/core/cards_demo.js
+engine/dice.js
+engine/dice_history.js
+engine/endings.js
+engine/events.js
+engine/proposal_semantic_check.js
+engine/proposal_validator.js
+engine/runtime_repair.js
+engine/shop.js
+engine/snapshots.js
+engine/status_card.js
+engine/story_nodes.js
+engine/tasks.js
+engine/theme.js
+templates/number.js
+templates/relation.js
+vfs/logger.js
+```
+
+**真差异**（18 个；按各自仓的语义改，逻辑对齐靠测试而不是靠字节）：
+
+```text
+# 真差异
+engine/api_manager.js
+engine/audit.js
+engine/avatar.js
+engine/classify.js
+engine/core/gamestate.js
+engine/core/prompt_builder.js
+engine/core/storage.js
+engine/npc_deduction.js
+engine/npc_deduction_ai.js
+engine/realtime.js
+engine/weather.js
+engine/web_search.js
+platform/platform_adapter.js
+tools/longline_token_smoke.js
+tools/npc_boundary_smoke.js
+vfs/saves.js
+vfs/vfs.js
+vfs/vfs_guard.js
 ```
 
 ### 2.1 同步办法
@@ -107,30 +183,40 @@ engine/import/pipeline.js
 
 | 守卫在哪 | 守什么 |
 |---|---|
-| 桌面 `tests/unit/test_p15_import.js` P15-9 / P15-10 | `engine/import/**` 12 个模块 + `tools/import_smoke.js`，共 13 个文件逐字节相同 |
-| 桌面 `tests/unit/test_p14_claim_fact.js` | `tools/claim_fact_smoke.js` 存在且两仓同源 |
-| RN `tools/log_query_smoke.js:578-579` | `vfs/logger.js` 两仓逐字节相同 |
-| RN `tools/log_query_smoke.js:597-598` | `engine/info_feed.js` 两仓逐字节相同 |
-| RN `tools/num_editor_smoke.js:317-318,322-329` | `templates/number.js`、`templates/relation.js` 两仓逐字节相同 |
+| 桌面 `tests/unit/test_p15_import.js:93,98` | `engine/import/**` 12 个模块 + `tools/import_smoke.js` 逐字节相同 |
+| 桌面 `tests/unit/test_p16_tool_ready.js:29,134` | `tools/tool_ready_smoke.js` 两仓逐字节相同 |
+| 桌面 `tests/unit/test_p16_instruction.js:26`、`test_p43_card_normalize.js:38` | `rn/instruction_templates.js` 卡带指令模板两仓一致 |
+| 桌面 `tests/unit/test_p16c_info_tick.js:114-115` | `tools/info_tick_smoke.js`、`engine/info_feed.js` 逐字节相同 |
+| 桌面 `tests/unit/test_p24_endings_gate.js:22,86` | `tools/endings_gate_smoke.js` 及 SAME 清单（行尾归一比对） |
+| 桌面 `tests/unit/test_p26_source_readable.js:91,103` | `tools/source_readable_smoke.js` 及 SAME 清单 |
+| 桌面 `tests/unit/test_p27_outputs_review.js:84` | `tools/outputs_review_smoke.js` 及 SAME 清单 |
+| 桌面 `tests/unit/test_p28_background.js:73,78` | `tools/background_smoke.js`、`engine/background.js` 及 SAME 清单 |
+| 桌面 `tests/unit/test_p49_version_sync.js:29` | `tools/version_sync_smoke.js` + 版本三处同值 |
+| 桌面 `tests/unit/test_p53_proposal_audit.js:78,94` | `engine/error_log_core.js`（逐字节）、`engine/proposal_validator.js`（行尾归一）、`tools/proposal_audit_smoke.js`（逐字节） |
+| 桌面 `tests/unit/test_p53_license_docs.js` | 本文三桶计数/清单与盘上现算一致、README 与 `tools/README.md` 的套数断言数 |
+| RN `tools/log_query_smoke.js:578-579` / `:597-598` | `vfs/logger.js` / `engine/info_feed.js` 逐字节相同 |
+| RN `tools/num_editor_smoke.js:317-318,322-329` | `templates/number.js`、`templates/relation.js` 逐字节相同 |
 | RN `tools/num_editor_smoke.js:331-339` | 桌面 `engine/editor.js` → RN `engine/num_editor.js` 的移植保真 |
+| 桌面 `tests/unit/test_p14_claim_fact.js:26` | `tools/claim_fact_smoke.js` **只管存在**（两仓同源没有专门断言，靠本节现算清单） |
 
 ### 2.3 ⚠ 同名但**不同源**（最容易误判）
 
-- `tools/longline_token_smoke.js`：两仓**同名、内容不同**。RN 版 22 条断言，桌面版 38 条，
-  各自写各自的夹具。**不是同源件，不要互相同步。**
-- `tools/npc_boundary_smoke.js`：两仓同名、内容不同，同理不要互相同步。
-- `tools/p10_smoke.js`、`tools/story_smoke.js`、`tools/home_smoke.js` 等：**RN 仓独有**。
+- 唯一准确的清单是上面那张【真差异】表（18 个），它是**现算**出来的，别凭记忆。
+- `tools/longline_token_smoke.js`、`tools/npc_boundary_smoke.js`：两仓**同名、内容不同**，
+  各自写各自的夹具，**不要互相同步**。
+- `tools/p10_smoke.js`、`tools/story_smoke.js`、`tools/home_smoke.js` 等：**RN 仓独有**；
   桌面仓的对应覆盖在 `tests/unit/`、`tests/e2e/` 下，**文件名不同**，不存在同源关系。
-- `engine/core/prompt_builder.js`、`engine/story.js`、`engine/core/storage.js`、`engine/core/api_client.js`、
-  `engine/core/gamestate.js`、`engine/core/tool_executor.js`、`vfs/vfs.js`、`vfs/saves.js`、`engine/theme.js`：
-  两仓**都有但内容不同**（平台差异，例如桌面 `storage.js` 多一行「平台依赖：localStorage，
-  RN 侧换 SecureStore」声明）。这些按**各自仓的语义**改，逻辑对齐靠测试而不是靠字节。
+- `engine/core/prompt_builder.js`、`engine/core/storage.js`、`engine/api_manager.js`、`engine/web_search.js`、
+  `platform/platform_adapter.js`、`vfs/vfs.js`、`vfs/saves.js` 等 18 个：两仓**都有但内容不同**（平台差异，
+  例如桌面 `storage.js` 多一行「平台依赖：localStorage，RN 侧换 SecureStore」声明）。
+- 反过来，这些曾被误判成「内容不同」，P53 现算确认是**逐字节相同**：`engine/story.js`、`engine/core/api_client.js`、`engine/core/tool_executor.js`。
+- 这些曾被误判成「内容不同」，P53 现算确认属于**仅行尾不同**：`engine/theme.js`、`engine/endings.js`、`engine/events.js`、`engine/proposal_validator.js`。
 
 ================================================================
 【三、`rn/rn_bootstrap.js` 装载约定】
 ================================================================
 
-- 当前 **63 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
+- 当前 **65 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
 - 每个 `load(name, () => require('../engine/xxx.js'), extra?)`，`require` 参数必须是**字面量字符串**
   （Metro 只静态收集字面量；拼出来的路径不进 bundle）。
 - `load` 失败只打 `BOOTSTRAP_FAIL: …` 然后继续，**不抛** ⇒ 少一个模块不会立刻崩，
@@ -146,7 +232,7 @@ engine/import/pipeline.js
 【四、跑测口径】
 ================================================================
 
-### 4.1 RN 侧（26 套）
+### 4.1 RN 侧（37 套）
 
 **cwd 是硬约束：RN 的所有 smoke 必须在 `D:\HippocampusRN` 下跑**，因为脚本用相对路径找
 `engine/`、`vfs/`、`rn/`。从别的目录跑会 `Cannot find module`。
@@ -154,38 +240,66 @@ engine/import/pipeline.js
 ```powershell
 cd D:\HippocampusRN
 node tools\import_smoke.js
-# 一键全跑
-& "$env:TEMP\p13_run_rn.ps1"
+# 一键全跑（P53 起用这个，跑批器在仓库内、自己定位仓根；旧的 %TEMP%\p13_run_rn.ps1 已废）
+node tools\run_all_smokes.js
+node tools\run_all_smokes.js --list       # 只列套件
+node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```
 
-| 套件 | 断言 | 套件 | 断言 |
-|---|---|---|---|
-| `cards_smoke.js` | 35 | `num_editor_smoke.js` | 72 |
-| `claim_fact_smoke.js` | 44 | `p1_settings_smoke.js` | 202 |
-| `create_flow_smoke.js` | 107 | `p10_smoke.js` | 73 |
-| `create_smoke.js` | 23 | `panels_smoke.js` | 102 |
-| `h6_panels_smoke.js` | 124 | `polyfill_smoke.js` | 22 |
-| `home_smoke.js` | 89 | `saves_smoke.js` | 17 |
-| `image_smoke.js` | 39 | `settings_smoke.js` | 144 |
-| `import_smoke.js` | 115 | `story_smoke.js` | 195 |
-| `info_phone_smoke.js` | 45 | `theme_tokens_smoke.js` | 146 |
-| `log_query_smoke.js` | 92 | `tool_ready_smoke.js` | 60 |
-| `longline_token_smoke.js` | 22 | `web_search_smoke.js` | 51 |
-| `npc_boundary_smoke.js` | 36 | `worldbook_smoke.js` | 180 |
-| `info_tick_smoke.js` | 14 | `cache_usage_smoke.js` | 12 |
+| 套件 | 断言 |
+|---|---|
+| `background_smoke.js` | 37 |
+| `cache_usage_smoke.js` | 12 |
+| `card_compat_smoke.js` | 24 |
+| `card_import_smoke.js` | 25 |
+| `cards_smoke.js` | 35 |
+| `claim_fact_smoke.js` | 44 |
+| `create_flow_smoke.js` | 115 |
+| `create_smoke.js` | 23 |
+| `endings_gate_smoke.js` | 27 |
+| `file_picker_smoke.js` | 51 |
+| `h6_panels_smoke.js` | 137 |
+| `home_smoke.js` | 89 |
+| `image_smoke.js` | 39 |
+| `import_smoke.js` | 130 |
+| `info_phone_smoke.js` | 45 |
+| `info_tick_smoke.js` | 14 |
+| `log_query_smoke.js` | 92 |
+| `longline_token_smoke.js` | 22 |
+| `mobile_ux_smoke.js` | 83 |
+| `npc_boundary_smoke.js` | 36 |
+| `num_editor_smoke.js` | 72 |
+| `outputs_review_smoke.js` | 77 |
+| `p10_smoke.js` | 75 |
+| `p1_settings_smoke.js` | 202 |
+| `panels_smoke.js` | 102 |
+| `polyfill_smoke.js` | 22 |
+| `proposal_audit_smoke.js` | 19 |
+| `saves_smoke.js` | 17 |
+| `settings_smoke.js` | 144 |
+| `source_readable_smoke.js` | 23 |
+| `story_smoke.js` | 195 |
+| `theme_switch_smoke.js` | 22 |
+| `theme_tokens_smoke.js` | 146 |
+| `tool_ready_smoke.js` | 60 |
+| `version_sync_smoke.js` | 15 |
+| `web_search_smoke.js` | 51 |
+| `worldbook_smoke.js` | 180 |
 
-**当前基线：26 套 / 2061 ok / 0 failed。**
+**当前基线：37 套 / 2502 ok / 0 failed。**
 
 ### 4.2 桌面侧
 
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
-node tools\claims.js                      # 14 项（13 ok / 1 known-open）
-node tools\run_batch.js --skip-preflight  # 全量（38 套）
+node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
+node tools\run_batch.js                   # 前置门 + 全量（51 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
-node tools\import_smoke.js                # 导入层（与 RN 同源，115 条）
+node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
 ```
+
+**当前基线：51 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
 
 ### 4.3 环境坑（都真踩过）
 
@@ -238,7 +352,21 @@ node tools\import_smoke.js                # 导入层（与 RN 同源，115 条�
 - 全中文注释与文档；`docs/_archive/**` 里的历史报告**不要改**（那是历史快照，
   里面写「桌面 7 档」是对的，因为当时就是 7 档）。
 
+================================================================
+【七、发布口径（P53 起）】
+================================================================
+
+- **版本号三处同值**：`package.json.version`、`android/app/build.gradle` 的 `versionName`（`versionCode` 同步抬）、
+  `package-lock.json` 根字段。守卫 `tools/version_sync_smoke.js`（VS-*）。当前 **1.3.0 / versionCode 10300**。
+- **许可**：MIT，全文在仓内 `LICENSE`；`package.json` 的 `license` 字段也必须是 `MIT`。
+  两仓 `LICENSE` 逐字节相同（守卫：桌面 `tests/unit/test_p53_license_docs.js`）。
+- **CI**：`.github/workflows/smoke.yml` —— `main` push / PR / 手动触发，Node 22，
+  `npm ci --ignore-scripts --no-audit --no-fund` 之后跑 `node tools/run_all_smokes.js`（37 套）。
+  桌面仓**暂不接 CI**（19 套 e2e 需要 Electron + 显示），发布前在本机跑 `node tools/run_batch.js` 全量。
+- **文档数字**：README / 本文件 / `tools/README.md` 里的套数、断言数、同源三桶计数都由
+  桌面 `tests/unit/test_p53_license_docs.js` 现算比对；改数字必须连同文档一起改，否则批跑红。
+
 ---
 
-**版本**：v1（P13·B 落地时建立）
+**版本**：v2（P53 文档口径统一）
 **对应桌面仓**：`docs/CONVENTIONS.md`（分层公约 v1）

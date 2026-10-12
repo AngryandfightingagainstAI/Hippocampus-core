@@ -205,7 +205,9 @@ var PromptBuilder = {
     lines.push('放在【正文】之后、【时间】之前。可多个。');
     lines.push('数值：modify_hud(key, delta) / modify_sidebar(key, delta) / modify_entry(panelId, key, delta) / modify_relation(from, to, delta)');
     lines.push('物品：add_item(category, name, desc)（category: bar/common/story/rare）/ remove_item(name)');
-    lines.push('查询：query_player() / query_npc(id) / query_faction(id) / query_map(id) / query_worldsetting() / query_log({keyword, from?, to?}) / query_source({keyword?|offset?|limit?})');
+    lines.push('查询：query_player() / query_npc(id) / query_faction(id) / query_map(id) / query_worldsetting() / query_log({keyword, from?, to?})');
+    lines.push('资料：query_source({keyword:"词"}) 搜索资料 / query_source({offset:0,limit:5}) 分页读全文 / query_source() 看目录');
+    lines.push('位置：set_location(locationId, reason?) / list_destinations(scope?)（scope: all/children/siblings）');
     lines.push('NPC 管理：add_keyword(id, keyword) / npc_enter(id) / npc_leave(id, to?)（to 可选 "dormant"|"offstage"，默认 dormant）');
     lines.push('NPC 知识：npc_knows(id, text, source?, sourceNote?, origin?, unverified?)（source: witness/told/rumor/public/deduced/misconception/manual/legacy，默认 deduced；玩家本人告诉 NPC 的事用 origin:"player" + unverified:true，表示「玩家这么说过」而非「已确认的事实」）');
     // P9·S1：信息层（手机）工具协议 4 行，逐字搬自桌面 engine/core/prompt_builder.js:191-194。
@@ -239,7 +241,7 @@ var PromptBuilder = {
     lines.push('元层提议：玩家说“应该加/应该改/不该再”时，调 propose_change 把变更落成提议（叙事里的口头答应不算）。');
     lines.push('');
     // P10·B6：output_publish 仅 name 必填（CONTRACTS.md:269-271）。
-    lines.push('产出物：output_publish({name, title?, content?, desc?, type?, keywords?, audience?}) / output_stir({outputId, npcId, action}) / output_settle({id, verdict}) / query_outputs()');
+    lines.push('产出物：output_publish({name, title?, content?, desc?, type?, keywords?, audience?, category?, isFragment?}) / output_stir({outputId, npcId, action}) / output_settle({id, verdict}) / query_outputs()');
     lines.push('产出物正文：title 是标题、content 是正文、desc 是一句描述（都要写全，玩家面板里会看到）；玩家可在「产出物」面板新建或改写并送一轮 AI 审核，审核通过（included / revised）的产出物会带着描述与正文出现在【产出物发酵中】里，直接当剧情素材用，不要另起炉灶。');
     lines.push('');
     lines.push('注意：');
