@@ -17,9 +17,13 @@ var path = require('path');
 var crypto = require('crypto');
 
 var root = path.resolve(__dirname, '..');
-var DESK = 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
+var DESK = process.env.HIPPOCAMPUS_PC || 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
 
 var ok = 0, fail = 0;
+// P53：CI 只有一个仓 —— 跨仓断言在「另一仓不可见」时降级为 SKIP（本机两仓同在时行为不变）。
+var HAVE_OTHER = fs.existsSync(path.join(DESK, 'package.json'));
+var skipN = 0;
+function skip(name, why) { skipN++; console.log('SKIP: ' + name + (why ? ' <<< ' + why : '')); }
 function check(name, cond) {
   if (cond) { ok++; console.log('PASS: ' + name); }
   else { fail++; console.log('FAIL: ' + name); }
@@ -578,7 +582,8 @@ function runF() {
     pd.indexOf('搜索/清空按钮不搬（DOM 依赖）') < 0);
   check('F12 rn_bootstrap.js 装载 LogQuery',
     read(path.join(root, 'rn', 'rn_bootstrap.js')).indexOf("load('LogQuery'") >= 0);
-  check('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 20301 B CRLF / RN 19817 B LF）',
+  if (!HAVE_OTHER) skip('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 20301 B CRLF / RN 19817 B LF）', '另一仓不可见（' + DESK + '）');
+  else check('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 20301 B CRLF / RN 19817 B LF）',
     lfText(path.join(DESK, 'vfs', 'logger.js')) === lfText(path.join(root, 'vfs', 'logger.js')));
 }
 
@@ -603,8 +608,9 @@ function runG() {
   bases.forEach(function (b) {
     eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5(path.join(root, b[0])), b[1]);
   });
-  eq('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', md5(path.join(root, 'engine', 'info_feed.js')),
+  if (HAVE_OTHER) eq('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', md5(path.join(root, 'engine', 'info_feed.js')),
     md5(path.join(DESK, 'engine', 'info_feed.js')));
+  else skip('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', '另一仓不可见（' + DESK + '）');
   // 桌面同名件软提示：刻意的跨仓参考，不参与断言
   bases.forEach(function (b) {
     var dp = path.join(DESK, b[0]);
@@ -623,6 +629,6 @@ function runG() {
   runF();
   runG();
   console.log('');
-  console.log('LOG_QUERY_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
+  console.log('LOG_QUERY_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
   if (fail > 0) process.exit(1);
 })();

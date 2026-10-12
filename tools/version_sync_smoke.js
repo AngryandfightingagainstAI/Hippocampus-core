@@ -30,10 +30,14 @@ var EXPECT_VERSION = '1.3.0';
 var MIN_VERSION_CODE = 10300;
 
 var okN = 0, failN = 0;
+var skipN = 0;
 function ok(name, cond, detail) {
   if (cond) { okN++; console.log('ok   ' + name); }
   else { failN++; console.log('FAIL ' + name + (detail ? '  :: ' + detail : '')); }
 }
+// P53：CI 只有一个仓 —— 跨仓断言在「另一仓不可见」时降级为 SKIP（本机两仓同在时行为不变）。
+function skip(name, why) { skipN++; console.log('SKIP ' + name + (why ? '  :: ' + why : '')); }
+function okOrSkip(name, cond, detail, side) { if (side) ok(name, cond, detail); else skip(name, detail || '另一仓不可见'); }
 function read(p) { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return null; } }
 
 function pkgInfo(root) {
@@ -88,56 +92,61 @@ var lock = lockVersion(PC_ROOT);
 var grad = gradleInfo(RN_ROOT);
 var peer = path.join(RN_ROOT, 'tools', 'version_sync_smoke.js');
 
-ok('VS-2 两仓仓根都可达', !pc.err && !rn.err,
-  'PC=' + (pc.err || 'ok') + ' / RN=' + (rn.err || 'ok'));
+// P53：站在哪个仓、另一仓是否可见（CI 只有手机仓 ⇒ 桌面侧断言 SKIP，本机两仓同在时照旧全跑）
+var PC_SIDE = isPC || !pc.err;
+var RN_SIDE = isRN || !rn.err;
+var OTHER_SIDE = isPC ? RN_SIDE : PC_SIDE;
+
+okOrSkip('VS-2 两仓仓根都可达', !pc.err && !rn.err,
+  'PC=' + (pc.err || 'ok') + ' / RN=' + (rn.err || 'ok'), PC_SIDE && RN_SIDE);
 
 // ---------- 1. 四处声明同一口径 ----------
-ok('VS-3 桌面 package.json version = ' + EXPECT_VERSION + '（实测 ' + pc.version + '）',
-  pc.version === EXPECT_VERSION, '桌面 package.json 写的是 ' + pc.version);
-ok('VS-4 桌面 package-lock.json 根 version = ' + EXPECT_VERSION + '（实测 ' + lock.root + '，packages[""] = ' + lock.inner + '）',
+okOrSkip('VS-3 桌面 package.json version = ' + EXPECT_VERSION + '（实测 ' + pc.version + '）',
+  pc.version === EXPECT_VERSION, '桌面 package.json 写的是 ' + pc.version, PC_SIDE);
+okOrSkip('VS-4 桌面 package-lock.json 根 version = ' + EXPECT_VERSION + '（实测 ' + lock.root + '，packages[""] = ' + lock.inner + '）',
   !!lock.err ? false : (lock.root === EXPECT_VERSION && (lock.inner === undefined || lock.inner === EXPECT_VERSION)),
-  lock.err || ('根 ' + lock.root + ' / packages[""] ' + lock.inner));
-ok('VS-5 手机 package.json version = ' + EXPECT_VERSION + '（实测 ' + rn.version + '）',
-  rn.version === EXPECT_VERSION, '手机 package.json 写的是 ' + rn.version);
-ok('VS-6 Android versionName = ' + EXPECT_VERSION + '（实测 ' + grad.versionName + '）',
-  grad.versionName === EXPECT_VERSION, grad.err || ('build.gradle 写的是 ' + grad.versionName));
+  lock.err || ('根 ' + lock.root + ' / packages[""] ' + lock.inner), PC_SIDE);
+okOrSkip('VS-5 手机 package.json version = ' + EXPECT_VERSION + '（实测 ' + rn.version + '）',
+  rn.version === EXPECT_VERSION, '手机 package.json 写的是 ' + rn.version, RN_SIDE);
+okOrSkip('VS-6 Android versionName = ' + EXPECT_VERSION + '（实测 ' + grad.versionName + '）',
+  grad.versionName === EXPECT_VERSION, grad.err || ('build.gradle 写的是 ' + grad.versionName), RN_SIDE);
 
 // ---------- 2. versionCode 派生 + 只增不回退 ----------
-ok('VS-7 Android versionCode = versionName 派生值 ' + deriveCode(EXPECT_VERSION) + '（实测 ' + grad.versionCode + '）',
+okOrSkip('VS-7 Android versionCode = versionName 派生值 ' + deriveCode(EXPECT_VERSION) + '（实测 ' + grad.versionCode + '）',
   grad.versionCode === deriveCode(grad.versionName),
-  'versionCode ' + grad.versionCode + ' ≠ major*10000+minor*100+patch(' + grad.versionName + ') = ' + deriveCode(grad.versionName));
-ok('VS-8 Android versionCode >= 底线 ' + MIN_VERSION_CODE + '（只增不回退）',
+  'versionCode ' + grad.versionCode + ' ≠ major*10000+minor*100+patch(' + grad.versionName + ') = ' + deriveCode(grad.versionName), RN_SIDE);
+okOrSkip('VS-8 Android versionCode >= 底线 ' + MIN_VERSION_CODE + '（只增不回退）',
   typeof grad.versionCode === 'number' && grad.versionCode >= MIN_VERSION_CODE,
-  '实测 ' + grad.versionCode + '（低于底线说明被改小了）');
+  '实测 ' + grad.versionCode + '（低于底线说明被改小了）', RN_SIDE);
 ok('VS-9 基线自身自洽：EXPECT_VERSION 派生的 code ' + deriveCode(EXPECT_VERSION) + ' >= MIN_VERSION_CODE ' + MIN_VERSION_CODE,
   deriveCode(EXPECT_VERSION) !== null && deriveCode(EXPECT_VERSION) >= MIN_VERSION_CODE,
   'EXPECT_VERSION=' + EXPECT_VERSION + ' / MIN_VERSION_CODE=' + MIN_VERSION_CODE);
 
 // ---------- 3. 两仓对文件、格式与「不许出现第四处声明」 ----------
-ok('VS-10 两仓 package.json version 逐字相等（桌面 ' + pc.version + ' / 手机 ' + rn.version + '）',
-  pc.version === rn.version, '两仓写的不一样');
+okOrSkip('VS-10 两仓 package.json version 逐字相等（桌面 ' + pc.version + ' / 手机 ' + rn.version + '）',
+  pc.version === rn.version, '两仓写的不一样', PC_SIDE && RN_SIDE);
 ok('VS-11 三处版本串都是合法 semver（' + [EXPECT_VERSION, pc.version, rn.version].join(' / ') + '）',
-  isSemver(EXPECT_VERSION) && isSemver(pc.version) && isSemver(rn.version),
+  isSemver(EXPECT_VERSION) && (!RN_SIDE || isSemver(rn.version)) && (!PC_SIDE || isSemver(pc.version)),
   '有非法格式（必须是 x.y.z 三段数字）');
-ok('VS-12 build.gradle 里 versionName / versionCode 各只声明一次',
+okOrSkip('VS-12 build.gradle 里 versionName / versionCode 各只声明一次',
   grad.nameDecls === 1 && grad.codeDecls === 1,
-  'versionName 出现 ' + grad.nameDecls + ' 次、versionCode 出现 ' + grad.codeDecls + ' 次（加 flavor 会引入第二处口径）');
+  'versionName 出现 ' + grad.nameDecls + ' 次、versionCode 出现 ' + grad.codeDecls + ' 次（加 flavor 会引入第二处口径）', RN_SIDE);
 
 var appJson = read(path.join(RN_ROOT, 'app.json'));
 var appHasVersion = false;
 try { appHasVersion = !!appJson && Object.prototype.hasOwnProperty.call(JSON.parse(appJson), 'version'); }
 catch (e) { appHasVersion = false; }
-ok('VS-13 手机 app.json 没有引入第二个 version 字段（版本只在 package.json 与 build.gradle）',
-  !appHasVersion, 'app.json 里出现了 version ⇒ 版本口径变四处');
+okOrSkip('VS-13 手机 app.json 没有引入第二个 version 字段（版本只在 package.json 与 build.gradle）',
+  !appHasVersion, 'app.json 里出现了 version ⇒ 版本口径变四处', RN_SIDE);
 
 // ---------- 4. dist/latest.yml（有就守）----------
 var ymlPath = path.join(PC_ROOT, 'dist', 'latest.yml');
 if (fs.existsSync(ymlPath)) {
   var yml = read(ymlPath) || '';
   var mv = yml.match(/^version:\s*(.+)$/m);
-  ok('VS-14 dist/latest.yml 的 version = package.json version（实测 ' + (mv ? mv[1].trim() : '解析失败') + '）',
+  okOrSkip('VS-14 dist/latest.yml 的 version = package.json version（实测 ' + (mv ? mv[1].trim() : '解析失败') + '）',
     !!mv && mv[1].trim() === pc.version,
-    'latest.yml 决定将来 electron-updater 认哪个版本，必须与 package.json 同值');
+    'latest.yml 决定将来 electron-updater 认哪个版本，必须与 package.json 同值', PC_SIDE);
 } else {
   ok('VS-14 dist/latest.yml 不存在 ⇒ 跳过（未打包过）', true);
 }
@@ -150,9 +159,9 @@ if (fs.existsSync(peer)) {
   ok('VS-15 两仓 tools/version_sync_smoke.js 逐字节同源（' + a.length + ' B）',
     a.equals(b), '本仓 ' + a.length + ' B vs 对仓 ' + b.length + ' B');
 } else {
-  ok('VS-15 对仓 tools/version_sync_smoke.js 存在', false, '缺文件：' + peer);
+  okOrSkip('VS-15 对仓 tools/version_sync_smoke.js 存在', false, '缺文件：' + peer, OTHER_SIDE);
 }
 
 console.log('');
-console.log('VERSION_SYNC_SMOKE: ' + okN + ' ok, ' + failN + ' failed');
+console.log('VERSION_SYNC_SMOKE: ' + okN + ' ok, ' + failN + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
 if (failN > 0) process.exit(1);

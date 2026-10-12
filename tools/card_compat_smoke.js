@@ -29,6 +29,12 @@ function check(name, cond, detail) {
   if (cond) { ok++; console.log('  ok   ' + name); }
   else { fail++; console.log('  FAIL ' + name + (detail ? ' <<< ' + detail : '')); }
 }
+
+// P53：CI 只有一个仓 —— 跨仓（两仓同源）断言在「另一仓不可见」时降级为 SKIP，不再是 FAIL。
+//   本机两仓同在时行为与以前逐字一致（断言数不变）；换机器可用 HIPPOCAMPUS_PC 指定桌面仓。
+var HAVE_OTHER = fs.existsSync(path.join(PC_ROOT, 'package.json'));
+var skipN = 0;
+function skip(name, why) { skipN++; console.log('  SKIP ' + name + (why ? ' <<< ' + why : '')); }
 function eq(name, actual, expected) {
   check(name + '（actual=' + JSON.stringify(actual) + '）', actual === expected);
 }
@@ -138,7 +144,10 @@ else {
 section('W-4 两仓同源哨兵（行尾归一后逐字节一致）');
 [['engine/outputs.js', OUT_PATH, OUT_PC], ['engine/core/card_validator.js', CV_PATH, CV_PC]].forEach(function (rel) {
   var a = norm(readIf(rel[1])), b = norm(readIf(rel[2]));
-  if (a === null || b === null) check('W-4 两仓同源 ' + rel[0], false, '读不到文件（PC 仓路径 ' + PC_ROOT + '）');
+  if (a === null || b === null) {
+    if (!HAVE_OTHER) skip('W-4 两仓同源 ' + rel[0], '另一仓不可见（' + PC_ROOT + '）');
+    else check('W-4 两仓同源 ' + rel[0], false, '读不到文件（PC 仓路径 ' + PC_ROOT + '）');
+  }
   else check('W-4 两仓同源 ' + rel[0] + '（' + a.length + ' 字符）', a === b, 'RN ' + a.length + ' vs PC ' + b.length);
 });
 
@@ -153,5 +162,5 @@ var tpl = readIf(TPL_PATH) || '';
 check('W-5d 旧误导口径已移除', tpl.indexOf('不填 outputs → 系统对卡带不可用') < 0);
 
 console.log('');
-console.log('CARD_COMPAT_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
+console.log('CARD_COMPAT_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
 if (fail > 0) process.exit(1);

@@ -19,13 +19,18 @@ var path = require('path');
 var crypto = require('crypto');
 
 var root = path.resolve(__dirname, '..');
-var DESK = 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
+var DESK = process.env.HIPPOCAMPUS_PC || 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
 
 var ok = 0, fail = 0;
 function check(name, cond) {
   if (cond) { ok++; console.log('PASS: ' + name); }
   else { fail++; console.log('FAIL: ' + name); }
 }
+
+// P53：CI 只有一个仓 —— 跨仓断言在「另一仓不可见」时降级为 SKIP（本机两仓同在时行为不变）。
+var HAVE_OTHER = fs.existsSync(path.join(DESK, 'package.json'));
+var skipN = 0;
+function skip(name, why) { skipN++; console.log('SKIP: ' + name + (why ? ' <<< ' + why : '')); }
 function eq(name, actual, expected) {
   check(name + '（actual=' + JSON.stringify(actual) + '）', actual === expected);
 }
@@ -314,6 +319,10 @@ function runNE() {
 // ================= H 同源（模板逐字节 + NumEditor 主体逐字）=================
 
 function runSource() {
+  if (!HAVE_OTHER) {
+    skip('H 组（跨仓：桌面 templates/number.js + relation.js 行尾归一后同源、桌面 engine/editor.js 的纯逻辑函数逐字搬到 RN engine/num_editor.js）', '另一仓不可见（' + DESK + '）');
+    return;
+  }
   var deskNum = path.join(DESK, 'templates', 'number.js');
   var deskRel = path.join(DESK, 'templates', 'relation.js');
   var rnNum = path.join(root, 'templates', 'number.js');
@@ -538,10 +547,10 @@ try {
   runSource();
   runComponent();
   runReadonlyWindow();
-  console.log('NUM_EDITOR_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
+  console.log('NUM_EDITOR_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
   if (fail > 0) process.exit(1);
 } catch (e) {
   console.log('SMOKE_CRASH: ' + (e && e.stack ? e.stack : e));
-  console.log('NUM_EDITOR_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
+  console.log('NUM_EDITOR_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
   process.exit(1);
 }

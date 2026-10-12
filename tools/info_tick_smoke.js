@@ -19,11 +19,17 @@ const otherRoot = isRN
 
 let ok = 0;
 let fail = 0;
+// P53：CI 只有一个仓 —— 跨仓断言在「另一仓不可见」时降级为 SKIP，不再是 FAIL（本机两仓同在时行为不变）。
+let skipN = 0;
+const SKIP = '__SKIP__';
+const HAVE_OTHER = fs.existsSync(path.join(otherRoot, 'package.json'));
+function skip(n, why) { skipN++; console.log('SKIP: ' + n + (why ? ' <<< ' + why : '')); return SKIP; }
 const failures = [];
 function failMsg(n, d) { fail++; failures.push(n + ' :: ' + d); }
 async function check(n, fn) {
   try {
     const r = await fn();
+    if (r === SKIP) return;
     if (r === true) { ok++; console.log('PASS: ' + n); return; }
     failMsg(n, (typeof r === 'string') ? r : '断言为假');
   } catch (e) {
@@ -281,6 +287,7 @@ function md5(buf) { return crypto.createHash('md5').update(buf).digest('hex').to
   // ---------------- IT-9 两仓同源 ----------------
   await check('IT-9 engine/info_feed.js 两仓逐字节同源', function () {
     const other = path.join(otherRoot, 'engine', 'info_feed.js');
+    if (!HAVE_OTHER) return skip('IT-9 engine/info_feed.js 两仓逐字节同源', '另一仓不可见（' + otherRoot + '）');
     if (!fs.existsSync(other)) return '找不到对仓文件 ' + other;
     const a = fs.readFileSync(SRC);
     const b = fs.readFileSync(other);
@@ -291,6 +298,6 @@ function md5(buf) { return crypto.createHash('md5').update(buf).digest('hex').to
 
   console.log('---------------------------------');
   failures.forEach(function (f) { console.log('FAIL: ' + f); });
-  console.log('INFO_TICK_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
+  console.log('INFO_TICK_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
   if (fail > 0) process.exit(1);
 })();

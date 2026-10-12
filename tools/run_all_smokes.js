@@ -50,7 +50,7 @@ console.log('node ' + process.version + ' · 单套超时 ' + (TIMEOUT / 1000) +
 console.log('日志：' + logPath);
 console.log('---------------------------------');
 
-let totals = { ok: 0, fail: 0 }, badSuites = [], t0 = Date.now();
+let totals = { ok: 0, fail: 0, skip: 0 }, badSuites = [], t0 = Date.now();
 files.forEach(function (f, i) {
   const full = path.join(TOOLS, f);
   const outPath = path.join(os.tmpdir(), 'rn_one_' + f + '.log');
@@ -66,6 +66,8 @@ files.forEach(function (f, i) {
   const sumLine = lines.slice().reverse().find(function (l) { return /\d+ ok,\s*\d+ failed/.test(l); }) || '(无汇总行)';
   const m = sumLine.match(/(\d+)\s*ok,\s*(\d+)\s*failed/);
   if (m) { totals.ok += Number(m[1]); totals.fail += Number(m[2]); }
+  const msk = sumLine.match(/(\d+)\s*skipped/);
+  if (msk) totals.skip += Number(msk[1]);
   const fails = lines.filter(function (l) { return /^FAIL\b/.test(l); });
   const exit = res ? res.status : null;
   const bad = (exit !== 0) || (m && Number(m[2]) > 0) || !m;
@@ -76,7 +78,7 @@ files.forEach(function (f, i) {
 });
 
 console.log('---------------------------------');
-console.log('RN_ALL_END SUITES=' + files.length + ' TOTAL_OK=' + totals.ok + ' TOTAL_FAIL=' + totals.fail + ' BAD_SUITES=' + badSuites.length + ' DURATION=' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
+console.log('RN_ALL_END SUITES=' + files.length + ' TOTAL_OK=' + totals.ok + ' TOTAL_FAIL=' + totals.fail + ' TOTAL_SKIP=' + totals.skip + ' BAD_SUITES=' + badSuites.length + ' DURATION=' + ((Date.now() - t0) / 1000).toFixed(0) + 's');
 if (badSuites.length) {
   console.log('非零退出/有红条的套件：');
   badSuites.forEach(function (b) {
