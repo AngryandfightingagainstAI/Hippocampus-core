@@ -1,6 +1,6 @@
 // ============================================================
 // RN 联网搜索 smoke · 战役 P2 · S1
-// 用法：node tools/web_search_smoke.js（cwd = RN 仓根）
+// 用法：node tools/web_search_smoke.js（cwd 随意）
 //
 // 口径：Node 侧注入内存 localStorage + 真 engine/core/storage.js +
 //   假 Platform.http，engine/web_search.js 双态导出后 module.exports 直取

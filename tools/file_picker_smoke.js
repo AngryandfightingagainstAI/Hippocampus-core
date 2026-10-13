@@ -1,6 +1,6 @@
 // ============================================================
 // P20 · RN「上传文件到 App」smoke（用户 m05320 诉求 2）
-// 用法：cwd = RN 仓根 → node tools/file_picker_smoke.js
+// 用法：cwd 随意 → node tools/file_picker_smoke.js
 //
 // 背景：RN 侧以前只能把资料正文粘进输入框，docx / odt / epub / pdf / zip
 //   这类二进制资料根本进不来（CardsScreen.js 自己写着「RN 侧的文件选择器还没接」）。

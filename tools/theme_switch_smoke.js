@@ -1,6 +1,6 @@
 // ============================================================
 // P19 · RN 切主题跨实例生效 smoke（用户 m05320 报「rn版本切主题不起作用」）
-// 用法：cwd = RN 仓根 → node tools/theme_switch_smoke.js
+// 用法：cwd 随意 → node tools/theme_switch_smoke.js
 //
 // 背景：rn/use_theme.js 的 setTheme / setFontScale / setFont /
 //   setBackground / clearBackground 只做**本地** bump（只刷新调用方

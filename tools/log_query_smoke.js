@@ -1,5 +1,5 @@
 // ============================================================
-// P4 · smoke（cwd 必须是 RN 仓根：node tools/log_query_smoke.js）
+// P4 · smoke（cwd 随意：node tools/log_query_smoke.js）
 // 覆盖：
 //   A query_log 模块形态与注册
 //   B S1 · 40 条截断修复（chunks / msgFrom / msgTo / 全量入 fullText）

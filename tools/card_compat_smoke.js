@@ -13,7 +13,7 @@
 //      settleRules.when ⇒ 产出物永远停在「发酵中」。
 //   P43 的修法：导入/读档时把顶层 npcs 并入 worldbook.npcs（并在 warnings 里给出中文提示），
 //   getCardConfig() 在没写 settleRules 时补 progress-full 默认规则。本文件把这两条钉住。
-// 用法：node tools/card_compat_smoke.js（cwd = RN 仓根）
+// 用法：node tools/card_compat_smoke.js（cwd 随意）
 // ============================================================
 
 'use strict';

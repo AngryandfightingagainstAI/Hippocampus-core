@@ -1,5 +1,5 @@
 // ============================================================
-// P2 · S2 · 数值编辑器 smoke（cwd 必须是 RN 仓根：node tools/num_editor_smoke.js）
+// P2 · S2 · 数值编辑器 smoke（cwd 随意：node tools/num_editor_smoke.js）
 // 覆盖：
 //   A 模块形态（纯逻辑 / 无 DOM 渲染函数 / 模板已装载 / 初值）
 //   B pickCard + loadFromCard 三源装载（hud / sidebar / panel.number / panel.relation）

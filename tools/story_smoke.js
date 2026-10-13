@@ -1,6 +1,6 @@
 // ============================================================
 // RN 叙事页 smoke · 战役 4 · 批次 4-3a（P0+P1）
-// 用法：node tools/story_smoke.js（cwd = RN 仓根；babel 配置已显式锚定仓根）
+// 用法：node tools/story_smoke.js（cwd 随意；babel 配置已显式锚定仓根）
 //
 // A. story_changes 文本映射（全 type 分支 + 去重 + 跳过规则）
 // B. story_store：富文本切分 / 骰子解析 / feed 入队 / 旧选项失效 /

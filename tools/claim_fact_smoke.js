@@ -1,8 +1,8 @@
 // ============================================================
 // P14 · Claim / Fact 隔离 smoke
-//   cwd 必须是仓根：
-//     RN   : cd D:\HippocampusRN && node tools/claim_fact_smoke.js
-//     桌面 : cd 神秘小引擎测试版 && node tools/claim_fact_smoke.js
+//   cwd 随意（P54 实测订正：仓根由 __dirname 推导，任意目录跑出的断言与仓根逐字一致）：
+//     RN   : node D:\HippocampusRN\tools\claim_fact_smoke.js
+//     桌面 : node 神秘小引擎测试版\tools\claim_fact_smoke.js
 //
 // 覆盖（对应用户 2026-10-02 设计稿第八节 CF-1…CF-6）：
 //   CF-1 内核规则：玩家陈述 ≠ 世界事实（engineRules + promptRules 裂痕原则）

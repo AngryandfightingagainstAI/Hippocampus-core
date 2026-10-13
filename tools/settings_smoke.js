@@ -1,6 +1,6 @@
 // ============================================================
 // RN 设置页 smoke · 战役 4 · 批次 4-5a + 4-5b
-// 用法：node tools/settings_smoke.js（cwd = RN 仓根）
+// 用法：node tools/settings_smoke.js（cwd 随意）
 //
 // A. settings_model 纯逻辑（内存 localStorage + 真 storage.js）：
 //    tab 清单 / dice 15 键默认与翻转 / general 读侧缺省语义与

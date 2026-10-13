@@ -1,5 +1,5 @@
 // ============================================================
-// P10 · smoke（cwd 必须是 RN 仓根：node tools/p10_smoke.js）
+// P10 · smoke（cwd 随意：node tools/p10_smoke.js）
 // A 组：体验补齐（源码断言，逐项对 P10 任务书 A1–A11）
 // B 组：提示词质量（B1 names 档 / B2 重复注入去重 + estimateTokens 前后实测 /
 //       B3 query_player 回显 / B4 12000 上限可见信号 / B5 info_read kind /

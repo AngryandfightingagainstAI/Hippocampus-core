@@ -1,5 +1,5 @@
 // ============================================================
-// P11 · S11 NPC 行为边界 smoke（cwd 必须是 RN 仓根：node tools/npc_boundary_smoke.js）
+// P11 · S11 NPC 行为边界 smoke（cwd 随意：node tools/npc_boundary_smoke.js）
 //
 // 覆盖：
 //   ① 引擎级规则含「玩家主体归玩家」细则 与「NPC 可以不行动/拒绝/忽略/离场后继续」；

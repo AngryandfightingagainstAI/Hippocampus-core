@@ -1,6 +1,6 @@
 // ============================================================
 // RN 图片压缩 smoke · 战役 4 · 批次 4-6a
-// 用法：node tools/image_smoke.js（cwd = RN 仓根）
+// 用法：node tools/image_smoke.js（cwd 随意）
 //
 // A. rn_platform 导出纯函数（A 类，Node 可直测）：
 //    imageCalcFit 等比缩放 / imageEstimateBytes 0.75 系数 /

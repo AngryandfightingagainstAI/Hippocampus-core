@@ -1,5 +1,5 @@
 // ============================================================
-// P11 · S10 长线 token 测试（cwd 必须是 RN 仓根：node tools/longline_token_smoke.js）
+// P11 · S10 长线 token 测试（cwd 随意：node tools/longline_token_smoke.js）
 //
 // 目的：在 Node 侧用内存夹具模拟 30+ 回合，观察三件事：
 //   ① 预算刹车真的会触发，并按 DEGRADE_STEPS（6 档）收敛，不越档、不倒退；

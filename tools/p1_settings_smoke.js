@@ -1,5 +1,5 @@
 // ============================================================
-// P1 · 桌面对齐补齐 smoke（cwd 必须是 RN 仓根：node tools/p1_settings_smoke.js）
+// P1 · 桌面对齐补齐 smoke（cwd 随意：node tools/p1_settings_smoke.js）
 // 覆盖本轮各包的 A 类纯逻辑假数据断言；随包递增。
 //   P1-C：思考块 meta 裁剪（story_store.filterThinkingMeta）+ 段落入队集成
 //         + ThinkingBlock/StoryScreen babel transform
