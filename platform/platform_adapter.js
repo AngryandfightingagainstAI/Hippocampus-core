@@ -133,7 +133,7 @@
       // 发现 story.js L659 漏盘后按同范式补齐，关账报告已标注；
       // renderChapterHead 为 2026-09-25 契约漏登补登——story.js L565 已按收口
       // 范式调用但名单漏登，致开局渲染抛 Platform.ui.renderChapterHead is not
-      // a function；契约静态校验见 tests/unit/test_platform_ui_contract.js；
+      // a function；契约静态校验见桌面仓 tests/unit/test_platform_ui_contract.js；
       // showGame 为 2026-09-27 删除——2-1 登记的空头契约，全仓零定义零调用
       // （实际导航走 showScreen('screen-game') + renderGame），契约测试 C5 抓出）：
       // 返回值一律透传（Promise / 数值 / 布尔原样返回，confirmAsync 可 await）；
