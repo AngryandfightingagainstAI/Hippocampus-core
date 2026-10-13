@@ -14,7 +14,7 @@ const crypto = require('crypto');
 const root = path.resolve(__dirname, '..');
 const isRN = fs.existsSync(path.join(root, 'rn', 'rn_bootstrap.js'));
 const otherRoot = isRN
-  ? (process.env.HIPPOCAMPUS_DESKTOP || 'D:/AI文游/神秘小引擎测试版/神秘小引擎测试版')
+  ? (process.env.HIPPOCAMPUS_PC || process.env.HIPPOCAMPUS_DESKTOP || 'D:/AI文游/神秘小引擎测试版/神秘小引擎测试版')
   : (process.env.HIPPOCAMPUS_RN || 'D:/HippocampusRN');
 
 let ok = 0;

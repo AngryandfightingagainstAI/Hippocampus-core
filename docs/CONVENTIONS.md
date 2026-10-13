@@ -368,6 +368,12 @@ node tools\import_smoke.js                # 导入层（与 RN 同源，130 条�
   故当前单仓环境的执行数是 `2485 + 7 = 2492`，总断言数 `2495 + 7 = 2502` 与下一行的本机数同源）；本机两仓同在时 `TOTAL_SKIP=0` / 2502 ok。
 - **文档数字**：README / 本文件 / **桌面仓**的 `tools/README.md` 里的套数、断言数、同源三桶计数都由
   桌面 `tests/unit/test_p53_license_docs.js` 现算比对；改数字必须连同文档一起改，否则批跑红。
+- **跨仓路径与降级开关（P54 起）**：跨仓断言用三个环境变量定位「另一个仓」，不设时回落到本机默认路径 ——
+  `HIPPOCAMPUS_PC`（桌面仓根）、`HIPPOCAMPUS_RN`（手机仓根）、`HIPPOCAMPUS_RN_RUNNER`（交付根的全量入口
+  `p24_rn_all.js`，只被桌面 `tests/unit/test_p49_version_sync.js` 用）。另一仓不可见时相应断言自动降级为
+  SKIP（不设变量、机器上只有一个仓也能跑绿）。单仓模拟跑法：把 `_p53_ci_sim.js` 复制到 `%TEMP%` 并用正斜杠路径
+  `NODE_OPTIONS="--require <路径>" node tools/run_all_smokes.js`；桌面侧对应
+  `HIPPOCAMPUS_RN='D:\__none__' node tools/run_batch.js`（注意 `NODE_OPTIONS` 会吞反斜杠）。
 
 ---
 

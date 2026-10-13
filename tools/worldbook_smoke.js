@@ -1,5 +1,5 @@
 // ============================================================
-// P2·S3 · 世界书 smoke（cwd 必须是 RN 仓根：node tools/worldbook_smoke.js）
+// P2·S3 · 世界书 smoke（cwd 随意：仓根由 __dirname 锚定，node tools/worldbook_smoke.js）
 // 覆盖：
 //   A 模块形态（13 文件可 require / 纯逻辑零 DOM / WB 工具函数）
 //   B..M 12 个编辑器数据往返（改内存 → save 落卡 → WB.load 读回 → 字段相等）
@@ -19,7 +19,7 @@ var path = require('path');
 var crypto = require('crypto');
 
 var root = path.resolve(__dirname, '..');
-var DESK = 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
+var DESK = process.env.HIPPOCAMPUS_PC || 'd:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
 
 var ok = 0, fail = 0;
 function check(name, cond) {
