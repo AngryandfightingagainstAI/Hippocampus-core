@@ -6,7 +6,7 @@
 
 1. `rn/` 与 `engine/` 的分工边界（谁可以依赖 React Native，谁绝对不行）
 2. **同源件**清单与同步办法（哪些文件两仓必须逐字节相同，怎么证）
-3. 跑测口径（怎么跑、cwd 限制、断言数怎么数、本轮红线）
+3. 跑测口径（怎么跑、cwd 口径、断言数怎么数、本轮红线）
 
 使用方式：
 - 改 `engine/**` 前先看【二】：如果目标文件在同源件清单里，**必须同时改另一仓**
@@ -234,8 +234,13 @@ vfs/vfs_guard.js
 
 ### 4.1 RN 侧（37 套）
 
-**cwd 是硬约束：RN 的所有 smoke 必须在 `D:\HippocampusRN` 下跑**，因为脚本用相对路径找
-`engine/`、`vfs/`、`rn/`。从别的目录跑会 `Cannot find module`。
+**cwd 随意（P54 实测订正）**：所有 smoke 都用 `__dirname` 锚定仓根（`tools\*.js` 里
+`process.cwd()` 真实调用 **0 处**），babel 也显式传了 `configFile`，所以从任何目录跑结果都一样。
+实测：从 `%TEMP%` 直跑 16 套（含 5 套头部注释仍写「cwd 必须是仓根」的 `claim_fact` / `import` /
+`p10` / `log_query` / `npc_boundary`）断言数与仓根**逐字相同**；从 `%TEMP%` 直跑整个跑批器同样是
+`RN_ALL_END SUITES=37 TOTAL_OK=2502 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`。
+在仓库根下跑仍是最省事的习惯，但不再是硬约束。
+（注：约 19 个 `tools\*.js` 的头部注释还留着「cwd = RN 仓根」的旧口径，属过时注释，本次未逐条订正。）
 
 ```powershell
 cd D:\HippocampusRN

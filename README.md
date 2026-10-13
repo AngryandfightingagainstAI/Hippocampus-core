@@ -203,7 +203,7 @@ CI 里看不到桌面仓，于是 10 条跨仓同源断言自动降级为 SKIP �
 `2495 + 7 = 2502` 与下面的本机数是同一棵树），
 本机两仓同在时是 2502 ok / 0 failed / `TOTAL_SKIP=0`。降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 
-> ⚠️ 必须在仓库根目录下跑（部分套件对 `cwd` 敏感）。
+> 跑法：`node tools/run_all_smokes.js`（跑批器自己定位仓根）。单套 `node tools/xxx_smoke.js` 也可从任意目录跑 —— P54 从 `%TEMP%` 直跑 16 套与整套跑批，断言数与在仓库根下跑**逐字相同**。
 
 引擎本身也能离开 React Native 跑：`engine/` + `vfs/` 在纯 Node 下可加载（只有 `rn/export_util.js`、`rn/rn_platform.js`、`rn/use_theme.js` 三个文件 `require('react-native')`），因此可以做无头回合驱动测试。
 
