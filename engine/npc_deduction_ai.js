@@ -39,7 +39,9 @@
         // 重试入口：清掉上一次的失败标记
         this._safeSetFail(pendingId, '');
         var prompt = this._buildPrompt(pending);
-        var opts = { max_tokens: 500, temperature: 0.3 };
+        // P54·第13条（P1）：与 outputs.js:421 同口径声明 JSON 模式；
+        // ApiClient 对不支持 response_format 的模型自动回退（core/api_client.js:91）
+        var opts = { max_tokens: 500, temperature: 0.3, jsonMode: true };
         if (cfg.profileId) opts.profileId = cfg.profileId;
         var content = await ApiClient.chat([{ role: 'user', content: prompt }], opts);
 
