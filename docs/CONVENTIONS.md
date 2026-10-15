@@ -373,6 +373,9 @@ node tools\import_smoke.js                # 导入层（与 RN 同源，130 条�
 - **CI**：`.github/workflows/smoke.yml` —— `main` push / PR / 手动触发，Node 22，
   `npm ci --ignore-scripts --no-audit --no-fund` 之后跑 `node tools/run_all_smokes.js`（37 套）。
   桌面仓**暂不接 CI**（19 套 e2e 需要 Electron + 显示），发布前在本机跑 `node tools/run_batch.js` 全量。
+  失败时把脚本自带的 `rn_all_*.log`（每套 stdout+stderr 原样，含失败套件名）作为 artifact `rn-smoke-log` 上传：
+  P54 实测同一个提交 `791c7fd` 在 CI 上出现过红（run #5）/ 绿（run #6）两次结果，而失败时 API annotations
+  只有退出码、job 日志下载需鉴权 —— 有 artifact 才能事后定位是哪套件红的。
   跨仓断言在**单仓环境**（CI 只有手机仓）下自动降级为 SKIP，汇总行输出 `TOTAL_SKIP=`：
   CI 实测 **10 条 SKIP / 2485 ok / 0 failed**（实测于提交 `66fe662`、CI run `38275495453`；此后本机新增 7 条断言，
   故当前单仓环境的执行数是 `2485 + 7 = 2492`，总断言数 `2495 + 7 = 2502` 与下一行的本机数同源）；本机两仓同在时 `TOTAL_SKIP=0` / 2502 ok。

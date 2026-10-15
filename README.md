@@ -270,7 +270,10 @@ HippocampusRN/
 
 ## 已知限制
 
-- **Android 优先**：`android/` 完整可打包，iOS 未做验证。
+- **仅 Android 可用**：`android/` 完整可打包；`ios/` 是 RN 0.87.1 的模板脚手架，**从未 `pod install`**
+  （无 `Podfile.lock` / `Pods/` / `.xcworkspace`），且「选文件」是 Android 专有原生模块
+  （`android/app/src/main/java/com/hippocampusrn/FilePickerModule.kt`；`ios/` 下除 `AppDelegate.swift`
+  没有任何原生代码）。要上 iOS 得先补 iOS 侧 picker 原生模块，再做 pod 安装与真机验证。
 - **信息层仍是概率性的**（25 分钟冷却 + 25%），所以「连着好些回合没有短信」是正常表现；只有**第一条**有触达保证。
 - **农历节日不做**（每年日期不同，引擎暂不支持）。
 - **导入文游资料**在手机版：文本类可以粘贴，也可以点「从文件导入…」走系统文件选择器（卡带 JSON 与资料文件都已接）；docx / odt / epub / PDF / ZIP 这类压缩包格式建议在桌面版导入后再导出卡带。

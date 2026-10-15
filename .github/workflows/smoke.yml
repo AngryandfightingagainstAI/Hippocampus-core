@@ -33,3 +33,18 @@ jobs:
 
       - name: 全量 smoke（tools/run_all_smokes.js）
         run: node tools/run_all_smokes.js
+
+      # P54·flake 取证：同一个提交（791c7fd）在 CI 上出现过红（run #5）/ 绿（run #6）两次结果；
+      # 失败时 API annotations 只有「exit code 1」、不含失败套件名，而 job 日志下载需要鉴权。
+      # run_all_smokes.js 自己会把每套 stdout+stderr 写进 /tmp/rn_all_<时间>.log（含失败套件名与 FAIL 行），
+      # 失败时把它作为 artifact 上传 —— 公开仓从 run 页面即可下载，无需 token。
+      - name: 失败时上传全量日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rn-smoke-log
+          path: |
+            ${{ runner.temp }}/rn_all_*.log
+            /tmp/rn_all_*.log
+          if-no-files-found: ignore
+          retention-days: 14
