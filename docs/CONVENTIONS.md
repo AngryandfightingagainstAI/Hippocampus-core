@@ -333,9 +333,10 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：5 套 / 99 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：6 套 / 106 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
-  `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条）。
+  `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条、
+  `test_story_compress_unit.js` 7 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -343,8 +344,11 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
   `setTimeout is not defined`）、`load(sb, 'engine/...')` 按仓根加载、`run/eq/deepEq/ok/contains/noThrow/finish`。
 - 被测的模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
-  `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`）都是**两仓同源件**
-  （`card_diagnose.js` 属「仅行尾不同」桶）；本轮单测只落在手机仓 ——
+  `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`、
+  `engine/story.js`、`vfs/logger.js`）都是**两仓同源件**
+  （`card_diagnose.js`、`vfs/logger.js` 属「仅行尾不同」桶，`engine/story.js` 属「逐字节相同」桶；
+  `test_story_compress_unit.js` 的 K7 只把 `engine/core/storage.js` 当**源码文本**读，
+  该文件两仓本就不同源）；本轮单测只落在手机仓 ——
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
@@ -374,7 +378,21 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `info_feed.js` 保持返回 `null`；classify / npc_runtime / npc_deduction_ai / portrait /
   proposal_semantic_check / import 六个文件里的 7 处朴素「第一个 `{` 到最后一个 `}`」切片全部改走共享件，
   J12 用源码哨兵盯住这六个文件不再出现 `indexOf('{')`/`lastIndexOf('}')`，J14 用同一批输入证明旧写法
-  确实会 `JSON.parse` 失败 —— 模型在 JSON 之后继续解释（解释里又带花括号）时不再把两段缝在一起）。
+  确实会 `JSON.parse` 失败 —— 模型在 JSON 之后继续解释（解释里又带花括号）时不再把两段缝在一起）；
+  `test_story_compress_unit.js` 的 K1–K7 锁住 P54·§四 story.js 组（假进度提示 / 保留窗口口径 /
+  归档原文 / 死配置）：K1 是 `applyWindow` 「按轮」口径的回归锚（首条仍是 system、窗口内的
+  「【系统 ·」条目保留、恰好留下 N 轮真实玩家发言）；K2 证明「可压缩量 < 4 条」时**一条提示都不发**
+  （旧实现先把「（正在生成日志…）」挂上去再提前返回，成功/失败提示都到不了 ⇒ 进度提示永久假挂）；
+  K3 走成功路径断言两条提示的顺序、以及保留窗口**按轮**计（14 轮里留 10 轮真实玩家发言，
+  旧规则「`windowRounds * 2` 条」在同一夹具下只能留 9 轮）；K4 走失败路径断言
+  「（日志生成失败，保留原文）」落地且原文与 `_lastCompressMsgCount` 都没动；
+  K5 把 4000 字回复喂进 `Logger.compress`，断言 `chunks`/`fullText` 存**全文**、
+  只有喂摘要模型的那份节选被截到 3000 字并带「（送入摘要时节选前 3000 字）」标记
+  （旧实现把归档和节选一起截，叠加 `story.js` 删原文 ⇒ 长回复永久只剩前 3000 字）；
+  K6 锁 `shouldCompress` 三态与「跨日不看条数」的语义（形参 `dayMessageCount` 已改名
+  `newMessageCount`，旧名与实际语义不符）；K7 是源码哨兵：`engine/core/storage.js` 不再出现
+  零读取方的死配置 `autoCompressRounds`（三个真配置项仍在同一行 —— 等长改写，行号不变，
+  以免 `test_p52_schema_compat.js` 锁的 `:12/:137/:153` 迁移标记漂移）。
 
 ================================================================
 【五、断言计数与报告口径】

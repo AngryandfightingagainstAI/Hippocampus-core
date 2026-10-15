@@ -94,7 +94,7 @@ var Storage = {
     strictness: 'normal',
     density: 'normal'
   },
-      logging: { enabled: true, windowRounds: 10, summaryInject: 3, autoCompressRounds: 30 }
+      logging: { enabled: true, windowRounds: 10, summaryInject: 3 }
     };
   },
   getGlobal() {

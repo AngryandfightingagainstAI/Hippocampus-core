@@ -526,17 +526,25 @@ var StoryLoop = {
     );
     if (!decision.yes) return;
 
-    Platform.ui.appendHint('（正在生成日志…）');
-
     const windowRounds = lg.windowRounds || 10;
-    const keepCount = windowRounds * 2;
+    // ★ P4：真实玩家发言判定（定义与 Snapshots._currentRound 同源：
+    //   排除系统注入的「【系统 ·」条目），一并写进日志供按轮次回退。
+    const isRealUserMsg = (m) => !!m && m.role === 'user' && !String(m.content || '').startsWith('【系统 ·');
     const rest = GameState.chatHistory.slice(1);
-    const toCompress = rest.slice(0, Math.max(0, rest.length - keepCount));
+    // ★ P54·§四：保留窗口按「轮」计，与 applyWindow 同口径（排除【系统 · 条目）。
+    //   旧实现 keepCount = windowRounds * 2 是「条」，系统消息也占配额
+    //   ⇒ 压缩后真实轮数可能只剩 5-7 轮，applyWindow 承诺的窗口名不副实。
+    let keepFrom = 0, roundsKept = 0;
+    for (let i = rest.length - 1; i >= 0; i--) {
+      if (isRealUserMsg(rest[i])) { roundsKept++; if (roundsKept > windowRounds) { keepFrom = i + 1; break; } }
+    }
+    const toCompress = rest.slice(0, keepFrom);
+    // ★ P54·§四：先判「有没有活要干」，再发进度提示 —— 否则提前返回会把
+    //   「（正在生成日志…）」永久挂在界面上（成功/失败提示都到不了）。
     if (toCompress.length < 4) return;
 
-    // ★ P4：本批第一条消息的轮次号（定义与 Snapshots._currentRound 同源：
-    //   当前 chatHistory 中真实玩家发言的累计条数），一并写进日志供按轮次回退。
-    const isRealUserMsg = (m) => !!m && m.role === 'user' && !String(m.content || '').startsWith('【系统 ·');
+    Platform.ui.appendHint('（正在生成日志…）');
+
     let batchMsgFrom = 0;
     for (let i = 0; i < GameState.chatHistory.length && i <= 1; i++) {
       if (isRealUserMsg(GameState.chatHistory[i])) batchMsgFrom++;
@@ -552,7 +560,7 @@ var StoryLoop = {
       });
     if (!logData) { Platform.ui.appendHint('（日志生成失败，保留原文）'); return; }
 
-    GameState.chatHistory = [GameState.chatHistory[0]].concat(rest.slice(rest.length - keepCount));
+    GameState.chatHistory = [GameState.chatHistory[0]].concat(rest.slice(keepFrom));
     GameState._lastCompressMsgCount = GameState.chatHistory.filter(m => m.role !== 'system').length;
     if (GameState._gameTime) {
       GameState._lastCompressGameTime = {

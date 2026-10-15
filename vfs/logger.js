@@ -253,23 +253,29 @@
 
       var newChunks = [];
       var dialogue = '';
+      // ★ P54·§四：归档（chunks / fullText）必须留原文 —— 压缩后 chatHistory 原文
+      //   会被 story.js 删掉，这里是这批消息的唯一副本。长度保护只作用于「喂给
+      //   摘要模型的节选」dialogue，落盘结构不变。
+      var EXCERPT_CAP = 3000;
       for (var bi = 0; bi < messages.length; bi += BLOCK) {
         var blockEnd = Math.min(bi + BLOCK, messages.length);
         var txt = '';
+        var pick = '';
         for (var mi = bi; mi < blockEnd; mi++) {
           var mm = messages[mi];
           if (mm.role === 'system') continue;
           var mc = mm.content || '';
-          if (mc.length > 3000) mc = mc.slice(0, 3000) + '…（已截断）';
           var who = (mm.role === 'user') ? '玩家' : 'GM';
           txt += '[' + who + '] ' + mc + '\n\n';
+          var mcp = (mc.length > EXCERPT_CAP) ? (mc.slice(0, EXCERPT_CAP) + '…（送入摘要时节选前 ' + EXCERPT_CAP + ' 字）') : mc;
+          pick += '[' + who + '] ' + mcp + '\n\n';
         }
         newChunks.push({
           msgFrom: roundOf[bi],
           msgTo: roundOf[blockEnd - 1],
           text: txt
         });
-        dialogue += txt;
+        dialogue += pick;
       }
 
       var sysPrompt = '你是游戏日志压缩器。把玩家与 GM 的对话压缩成一条结构化日志。\n' +
@@ -457,8 +463,10 @@
     // 参数：
     //   lastLogDate      上一次日志的游戏内日期（可能为 null）
     //   currentGameDate  当前游戏内日期
-    //   dayMessageCount  当天累积的对话消息数（不含 system）
-    shouldCompress: function(lastLogDate, currentGameDate, dayMessageCount) {
+    //   newMessageCount  自上次压缩以来新增的对话消息数（不含 system）。
+    //                    注意：跨日分支不使用它 —— 跨日只看日期，哪怕只有 2 条新消息
+    //                    也会触发一次压缩（这是设计如此，不是「当天累积」）。
+    shouldCompress: function(lastLogDate, currentGameDate, newMessageCount) {
       if (!currentGameDate) return { yes: false };
       var todayKey = dateNum(currentGameDate);
       var lastKey = dateNum(lastLogDate);
@@ -469,7 +477,7 @@
       }
 
       // 首次日志：还没任何日志，但今天已累积 20 条以上
-      if (!lastLogDate && dayMessageCount >= 20) {
+      if (!lastLogDate && newMessageCount >= 20) {
         return { yes: true, reason: 'firstLog' };
       }
 
