@@ -320,7 +320,20 @@ function runNE() {
 
 function runSource() {
   if (!HAVE_OTHER) {
-    skip('H 组（跨仓：桌面 templates/number.js + relation.js 行尾归一后同源、桌面 engine/editor.js 的纯逻辑函数逐字搬到 RN engine/num_editor.js）', '另一仓不可见（' + DESK + '）');
+    // P54·④：H 组是 8 条断言，原先只记 1 条组级 skip ⇒ 单仓口径下 TOTAL_OK 掉 17
+    // 而 TOTAL_SKIP 只涨 10，账对不上（差 7 条）。这里逐条记 skip，让
+    // 「不跑的断言数」与「SKIP 数」严格相等（改后单仓 TOTAL_SKIP=17 / TOTAL_OK=2485）。
+    var why = '另一仓不可见（' + DESK + '）';
+    [
+      'H1 templates/number.js 两仓同源（P30：行尾归一后比内容）',
+      'H2 templates/relation.js 两仓同源（P30：行尾归一后比内容）',
+      'H3 桌面 NumEditor 主体（10 纯逻辑函数）逐字出现在 RN',
+      'H4 保存路径逐字同源（cardCopy → meta → 落盘）',
+      'H5 桌面 NumEditor 非琐碎非 UI 行全部逐字落 RN',
+      'H6 RN 侧代码体零 DOM（无 document. / escapeAttr / escapeHtml / this.render(）',
+      'H7 错误 reason 文案逐字（第 N 条缺内部名 / 第 N 条缺名称 / 卡带不存在 / 未选择卡带 / 请先选择一个卡带）',
+      'H8 双态导出（window + module.exports）'
+    ].forEach(function (label) { skip(label, why); });
     return;
   }
   var deskNum = path.join(DESK, 'templates', 'number.js');

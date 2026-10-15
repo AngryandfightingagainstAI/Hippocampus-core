@@ -204,8 +204,10 @@ node tools/longline_token_smoke.js
 当前基线：**37 套 / 2502 ok / 0 failed**（两仓同在的本机环境）。
 
 CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：
-CI 里看不到桌面仓，于是 10 条跨仓同源断言自动降级为 SKIP —— CI 实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**
-（该次实测于提交 `66fe662`、CI run `38275495453`；此后本机又新增 7 条断言，故 `2485 + 7 = 2492` 才是当前单仓环境的执行数，
+CI 里看不到桌面仓，于是跨仓同源断言自动降级为 SKIP —— CI 实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**
+（该次实测于提交 `66fe662`、CI run `38275495453`；当时记 10 条是因为 `num_editor_smoke.js` 的 H 组用 1 条组级 skip 吞掉了 8 条断言，
+P54·④ 已改为逐条记 skip ⇒ 同一单仓环境现为 `TOTAL_SKIP=17`、`TOTAL_OK` 仍是 2485；
+此后本机又新增 7 条断言，故 `2485 + 7 = 2492` 才是当前单仓环境的执行数，
 `2495 + 7 = 2502` 与下面的本机数是同一棵树），
 本机两仓同在时是 2502 ok / 0 failed / `TOTAL_SKIP=0`。降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 
