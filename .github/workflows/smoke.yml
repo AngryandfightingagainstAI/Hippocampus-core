@@ -34,6 +34,13 @@ jobs:
       - name: 全量 smoke（tools/run_all_smokes.js）
         run: node tools/run_all_smokes.js
 
+      # P54·第15条：单测（tests/unit/*_unit.js）—— 纯 node + vm 沙箱、零新依赖，
+      # 夹的是单个模块的边界行为（缺失字段补齐、未知枚举回落、坏档降级、工具块上限……），
+      # 定位比 smoke 快。跑批器 tools/run_unit_tests.js 只扫 /_unit\.js$/，
+      # 与上面 37 套 smoke / 2502 条断言的基线互不影响。
+      - name: 单元测试（tools/run_unit_tests.js）
+        run: node tools/run_unit_tests.js
+
       # P54·flake 取证：同一个提交（791c7fd）在 CI 上出现过红（run #5）/ 绿（run #6）两次结果；
       # 失败时 API annotations 只有「exit code 1」、不含失败套件名，而 job 日志下载需要鉴权。
       # run_all_smokes.js 自己会把每套 stdout+stderr 写进 /tmp/rn_all_<时间>.log（含失败套件名与 FAIL 行），

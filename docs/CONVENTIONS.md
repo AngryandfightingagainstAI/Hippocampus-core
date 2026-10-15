@@ -321,6 +321,30 @@ node tools\import_smoke.js                # 导入层（与 RN 同源，130 条�
 - **`adb exec-out screencap -p` 必须走 `cmd /c "… > file"`**，PowerShell 的 `>` 会写坏 PNG。
 - **`adb shell input text` 的参数以 `#` 开头会被远端 shell 当注释**，要加引号。
 
+### 4.4 单元测试（P54·第15条）
+
+`tools/*_smoke.js` 是集成测试（走真实模块 + 真实存储），断言多但定位 bug 慢；
+`tests/unit/*_unit.js` 用纯 node + `vm` 沙箱把**单个模块的边界行为**夹到台面上
+（缺失字段补齐、未知枚举回落、坏档降级、工具块上限……），零新依赖、秒级。
+
+```powershell
+cd D:\HippocampusRN
+node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js）
+node tests\unit\test_info_feed_unit.js    # 单跑其中一套
+```
+
+- **当前基线：3 套 / 52 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+  `test_info_feed_unit.js` 17 条、`test_tool_executor_unit.js` 18 条）。
+- **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
+- 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
+  （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
+  `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
+  `setTimeout is not defined`）、`load(sb, 'engine/...')` 按仓根加载、`run/eq/deepEq/ok/contains/noThrow/finish`。
+- 被测的三个模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
+  `engine/core/tool_executor.js`）都是**两仓同源件**；本轮单测只落在手机仓 —— 桌面侧若要复用，
+  须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
+
 ================================================================
 【五、断言计数与报告口径】
 ================================================================
