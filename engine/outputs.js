@@ -10,7 +10,6 @@
 (function() {
   var Outputs = {
     _data: null,
-    _lastFermentDate: '',
 
     _path: function() {
       if (!GameState.currentCardId || !GameState.currentSaveId) return null;
@@ -198,7 +197,9 @@
       var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
       var g = (card && card.game) || {};
       var wb = (card && card.worldbook) || {};
-      var cfg = wb.outputs || null;
+      // P54·第12条（O-7）：原先直接读 wb.outputs，绕过了 getCardConfig() 的 P43 默认注入 ⇒
+      //   卡带声明 "outputs": {} 时引擎会按 progress-full 自动定论，审核员却看不到这条定论条件。
+      var cfg = this.getCardConfig();
       var bg = String(g.background || '');
       if (bg.length > 800) bg = bg.slice(0, 800) + '…';
       var lines = [];
@@ -499,15 +500,6 @@
       return this.listAll().filter(function(o) { return o.fate === 'fermenting'; });
     },
 
-    remove: function(id) {
-      if (!this._data) this.load();
-      if (!this._data.outputs[id]) return { ok: false, reason: '产出物不存在：' + id };
-      var name = this._data.outputs[id].name;
-      delete this._data.outputs[id];
-      this.save();
-      return { ok: true, id: id, name: name };
-    },
-
     // ============ 发酵 tick ============
     // 每跨过 fermentInterval（month/season/year）触发一次
     tick: function() {
@@ -554,8 +546,6 @@
           if (v.ok) settled.push(v);
         }
 
-        // 5. 覆盖写回
-        self._data.outputs[live.id] = live;
        } catch (e) {
         // P54·第12条（O-2）：原先单条产出物抛错会中断整批 forEach，异常又被 story.js 吞掉，
         // 而 _lastIntervalKey 已推进 ⇒ 整个发酵周期静默消失。现在逐条隔离 + 留痕。
@@ -563,6 +553,12 @@
        }
       });
 
+      // P54·第12条（O-12）：定论的玩家可见性原来全押在 GameState._pendingSystemNotices 上，
+      //   而 tick 的返回值 settled 被 story.js 丢弃（story.js:456-459）⇒ 通知通道一旦失败就彻底静默。
+      //   这里把 settled 消费成一条汇总审计：本轮定论了几件、分别叫什么，在行动日志里可查。
+      if (settled.length) {
+        self._audit('tick_settled', settled.length + ' 件定论：' + settled.map(function(s) { return (s && (s.name || s.id)) || '（无名）'; }).join('、'));
+      }
       this.save();
       return { fermented: true, outputs: all, settled: settled };
     },
@@ -646,7 +642,10 @@
 
       try {
         GameState._pendingSystemNotices.push('产出物《' + o.name + '》定论：' + o.finalVerdict);
-      } catch (e) {}
+      } catch (e) {
+        // P54·第12条（O-12）：原先空 catch —— GameState 异常时这条定论对玩家彻底静默。
+        this._audit('settle_notice_failed', o.id + '：' + (e && e.message ? e.message : String(e)));
+      }
 
       return { ok: true, id: o.id, name: o.name, applied: applied };
     },
@@ -777,7 +776,6 @@
     // ============ 调试 ============
     clear: function() {
       this._data = this._emptyData();
-      this._lastFermentDate = '';
       this.save();
     }
   };

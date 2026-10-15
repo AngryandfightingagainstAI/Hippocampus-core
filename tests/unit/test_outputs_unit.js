@@ -40,11 +40,18 @@ function mk(opts) {
     item.value = oldVal + delta;
     return { ok: true, oldVal: oldVal, newVal: item.value, delta: delta };
   };
-  const sb = makeSandbox({
+  const over = {
     GameState: gs,
     Storage: { getGlobal: function() { return { settings: { outputs: { enabled: true } } }; } },
     ToolExecutor: { WHITELIST: {}, _modifyStat: modifyStat }
-  });
+  };
+  if (opts.audits) {
+    over.ErrorLog = {
+      audit: function(mod, kind, detail) { opts.audits.push([mod, kind, String(detail)]); return true; },
+      action: function() {}, error: function() {}, log: function() {}
+    };
+  }
+  const sb = makeSandbox(over);
   load(sb, 'engine/outputs.js');
   return { sb: sb, O: sb.window.Outputs, gs: gs, state: state };
 }
@@ -106,6 +113,74 @@ run('O-3d tick 自动定论与 settle 同一条路径（也应用 affects）', f
   eq(e.O.get(c.id).fate, 'settled', 'O-3d progress 满应自动定论');
   eq(e.state.hud[0].value, 5, 'O-3d tick 定论也应应用 affects');
   eq(e.gs._pendingSystemNotices.length, 1, 'O-3d tick 定论也应推通知');
+});
+
+// ---------- O-7/O-9/O-10/O-11/O-12 收口（P54·第12条 outputs 余项） ----------
+
+run('O-7a 卡带写 outputs:{} 时审核员能看到 P43 默认定论条件', function() {
+  const e = mk({ card: { worldbook: { outputs: {} } } });
+  const c = e.O.create({ name: '默认池案', content: '正文' });
+  ok(c.ok, 'O-7a create 应成功');
+  const prompt = String(e.O.buildReviewPrompt(e.O.get(c.id)) || '');
+  contains(prompt, '定论条件：progress 涨到 100', 'O-7a 提示词应带引擎默认定论条件（原先被 wb.outputs 挡掉）');
+});
+
+run('O-7b 卡带没写 outputs 时不硬塞默认', function() {
+  const e = mk({ card: { worldbook: {} } });
+  const c = e.O.create({ name: '无卡带规则案', content: 'x' });
+  const prompt = String(e.O.buildReviewPrompt(e.O.get(c.id)) || '');
+  notOk(prompt.indexOf('【卡带对产出物的规定】') >= 0, 'O-7b 没声明 outputs 时不该出现该段');
+});
+
+run('O-9a 零调用方的 Outputs.remove 已删（不再复活）', function() {
+  const e = mk();
+  eq(typeof e.O.remove, 'undefined', 'O-9a remove 应已移除');
+});
+
+run('O-10a 死字段 _lastFermentDate 已删（含 clear() 里的重置）', function() {
+  const e = mk();
+  eq(e.O._lastFermentDate, undefined, 'O-10a 字段应不存在');
+  const rt = e.O.getRuntime();
+  notOk(rt && Object.prototype.hasOwnProperty.call(rt, '_lastFermentDate'), 'O-10a 运行时也不该有该键');
+  e.O.clear();
+  eq(e.O._lastFermentDate, undefined, 'O-10a clear() 也不该把它写回来（本批首轮就漏了这句，靠这条断言兜住）');
+});
+
+run('O-11a tick 的 progress 增长照旧写回（删自赋值后行为不变）', function() {
+  const e = mk({ card: CARD_WITH_AFFECTS, time: '1-1-1' });
+  const c = e.O.create({ name: '自赋值案', content: 'x' });
+  const rt0 = e.O.getRuntime();
+  rt0.outputs[c.id].progress = 0;
+  rt0._lastIntervalKey = '';
+  e.O.setRuntime(rt0);
+  const t = e.O.tick();
+  eq(t.fermented, true, 'O-11a tick 应真的跑了一轮');
+  eq(e.O.getRuntime().outputs[c.id].progress, 5, 'O-11a 增长应写回运行时');
+  eq(e.O.get(c.id).progress, 5, 'O-11a get() 也应看得到');
+});
+
+run('O-12a tick 定论留下 settled 汇总审计', function() {
+  const audits = [];
+  const e = mk({ card: CARD_WITH_AFFECTS, state: { hud: [{ key: '民心', value: 0 }], sidebar: [], panels: {} }, time: '1-1-1', audits: audits });
+  const c = e.O.create({ name: '定论审计案', content: 'x' });
+  const rt = e.O.getRuntime();
+  rt.outputs[c.id].progress = 96;
+  rt._lastIntervalKey = '';
+  e.O.setRuntime(rt);
+  e.O.tick();
+  const hit = audits.filter(function(a) { return a[1] === 'tick_settled'; });
+  eq(hit.length, 1, 'O-12a 应有一条 tick_settled 审计');
+  contains(hit[0][2], '定论审计案', 'O-12a 审计应写明是哪一件');
+});
+
+run('O-12b 系统通知通道失败时不再静默（改留审计）', function() {
+  const audits = [];
+  const e = mk({ card: CARD_WITH_AFFECTS, state: { hud: [{ key: '民心', value: 0 }], sidebar: [], panels: {} }, audits: audits });
+  const c = e.O.create({ name: '通知失败案', content: 'x' });
+  e.gs._pendingSystemNotices = null;
+  const r = e.O.settle(c.id, '手动定论');
+  ok(r.ok, 'O-12b 定论本身仍应成功：' + JSON.stringify(r));
+  eq(audits.filter(function(a) { return a[1] === 'settle_notice_failed'; }).length, 1, 'O-12b 应留一条 settle_notice_failed 审计');
 });
 
 // ---------- O-5 送审失败不覆盖已定论 ----------

@@ -333,9 +333,9 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：4 套 / 66 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：4 套 / 73 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 21 条、`test_tool_executor_unit.js` 18 条、
-  `test_outputs_unit.js` 10 条）。
+  `test_outputs_unit.js` 17 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -348,7 +348,11 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
   已定论打回 `pending`，正文不掉出提示词）与 O-6（`update()` 改写标题/正文/描述后作废已纳入的
-  审核结论、退回 `pending` 并回报 `reviewReset`；只改 keywords/audience 或 pending/none 项不触发）；
+  审核结论、退回 `pending` 并回报 `reviewReset`；只改 keywords/audience 或 pending/none 项不触发）、
+  O-7（`buildReviewPrompt` 改走 `getCardConfig()`：卡带写 `"outputs": {}` 时审核员也能看到 P43
+  默认定论条件）、O-9/O-10/O-11（删掉零调用方的 `remove()`、零读取的 `_lastFermentDate`、
+  tick 里那句自赋值空操作）、O-12（tick 把 `settled` 消费成 `tick_settled` 汇总审计；系统通知
+  通道抛错时留 `settle_notice_failed` 审计，而不是空 `catch {}` 静默）；
   `test_info_feed_unit.js` 的 I18–I21 锁住 P54·第12条
   的 I-4（混流追加失败 ⇒ `ok:false` 且条目回到原状、`chatHistory` 写失败留 `warning`+审计）与
   I-6（tick 批逐条容错：坏条目跳过并审计、超长按 `MAX_TEXT`/`MAX_BODY` 截断，全批无可用条目才丢）。
