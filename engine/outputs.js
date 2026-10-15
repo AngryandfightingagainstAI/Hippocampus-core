@@ -176,8 +176,15 @@
       if (Array.isArray(patch.keywords)) { o.keywords = patch.keywords.slice(); applied.push('keywords'); }
       if (Array.isArray(patch.audience)) { o.audience = patch.audience.slice(); applied.push('audience'); }
       if (!applied.length) return { ok: false, reason: '没有可改的字段（只认 name/title/content/desc/type/keywords/audience）' };
+      // P54·第12条 O-6：P27 的审核裁决是针对旧文本作出的 —— 标题/正文/描述被改写后，
+      //   已纳入（included/revised）的裁决即失效，退回 pending 等下一次送审，
+      //   避免改写后的未审文本经 formatForPrompt 直接进提示词。
+      var touchedText = applied.indexOf('title') >= 0 || applied.indexOf('content') >= 0 || applied.indexOf('desc') >= 0;
+      var prevState = (o.review && o.review.state) ? o.review.state : 'none';
+      var reviewReset = touchedText && (prevState === 'included' || prevState === 'revised');
+      if (reviewReset) o.review = { state: 'pending', reason: '内容已改写，原审核结论（' + prevState + '）作废，需重新送审', raw: '', at: '', round: 0 };
       this.save();
-      return { ok: true, id: id, applied: applied, output: this.get(id) };
+      return { ok: true, id: id, applied: applied, reviewReset: reviewReset, output: this.get(id) };
     },
 
     // ============ 一轮 AI 审核（P27 建 · P39 加固） ============

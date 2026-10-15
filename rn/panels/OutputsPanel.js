@@ -180,7 +180,7 @@ function OutputsPanel(props) {
         content: String(editContent || '')
       });
       if (r && r.ok) {
-        StoryStore.pushToast('已保存（' + ((r.applied || []).join('/')) + '）', { type: 'success' });
+        StoryStore.pushToast('已保存（' + ((r.applied || []).join('/')) + '）' + (r.reviewReset ? '，需重新送 AI 审核' : ''), { type: 'success' });
         setEditId('');
       } else {
         StoryStore.pushToast('保存失败：' + ((r && r.reason) || '未知原因'), { type: 'error' });

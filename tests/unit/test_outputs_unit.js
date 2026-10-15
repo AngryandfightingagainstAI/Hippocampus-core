@@ -149,4 +149,56 @@ run('O-5c 送审成功仍照常置 included（回归护栏）', function() {
   });
 });
 
+// ---------- O-6 改写标题/正文/描述后作废已纳入的审核结论 ----------
+
+run('O-6a 已纳入项改正文 ⇒ 退回 pending、未审正文不进提示词、回报 reviewReset', function() {
+  const e = mk();
+  const c = e.O.create({ name: '已纳入案', title: '旧标题', content: '旧正文内容', desc: '旧描述' });
+  ok(c.ok, 'O-6a create 应成功');
+  const f = e.O.force(c.id, 'included', '上一轮已纳入');
+  ok(f.ok, 'O-6a force 应成功：' + JSON.stringify(f));
+  contains(e.O.formatForPrompt(), '旧正文内容', 'O-6a 改写前正文应在提示词里');
+  const u = e.O.update(c.id, { content: '新正文内容' });
+  ok(u.ok, 'O-6a update 应成功：' + JSON.stringify(u));
+  eq(u.reviewReset, true, 'O-6a 回报应说明审核结论已作废');
+  const o = e.O.get(c.id);
+  eq(o.review.state, 'pending', 'O-6a 应退回 pending');
+  eq(o.content, '新正文内容', 'O-6a 正文应已改');
+  ok(e.O.formatForPrompt().indexOf('新正文内容') < 0, 'O-6a 未审正文不得进提示词');
+  contains(e.O.formatForPrompt(), '待审', 'O-6a 应显示待审提示');
+});
+
+run('O-6b 只改 keywords/audience、或 pending / none 项改文本 ⇒ 不作废审核结论', function() {
+  const e = mk();
+  const c1 = e.O.create({ name: 'A', content: 'x' });
+  e.O.force(c1.id, 'included', 'ok');
+  const u1 = e.O.update(c1.id, { keywords: ['k'], audience: ['城中百姓'] });
+  eq(!!u1.reviewReset, false, 'O-6b 改关键词/受众不该作废审核');
+  eq(e.O.get(c1.id).review.state, 'included', 'O-6b 状态应保持 included');
+
+  const c2 = e.O.create({ name: 'B', content: 'x', fromPanel: true });
+  const u2 = e.O.update(c2.id, { content: 'y' });
+  eq(!!u2.reviewReset, false, 'O-6b pending 项改正文不触发作废');
+  eq(e.O.get(c2.id).review.state, 'pending', 'O-6b 应仍 pending');
+
+  const c3 = e.O.create({ name: 'C', content: 'x' });
+  eq(e.O.get(c3.id).review.state, 'none', 'O-6b AI 直接发布应为 none');
+  const u3 = e.O.update(c3.id, { content: 'z' });
+  eq(!!u3.reviewReset, false, 'O-6b none 项改正文不触发作废');
+  contains(e.O.formatForPrompt(), 'z', 'O-6b none 项改后仍照常进提示词');
+});
+
+run('O-6c 改写后重新送审成功 ⇒ 回到 included 并注入新正文', function() {
+  const e = mk();
+  const c = e.O.create({ name: 'D', content: '旧文本' });
+  e.O.force(c.id, 'included', 'ok');
+  const u = e.O.update(c.id, { content: '新文本' });
+  eq(u.reviewReset, true, 'O-6c 改写应作废结论');
+  return e.O.review(c.id, { chat: function() { return Promise.resolve({ content: '{"verdict":"include","reason":"可以"}' }); } }).then(function(r) {
+    ok(r.ok, 'O-6c 重新送审应成功');
+    eq(e.O.get(c.id).review.state, 'included', 'O-6c 应回到 included');
+    contains(e.O.formatForPrompt(), '新文本', 'O-6c 新正文应在提示词里');
+  });
+});
+
 finish();

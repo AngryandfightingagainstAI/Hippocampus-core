@@ -26,7 +26,7 @@
   //   否则提示词里会混进 told / deduced 这类英文枚举。
   var KNOWLEDGE_SRC_CN   = {
     witness: '目击', told: '转述', rumor: '传闻', public: '公开',
-    deduced: '推演', misconception: '误信', manual: '手动', legacy: '旧记录'
+    deduced: '推演', misconception: '误信', manual: '手记', legacy: '旧记录'
   };
   var NPC_KNOWLEDGE_VERBS = ['得知', '听说', '了解到', '意识到', '发现', '明白了', '知晓', '获知'];
   var NPC_TELL_VERBS      = ['告诉', '告知', '透露', '通知', '提醒', '警告'];
