@@ -192,7 +192,9 @@
       (Array.isArray(existing) ? existing : []).forEach(function(raw) {
         pushItem(self._normKnowledgeItem(raw));
       });
-      var src = (KNOWLEDGE_SOURCES.indexOf(defaultSource) >= 0) ? defaultSource : 'deduced';
+      // P54·I-1：非法 defaultSource 不再升格为 deduced（引擎推演＝最高可信档），
+      //   与 _normKnowledgeItem 的 legacy 回落同口径。
+      var src = (KNOWLEDGE_SOURCES.indexOf(defaultSource) >= 0) ? defaultSource : 'legacy';
       var now = (typeof GameState !== 'undefined' && GameState.formatGameTime)
         ? GameState.formatGameTime() : '';
       (Array.isArray(incoming) ? incoming : []).forEach(function(raw) {
@@ -233,7 +235,16 @@
           return { ok: false, reason: '该知识已存在' };
         }
       }
-      var source = (KNOWLEDGE_SOURCES.indexOf(opts.source) >= 0) ? opts.source : 'deduced';
+      // P54·I-1：非法 source 不再升格为 deduced（与同函数 srcGuess='' 的保守口径、
+      //   _normKnowledgeItem 的 legacy 回落自相矛盾）。显式传了非法值时另留一条审计。
+      var source = (KNOWLEDGE_SOURCES.indexOf(opts.source) >= 0) ? opts.source : 'legacy';
+      if (opts.source != null && KNOWLEDGE_SOURCES.indexOf(opts.source) < 0) {
+        try {
+          if (typeof ErrorLog !== 'undefined' && ErrorLog.audit) {
+            ErrorLog.audit('npc_runtime', 'unknown_source:addKnowledge', 'src=' + String(opts.source));
+          }
+        } catch (e) {}
+      }
       var item = {
         text: text,
         acquiredAt: GameState.formatGameTime(),
@@ -1117,7 +1128,7 @@
       run: function(a) {
         if (!a.id) return { ok: false, reason: '缺少 id' };
         if (!a.text) return { ok: false, reason: '缺少 text' };
-        var source = KNOWLEDGE_SOURCES.indexOf(a.source) >= 0 ? a.source : 'deduced';
+        var source = KNOWLEDGE_SOURCES.indexOf(a.source) >= 0 ? a.source : 'legacy';
         // P14·S3：工具协议声明了 origin? / unverified?，handler 必须接住——
         //   否则玩家本人告诉 NPC 的事会被当成「已确认的事实」（声明与实现不一致）。
         var origin = (typeof a.origin === 'string') ? a.origin : '';
@@ -1130,6 +1141,11 @@
           origin: origin,
           unverified: unverified
         });
+        // P54·I-1：AI 传了非法 source 时不再静默升格为 deduced（引擎推演＝最高可信档），
+        //   统一回落 legacy（中文「旧记录」）并留一条审计（放在调用之后，不挤占 CF-7c 的 1200 字窗口）。
+        if (KNOWLEDGE_SOURCES.indexOf(a.source) < 0) {
+          try { if (typeof ErrorLog !== 'undefined' && ErrorLog.audit) ErrorLog.audit('npc_runtime', 'unknown_source:npc_knows', 'src=' + String(a.source)); } catch (e) {}
+        }
         if (!r.ok) return r;
         return {
           ok: true,

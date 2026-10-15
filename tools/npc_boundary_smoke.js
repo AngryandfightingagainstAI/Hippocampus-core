@@ -141,8 +141,9 @@ function runKnowledgeEnum() {
   var hits = 0, i = 0;
   while (true) { var j = src.indexOf('KNOWLEDGE_SOURCES.indexOf(', i); if (j < 0) break; hits++; i = j + 1; }
   check('S11-s KNOWLEDGE_SOURCES.indexOf 校验点 ≥ 4 处（实测 ' + hits + '）', hits >= 4);
-  check('S11-t npc_knows 工具用白名单校验 source（非法回落 deduced）',
-    /ToolExecutor\.WHITELIST\.npc_knows/.test(src) && /KNOWLEDGE_SOURCES\.indexOf\(a\.source\)\s*>=\s*0\s*\?\s*a\.source\s*:\s*'deduced'/.test(src));
+  check('S11-t npc_knows 工具用白名单校验 source（非法回落 legacy 并留审计；P54·I-1 原为 deduced）',
+    /ToolExecutor\.WHITELIST\.npc_knows/.test(src) && /KNOWLEDGE_SOURCES\.indexOf\(a\.source\)\s*>=\s*0\s*\?\s*a\.source\s*:\s*'legacy'/.test(src) &&
+    /unknown_source:npc_knows/.test(src));
 
   // 提示词工具说明同步枚举
   var pb = read('engine/core/prompt_builder.js');
