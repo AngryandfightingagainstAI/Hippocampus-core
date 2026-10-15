@@ -597,7 +597,7 @@ function runQ() {
     ['engine/core/gamestate.js', 10413, 'AABB3146FA76593DD35D992629863BE1'],
     ['engine/core/prompt_builder.js', 51275, 'ED9AB8C65E72433D0CD11F718C6927C7'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
-    ['engine/info_feed.js', 43865, '0B7E83858E378DFB33197E5E2EC1EB23']
+    ['engine/info_feed.js', 45005, 'A222B509CF150D42986DBDF1A1FABC5D']
   ];
   LOCK.forEach(function (b) {
     var p = path.join(root, b[0]);

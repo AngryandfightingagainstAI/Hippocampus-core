@@ -29,6 +29,8 @@
   var FIRST_CONTACT_ROUND = 3;
   var FLOW = ['info', 'story'];
   var IMPORTANCE = ['background', 'actionable'];
+  // I-9：谁说的只有这两个合法值；旧档缺 origin 时按 from 认人，不再一律记 'ai'
+  var ORIGINS = ['ai', 'player'];
   // 复用 engine/events.js SYNTAX.publicity (:24) / SYNTAX.scope (:38) 的字面值，
   // 不新造枚举、不改 events.js。
   var PUBLICITY = ['暗中', '半公开', '公开', '轰动'];
@@ -53,16 +55,7 @@
         threads: {},
         threadOrder: [],
         broadcasts: [],
-        seen: {},
         meta: { lastTickAt: null, lastTickRound: -1, aiSendCount: 0 }
-      };
-    },
-
-    _emptyMessage: function() {
-      return {
-        id: '', from: '', fromName: '', to: '', at: '', text: '',
-        origin: 'ai', sourceNote: '', read: false,
-        flow: 'info', importance: 'background'
       };
     },
 
@@ -74,7 +67,8 @@
       if (typeof m.to !== 'string') m.to = '';
       if (typeof m.at !== 'string') m.at = '';
       if (typeof m.text !== 'string') m.text = '';
-      if (typeof m.origin !== 'string') m.origin = 'ai';
+      // I-9：origin 只认白名单；旧档缺 origin 的玩家发言按 from 认回 player（原先一律记 'ai'，会把玩家说的话算到 AI 头上）
+      if (ORIGINS.indexOf(m.origin) < 0) m.origin = (m.from === 'player') ? 'player' : 'ai';
       if (typeof m.sourceNote !== 'string') m.sourceNote = '';
       if (typeof m.read !== 'boolean') m.read = false;
       if (FLOW.indexOf(m.flow) < 0) m.flow = 'info';
@@ -98,12 +92,12 @@
       if (typeof bc.eventId === 'undefined') bc.eventId = null;
       if (FLOW.indexOf(bc.flow) < 0) bc.flow = 'info';
       if (IMPORTANCE.indexOf(bc.importance) < 0) bc.importance = 'background';
-      if (typeof bc.origin !== 'string') bc.origin = 'ai';
+      if (ORIGINS.indexOf(bc.origin) < 0) bc.origin = 'ai';
       if (!Array.isArray(bc.propagated)) bc.propagated = [];
       return bc;
     },
 
-    // 迁移/补齐：缺 version/seq/threads/threadOrder/broadcasts/seen/meta 一律补齐。
+    // 迁移/补齐：缺 version/seq/threads/threadOrder/broadcasts/meta 一律补齐。
     // 传参 d 时就地规范化 d，缺省规范化 this._data。
     _ensureShape: function(d) {
       var self = this;
@@ -117,7 +111,6 @@
       if (!target.threads || typeof target.threads !== 'object') target.threads = {};
       if (!Array.isArray(target.threadOrder)) target.threadOrder = [];
       if (!Array.isArray(target.broadcasts)) target.broadcasts = [];
-      if (!target.seen || typeof target.seen !== 'object') target.seen = {};
       if (!target.meta || typeof target.meta !== 'object') target.meta = {};
       if (typeof target.meta.lastTickAt === 'undefined') target.meta.lastTickAt = null;
       if (typeof target.meta.lastTickRound !== 'number') target.meta.lastTickRound = -1;
@@ -307,11 +300,11 @@
         to: to,
         at: at,
         text: text,
-        origin: String(opts.origin || 'ai'),
+        origin: this._pickOrigin(opts.origin, from),
         sourceNote: String(opts.sourceNote || ''),
         read: false,
         flow: 'info',
-        importance: (IMPORTANCE.indexOf(opts.importance) >= 0) ? opts.importance : 'background'
+        importance: this._pickImportance(opts.importance, 'pushMessage')
       };
       th.messages.push(msg);
       if (th.messages.length > MAX_MESSAGES_PER_THREAD) {
@@ -387,11 +380,26 @@
       return JSON.parse(JSON.stringify(msg));
     },
 
+    // I-9：origin 白名单（'ai' | 'player'）。给了非法字符串就记一条审计，再按 from 认人。
+    _pickOrigin: function(v, from) {
+      if (ORIGINS.indexOf(v) >= 0) return v;
+      var fallback = (from === 'player') ? 'player' : 'ai';
+      if (v != null && v !== '') this._audit('unknown_origin', String(v) + ' ⇒ ' + fallback);
+      return fallback;
+    },
+
+    // I-10：importance 白名单。非法值不再静默回落，记审计后统一按 'background'（与其它写入路径同口径）。
+    _pickImportance: function(v, where) {
+      if (IMPORTANCE.indexOf(v) >= 0) return v;
+      if (v != null && v !== '') this._audit('unknown_importance', where + '：' + String(v) + ' ⇒ background');
+      return 'background';
+    },
+
     // 记录 AI/玩家的可执行性判定；不改 flow
     setImportance: function(id, level) {
       if (!this._data) this.load();
       this._ensureShape();
-      if (IMPORTANCE.indexOf(level) < 0) return;
+      if (IMPORTANCE.indexOf(level) < 0) { this._audit('unknown_importance', 'setImportance：' + String(level) + '（已忽略）'); return; }
       var found = this._findItem(id);
       if (!found) return;
       found.item.importance = level;
@@ -511,8 +519,8 @@
         tags: Array.isArray(opts.tags) ? opts.tags.slice() : [],
         eventId: (typeof opts.eventId === 'undefined') ? null : opts.eventId,
         flow: 'info',
-        importance: (IMPORTANCE.indexOf(opts.importance) >= 0) ? opts.importance : 'background',
-        origin: String(opts.origin || 'ai'),
+        importance: this._pickImportance(opts.importance, 'publish'),
+        origin: this._pickOrigin(opts.origin, ''),
         propagated: []
       };
       this._data.broadcasts.push(bc);
@@ -806,7 +814,7 @@
             to: 'player',
             text: m.text,
             origin: 'ai',
-            importance: m.importance || 'actionable',
+            importance: m.importance,
             threadId: cp.key,
             title: cp.fromName
           });
@@ -850,7 +858,10 @@
           if (to.indexOf('group:') !== 0 && !this._findNpcDef(to)) { skipped.push('#' + i + ' 收件人不存在：' + to); continue; }
         }
         if (text.length > MAX_TEXT) { text = text.slice(0, MAX_TEXT); skipped.push('#' + i + ' 正文超长已截断'); }
-        var imp = (IMPORTANCE.indexOf(m.importance) >= 0) ? m.importance : 'actionable';
+        // I-10：与 pushMessage / publish / _ensureMessage 同口径一律 background；非法值进本批 skipped（随 tick_batch_partial 留痕）
+        var imp = 'background';
+        if (IMPORTANCE.indexOf(m.importance) >= 0) imp = m.importance;
+        else if (m.importance != null && m.importance !== '') skipped.push('#' + i + ' importance 非法：' + m.importance + '（已按 background）');
         out.messages.push({ to: to, text: text, importance: imp });
       }
       var bc = parsed.broadcast;

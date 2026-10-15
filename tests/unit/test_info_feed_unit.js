@@ -8,6 +8,7 @@
 const H = require('./_harness.js');
 
 function sb(over) {
+  const audits = [];
   const s = H.makeSandbox(Object.assign({
     GameState: {
       currentCardId: 'card1',
@@ -15,15 +16,16 @@ function sb(over) {
       currentRound: 3,
       formatGameTime: function() { return '第 1 天 08:00'; }
     },
-    ErrorLog: { audit: function() { return true; }, action: function() {}, error: function() {}, log: function() {} }
+    ErrorLog: { audit: function(k, t, d) { audits.push([k, t, String(d)]); return true; }, action: function() {}, error: function() {}, log: function() {} }
   }, over || {}));
+  s.audits = audits;
   H.load(s, 'engine/info_feed.js');
   s.IF = s.window.InfoFeed;
   return s;
 }
 
 // ============ I1–I5 · 空档与字段规范化 ============
-H.run('I1-_empty 形状（version/seq/threads/threadOrder/broadcasts/seen/meta）', function() {
+H.run('I1-_empty 形状（version/seq/threads/threadOrder/broadcasts/meta）', function() {
   const s = sb();
   const d = s.IF._empty();
   H.eq(d.version, 1, 'version');
@@ -31,7 +33,7 @@ H.run('I1-_empty 形状（version/seq/threads/threadOrder/broadcasts/seen/meta�
   H.deepEq(d.threads, {}, 'threads');
   H.deepEq(d.threadOrder, [], 'threadOrder');
   H.deepEq(d.broadcasts, [], 'broadcasts');
-  H.deepEq(d.seen, {}, 'seen');
+  H.eq(typeof d.seen, 'undefined', 'seen 已从 schema 删除（I-11：有字段无读写，去重从未实现）');
   H.eq(d.meta.lastTickAt, null, 'meta.lastTickAt');
   H.eq(d.meta.lastTickRound, -1, 'meta.lastTickRound');
   H.eq(d.meta.aiSendCount, 0, 'meta.aiSendCount');
@@ -105,7 +107,7 @@ H.run('I8-setRuntime 规范化后落盘，且 getRuntime 拿到的是深拷贝',
 
 H.run('I9-_ensureShape 迁移残缺档：null 线程被删、非对象容器的字段补齐', function() {
   const s = sb();
-  s.IF.setRuntime({ threads: { t1: {}, bad: null }, threadOrder: null, broadcasts: null, seen: null, meta: null });
+  s.IF.setRuntime({ threads: { t1: {}, bad: null }, threadOrder: null, broadcasts: null, meta: null });
   const d = s.IF.getRuntime();
   H.eq(d.threads.t1.id, 't1', '线程 id 补自键名');
   H.eq(d.threads.t1.kind, 'direct', 'kind 缺省 direct');
@@ -115,7 +117,7 @@ H.run('I9-_ensureShape 迁移残缺档：null 线程被删、非对象容器的�
   H.eq(d.threads.bad, undefined, 'null 线程被删除');
   H.eq(Array.isArray(d.threadOrder), true, 'threadOrder 归一为数组');
   H.eq(Array.isArray(d.broadcasts), true, 'broadcasts 归一为数组');
-  H.eq(typeof d.seen, 'object', 'seen 归一为对象');
+  H.eq(typeof d.seen, 'undefined', 'seen 不再被迁移补回（I-11）');
   H.eq(d.meta.lastTickRound, -1, 'meta 补齐');
 });
 
@@ -286,6 +288,77 @@ H.run('I21-_validateTickBatch 逐条容错（坏条目不再连坐整批）', fu
   // 非对象入参不抛
   H.eq(s.IF._validateTickBatch(null), null, 'null 入参');
   H.eq(s.IF._validateTickBatch('字符串'), null, '字符串入参');
+});
+
+
+// ============ I22–I27 · P54 I-9 / I-10 / I-11 守卫 ============
+H.run('I22-origin 白名单：pushMessage/publish 非法 origin 回落并记审计（I-9）', function() {
+  const s = sb();
+  const m = s.IF.pushMessage({ from: 'laowang', fromName: '老王', to: 'player', text: 'hi', origin: 'bogus' });
+  H.eq(m.origin, 'ai', '非法 origin ⇒ ai');
+  const bc = s.IF.publish({ title: 't', body: 'b', origin: 'typo' });
+  H.eq(bc.origin, 'ai', '广播非法 origin ⇒ ai');
+  const kinds = s.audits.filter(function(a) { return a[1] === 'unknown_origin'; });
+  H.eq(kinds.length, 2, '两条 unknown_origin 审计');
+  const ok = s.IF.pushMessage({ from: 'laowang', to: 'player', text: 'hi2', origin: 'ai' });
+  H.eq(ok.origin, 'ai', '合法值原样保留');
+});
+
+H.run('I23-旧档玩家发言缺 origin 按 from 认回 player（I-9）', function() {
+  const s = sb();
+  const p = s.IF._ensureMessage({ from: 'player', fromName: '你', to: 'laowang', text: '我说' });
+  H.eq(p.origin, 'player', 'from=player ⇒ origin=player');
+  const n = s.IF._ensureMessage({ from: 'laowang', to: 'player', text: '他说' });
+  H.eq(n.origin, 'ai', 'NPC 发言 ⇒ origin=ai');
+  const bad = s.IF._ensureMessage({ from: 'laowang', to: 'player', text: 'x', origin: '乱写' });
+  H.eq(bad.origin, 'ai', '白名单外 ⇒ ai');
+  const bc = s.IF._ensureBroadcast({ title: 't', body: 'b', origin: 42 });
+  H.eq(bc.origin, 'ai', '广播白名单外 ⇒ ai');
+});
+
+H.run('I24-importance 非法值记审计后回落 background（I-10）', function() {
+  const s = sb();
+  const m = s.IF.pushMessage({ from: 'laowang', to: 'player', text: 'x', importance: 'urgent' });
+  H.eq(m.importance, 'background', 'pushMessage 非法 ⇒ background');
+  const bc = s.IF.publish({ title: 't', body: 'b', importance: 'urgent' });
+  H.eq(bc.importance, 'background', 'publish 非法 ⇒ background');
+  const a = s.IF.pushMessage({ from: 'laowang', to: 'player', text: 'y', importance: 'actionable' });
+  s.IF.setImportance(a.id, '瞎编');
+  const tid = s.IF.listThreads()[0].id;
+  const last = s.IF.getThread(tid).messages.slice(-1)[0];
+  H.eq(last.id, a.id, '取到的就是刚推的那条');
+  H.eq(last.importance, 'actionable', 'setImportance 非法被忽略，原值不动');
+  const kinds = s.audits.filter(function(x) { return x[1] === 'unknown_importance'; });
+  H.eq(kinds.length, 3, '三条 unknown_importance 审计');
+});
+
+H.run('I25-tick 批 importance 缺省/非法都落 background，非法值随 partial 审计留痕（I-10）', function() {
+  const s = sb();
+  // 注意：_validateTickBatch 单批最多收 2 条（:851 out.messages.length < 2），所以分两次调用取三种情况
+  const b1 = s.IF._validateTickBatch({ messages: [
+    { to: 'player', text: 'a' },
+    { to: 'player', text: 'b', importance: '瞎编' }
+  ] });
+  H.eq(b1.messages[0].importance, 'background', '缺 importance ⇒ background（与其它路径同口径）');
+  H.eq(b1.messages[1].importance, 'background', '非法 ⇒ background');
+  const partial = s.audits.filter(function(x) { return x[1] === 'tick_batch_partial'; });
+  H.eq(partial.length, 1, '留 partial 审计');
+  H.contains(partial[0][2], 'importance 非法', '审计写明非法值与处置');
+  const b2 = s.IF._validateTickBatch({ messages: [{ to: 'player', text: 'c', importance: 'actionable' }] });
+  H.eq(b2.messages[0].importance, 'actionable', '合法 actionable 原样保留');
+});
+
+H.run('I26-_emptyMessage 死代码已删（I-10）', function() {
+  const s = sb();
+  H.eq(typeof s.IF._emptyMessage, 'undefined', '_emptyMessage 已删除');
+});
+
+H.run('I27-_empty 与 _ensureShape 都不再有 seen（I-11）', function() {
+  const s = sb();
+  H.eq(Object.prototype.hasOwnProperty.call(s.IF._empty(), 'seen'), false, '_empty 无 seen');
+  // 旧档里带 seen 时不强删（那是历史数据）；这里只验证「不再凭空补出 seen」
+  s.IF.setRuntime({ threads: { t1: {} }, threadOrder: ['t1'], broadcasts: [], meta: {} });
+  H.eq(Object.prototype.hasOwnProperty.call(s.IF.getRuntime(), 'seen'), false, '_ensureShape 不补 seen');
 });
 
 H.finish();

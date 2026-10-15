@@ -333,8 +333,8 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：4 套 / 73 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
-  `test_info_feed_unit.js` 21 条、`test_tool_executor_unit.js` 18 条、
+- **当前基线：4 套 / 79 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+  `test_info_feed_unit.js` 27 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 17 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
@@ -355,7 +355,12 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   通道抛错时留 `settle_notice_failed` 审计，而不是空 `catch {}` 静默）；
   `test_info_feed_unit.js` 的 I18–I21 锁住 P54·第12条
   的 I-4（混流追加失败 ⇒ `ok:false` 且条目回到原状、`chatHistory` 写失败留 `warning`+审计）与
-  I-6（tick 批逐条容错：坏条目跳过并审计、超长按 `MAX_TEXT`/`MAX_BODY` 截断，全批无可用条目才丢）。
+  I-6（tick 批逐条容错：坏条目跳过并审计、超长按 `MAX_TEXT`/`MAX_BODY` 截断，全批无可用条目才丢）；
+  I22–I27 锁住 I-9（`origin` 只有 `'ai'`/`'player'` 两个合法值，写入口非法值记 `unknown_origin` 审计，
+  旧档缺 `origin` 的玩家发言按 `from` 认回 `'player'`，不再一律算到 AI 头上）、I-10（`importance` 非法值
+  不再静默回落：写入口记 `unknown_importance` 审计并统一按 `'background'`，tick 批非法值随
+  `tick_batch_partial` 留痕；顺带删掉零调用的 `_emptyMessage`）与 I-11（schema 里的 `seen` 有字段、
+  有迁移、零读写 —— 去重从未实现 ⇒ 删字段，而不是继续假装有）。
 
 ================================================================
 【五、断言计数与报告口径】

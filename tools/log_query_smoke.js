@@ -604,7 +604,7 @@ function runG() {
     ['engine/core/gamestate.js', 'AABB3146FA76593DD35D992629863BE1'],
     ['engine/core/prompt_builder.js', 'ED9AB8C65E72433D0CD11F718C6927C7'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
-    ['engine/info_feed.js', '0B7E83858E378DFB33197E5E2EC1EB23']
+    ['engine/info_feed.js', 'A222B509CF150D42986DBDF1A1FABC5D']
   ];
   bases.forEach(function (b) {
     eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5(path.join(root, b[0])), b[1]);
