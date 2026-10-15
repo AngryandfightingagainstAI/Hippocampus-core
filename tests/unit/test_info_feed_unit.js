@@ -361,4 +361,106 @@ H.run('I27-_empty 与 _ensureShape 都不再有 seen（I-11）', function() {
   H.eq(Object.prototype.hasOwnProperty.call(s.IF.getRuntime(), 'seen'), false, '_ensureShape 不补 seen');
 });
 
+
+
+// ============ I28–I33 · I-5 / I-7 / I-8 ============
+H.run('I28-_firstJsonObject 只取第一个花括号配平的对象（I-5）', function() {
+  const s = sb();
+  H.eq(s.IF._firstJsonObject('前面有解释 {"a":1} 后面又写了一段 {"b":2}'),
+    '{"a":1}', '后文再出现花括号也不缝进来');
+  H.eq(s.IF._firstJsonObject('{"t":"含 } 的字符串","n":[1,2]}'),
+    '{"t":"含 } 的字符串","n":[1,2]}', '字符串里的花括号不算层级');
+  H.eq(s.IF._firstJsonObject('{"a":"\\"}"}'), '{"a":"\\"}"}', '转义引号不误判字符串结束');
+  H.eq(s.IF._firstJsonObject('没有花括号'), null, '没有 { ⇒ null');
+  H.eq(s.IF._firstJsonObject('{"a":'), null, '没配平 ⇒ null（交给退化切片与修复路径）');
+});
+
+H.run('I29-_parseTick 在 JSON 后还有花括号段落时仍能解析（I-5）', function() {
+  const s = sb();
+  const txt = '这是我要给你的信息：\n{"messages":[{"to":"player","text":"在吗"}]}\n' +
+    '（说明：上面就是结果；另外 {"note":"别理"} 只是举例。）';
+  const r = s.IF._parseTick(txt);
+  H.ok(r && Array.isArray(r.messages) && r.messages.length === 1, '解析出 1 条');
+  H.eq(r.messages[0].text, '在吗', '正文正确');
+  const fenced = s.IF._parseTick('\u0060\u0060\u0060json\n{"messages":[]}\n\u0060\u0060\u0060');
+  H.ok(fenced && Array.isArray(fenced.messages), '代码块包裹照旧');
+});
+
+H.run('I30-tick 失败原因回灌下一轮提示词、成功后撤掉（I-5）', async function() {
+  const mkSb = function(chat) {
+    return sb({
+      GameState: {
+        currentCardId: 'card1', currentSaveId: 'save1', currentRound: 3,
+        formatGameTime: function() { return '1-1-3 08:00'; }
+      },
+      ApiManager: { getActive: function() { return { id: 'p1' }; } },
+      ApiClient: { chat: chat }
+    });
+  };
+  const s = mkSb(async function() { return '抱歉，我这边暂时没有消息。'; });
+  await s.IF.tick({ round: 3 });
+  const rt = s.IF.getRuntime();
+  H.ok(rt.meta.lastTickError && /无法解析/.test(rt.meta.lastTickError.reason), 'meta 记下失败原因');
+  H.eq(rt.meta.lastTickError.round, 3, '记下轮次');
+  H.eq(rt.meta.lastTickAt, null, '失败不算「已发起过」——冷却不推进');
+  const p = s.IF._tickPrompt();
+  H.contains(p, '【上一轮失败', '提示词里有失败段');
+  H.contains(p, '无法解析成 JSON 对象', '带具体原因');
+  H.contains(p, '抱歉，我这边暂时没有消息。', '带上一次输出开头，便于自纠');
+  H.ok(s.audits.some(function(a) { return a[1] === 'tick_retry_feedback'; }), '留 tick_retry_feedback 审计');
+
+  const s2 = mkSb(async function() { return '{"messages":[{"to":"player","text":"我是老王"}]}'; });
+  await s2.IF.tick({ round: 3 });
+  const rt2 = s2.IF.getRuntime();
+  H.eq(typeof rt2.meta.lastTickError, 'undefined', '成功一轮后撤掉回灌');
+  H.eq(rt2.meta.lastTickRound, 3, '成功路径照旧推进');
+  H.ok(!/【上一轮失败/.test(s2.IF._tickPrompt()), '提示词恢复干净');
+});
+
+H.run('I31-坏档（数组/坏 JSON）先备份再空手起，并留审计（I-7）', function() {
+  const p = '/saves/card1/save1/info_feed.json';
+  const bak = '/saves/card1/save1/info_feed.bad.json';
+  const s = sb();
+  s.VFS._files[p] = '[1,2,3]';
+  s.IF.load();
+  H.eq(s.VFS._files[bak], '[1,2,3]', '数组档原样备份');
+  H.eq(Object.keys(s.IF.getRuntime().threads).length, 0, '空档起步');
+  H.ok(s.audits.some(function(a) { return a[1] === 'load_corrupt'; }), '留 load_corrupt 审计');
+
+  const s2 = sb();
+  s2.VFS._files[p] = '{"threads": ';
+  s2.IF.load();
+  H.eq(s2.VFS._files[bak], '{"threads": ', '坏 JSON 也备份');
+  H.ok(s2.audits.some(function(a) { return a[1] === 'load_corrupt'; }), '留审计');
+  H.eq(s2.IF.getRuntime().meta.lastTickRound, -1, '降级为空档形状');
+});
+
+H.run('I32-坏线程条目被移除时留审计（I-7）', function() {
+  const s = sb();
+  s.IF.setRuntime({ threads: { good: {}, bad: null }, threadOrder: [], broadcasts: [], meta: {} });
+  const d = s.IF.getRuntime();
+  H.eq(d.threads.bad, undefined, '坏条目仍会被移除（结构不变量不变）');
+  H.eq(d.threads.good.id, 'good', '好条目照旧补全');
+  const a = s.audits.filter(function(x) { return x[1] === 'thread_dropped'; });
+  H.eq(a.length, 1, '留一条 thread_dropped 审计');
+  H.contains(a[0][2], 'bad', '审计含键名，便于从备份里捞');
+});
+
+H.run('I33-save 跳过/归属不符都不再静默：返回 false 并留审计（I-7/I-8）', function() {
+  const s = sb();
+  const p1 = '/saves/card1/save1/info_feed.json';
+  const p2 = '/saves/card1/save2/info_feed.json';
+  s.IF.load();
+  s.IF._data.meta.aiSendCount = 1;
+  s.GameState.currentSaveId = null;
+  H.eq(s.IF.save(), false, '没有存档 id ⇒ 返回 false');
+  H.ok(s.audits.some(function(a) { return a[1] === 'save_skipped'; }), '留 save_skipped 审计');
+  s.GameState.currentSaveId = 'save2';
+  H.eq(s.IF.save(), false, '归属不符 ⇒ 拒绝写');
+  H.ok(s.audits.some(function(a) { return a[1] === 'save_owner_mismatch'; }), '留 save_owner_mismatch 审计');
+  H.eq(s.VFS._files[p2], undefined, 'B 档文件没被写脏');
+  s.GameState.currentSaveId = 'save1';
+  H.eq(s.IF.save(), true, '回到原档 ⇒ 正常写');
+  H.eq(s.VFS._files[p1] !== undefined, true, 'A 档文件在');
+});
 H.finish();

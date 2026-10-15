@@ -41,6 +41,9 @@
   var InfoFeed = {
     _data: null,
     _generation: 0,
+    // P54·I-8：手里这份 _data 是从哪条路径读出来的（纯内存，不落盘）。
+    //   切档时若某个 loader 抛错，save() 靠它拦住「把 A 档的信息层写进 B 档」。
+    _owner: '',
 
     // ============ 路径与结构 ============
     _path: function() {
@@ -118,7 +121,12 @@
 
       Object.keys(target.threads).forEach(function(k) {
         var th = target.threads[k];
-        if (!th || typeof th !== 'object') { delete target.threads[k]; return; }
+        if (!th || typeof th !== 'object') {
+          // P54·I-7：原实现是静默 delete —— 坏条目凭空消失，事后无从查。至少留下键名。
+          self._audit('thread_dropped', String(k) + '（条目不是对象，已从 threads 移除）');
+          delete target.threads[k];
+          return;
+        }
         if (typeof th.id !== 'string' || !th.id) th.id = k;
         if (typeof th.kind !== 'string') th.kind = 'direct';
         if (typeof th.title !== 'string') th.title = th.id;
@@ -147,16 +155,43 @@
     load: function() {
       this._bumpGeneration();
       var p = this._path();
+      this._owner = p || '';
       if (!p) { this._data = this._empty(); return; }
+      var raw = null;
+      try { raw = VFS.readFile(p); } catch (e) { raw = null; }
       var d = VFS.readJSON(p);
-      this._data = (d && typeof d === 'object') ? d : this._empty();
+      // 注意：数组也能通过 typeof === 'object'，必须用 toString 判「纯对象」
+      var isPlain = !!d && Object.prototype.toString.call(d) === '[object Object]';
+      if (raw != null && !isPlain) {
+        // P54·I-7：文件在、但不是一个对象（坏 JSON / 是数组 / 是字符串）——原实现直接 _empty()，
+        //   整档内容既不落日志也没有备份。这里先原样备份再空手起。
+        var bak = p.replace(/\.json$/, '') + '.bad.json';
+        var okBak = false;
+        try { okBak = (VFS.writeFile(bak, String(raw)) !== false); } catch (e2) { okBak = false; }
+        this._audit('load_corrupt', (okBak ? '已备份 → ' + bak : '备份失败 → ' + bak) +
+          '；原内容开头：' + String(raw).replace(/\s+/g, ' ').slice(0, 80));
+        this._data = this._empty();
+        return;
+      }
+      this._data = isPlain ? d : this._empty();
       this._ensureShape();
     },
 
     save: function() {
       var p = this._path();
-      if (!p || !this._data) return;
-      VFS.writeJSON(p, this._data);
+      if (!p || !this._data) {
+        // P54·I-7：原实现静默 return，调用方以为已经存上了。
+        this._audit('save_skipped', !p ? '没有 currentCardId/currentSaveId，无处可写' : '内存态为空（尚未 load）');
+        return false;
+      }
+      if (this._owner && this._owner !== p) {
+        // P54·I-8：手里的数据属于另一个存档（切档途中某个 loader 抛错的典型后果），
+        //   写下去就是把 A 档的信息灌进 B 档 —— 宁可不写，也不串味。
+        this._audit('save_owner_mismatch', this._owner + ' → ' + p);
+        return false;
+      }
+      try { VFS.writeJSON(p, this._data); return true; }
+      catch (e) { this._audit('save_failed', String((e && e.message) || e)); return false; }
     },
 
     getRuntime: function() {
@@ -167,6 +202,7 @@
 
     setRuntime: function(data) {
       this._data = data ? JSON.parse(JSON.stringify(data)) : null;
+      this._owner = this._path() || '';
       this._ensureShape();
       this.save();
       this._bumpGeneration();
@@ -174,6 +210,7 @@
 
     clear: function() {
       this._data = this._empty();
+      this._owner = this._path() || '';
       this.save();
       this._bumpGeneration();
     },
@@ -723,25 +760,80 @@
       lines.push('【已发出的广播标题】');
       var titles = this.listBroadcasts().slice(0, 10).map(function(b) { return b.title; });
       lines.push(titles.length ? ('· ' + titles.join('、')) : '（暂无）');
+      var lastErr = (this._data && this._data.meta) ? this._data.meta.lastTickError : null;
+      if (lastErr && lastErr.reason) {
+        // P54·I-5：把「上一轮为什么白跑」回灌给 AI —— 否则它下一轮还会犯同一个错。
+        lines.push('');
+        lines.push('【上一轮失败（这次必须改）】');
+        lines.push('上一次（' + (lastErr.at || '?') + '，第 ' + (lastErr.round != null ? lastErr.round : '?') +
+          ' 回合）的输出没能用上：' + lastErr.reason);
+        if (lastErr.sample) lines.push('上次输出的开头：' + lastErr.sample);
+        lines.push('这次只输出一个 JSON 对象本身，不要在它前后再写别的文字或代码块。');
+      }
       lines.push('');
       lines.push('现在输出 JSON。');
       return lines.join('\n');
     },
 
+    // P54·I-5：从一段自由文本里取出**第一个花括号配平**的 JSON 对象。
+    //   原实现用 indexOf('{')/lastIndexOf('}')：AI 只要在 JSON 后面又写一段带花括号的说明，
+    //   两段就会被缝在一起 ⇒ JSON.parse 必失败 ⇒ 整批白丢。
+    //   名字与 engine/outputs.js 的同名实现一致（O-8 的目标是把它抽成公共件）。
+    _firstJsonObject: function(text) {
+      var s = String(text == null ? '' : text);
+      var start = s.indexOf('{');
+      if (start < 0) return null;
+      var depth = 0, inStr = false, esc = false;
+      for (var i = start; i < s.length; i++) {
+        var c = s.charAt(i);
+        if (inStr) {
+          if (esc) { esc = false; continue; }
+          if (c === '\\') { esc = true; continue; }
+          if (c === '"') inStr = false;
+          continue;
+        }
+        if (c === '"') { inStr = true; continue; }
+        if (c === '{') depth++;
+        else if (c === '}') {
+          depth--;
+          if (depth === 0) return s.slice(start, i + 1);
+        }
+      }
+      return null;
+    },
+
+    // P54·I-5：把「上一轮为什么白跑」记进 meta.lastTickError，下一轮 _tickPrompt 会回灌给 AI。
+    //   只在失败时写、成功时清；不是 _ensureShape 的默认字段（否则会污染空档形状与既有断言）。
+    _noteTickFailure: function(round, reason, rawOutput) {
+      if (!this._data) this.load();
+      this._ensureShape();
+      this._data.meta.lastTickError = {
+        at: this._now(),
+        round: (typeof round === 'number') ? round : -1,
+        reason: String(reason || ''),
+        sample: String(rawOutput == null ? '' : rawOutput).replace(/\s+/g, ' ').slice(0, 160)
+      };
+      this._audit('tick_retry_feedback', this._data.meta.lastTickError.reason);
+      this.save();
+    },
+
     _parseTick: function(content) {
       if (!content) return null;
-      var s = String(content).trim();
-      var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (m) s = m[1].trim();
-      var start = s.indexOf('{');
-      var end = s.lastIndexOf('}');
-      if (start < 0 || end <= start) return null;
-      s = s.slice(start, end + 1);
+      var raw = String(content).trim();
+      var m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (m) raw = m[1].trim();
+      var s = this._firstJsonObject(raw);
+      if (!s) {
+        // 配平失败：退化成原来的首尾切片，仍交给 fixJSONText 尽力修（不放弃既有修复路径）
+        var a = raw.indexOf('{'), b = raw.lastIndexOf('}');
+        if (a < 0 || b <= a) return null;
+        s = raw.slice(a, b + 1);
+      }
       var parsed = null;
       try { parsed = JSON.parse(s); } catch (e) {
         if (typeof CardDiagnose !== 'undefined' && CardDiagnose.fixJSONText) {
-          try { parsed = JSON.parse(CardDiagnose.fixJSONText(s).result); } catch (e2) { return null; }
-        } else return null;
+          try { parsed = JSON.parse(CardDiagnose.fixJSONText(s).result); } catch (e2) { parsed = null; }
+        }
       }
       if (!parsed || typeof parsed !== 'object') return null;
       return parsed;
@@ -797,12 +889,20 @@
         if (self._generation !== gen) return;
 
         var parsed = this._parseTick(content);
-        if (!parsed) { this._log('空闲发起：AI 输出无法解析，整批丢弃'); return; }
+        if (!parsed) {
+          this._log('空闲发起：AI 输出无法解析，整批丢弃');
+          this._noteTickFailure(round, '输出无法解析成 JSON 对象', content);
+          return;
+        }
 
         // P54·I-6：逐条校验 —— 坏条目跳过并留痕（_validateTickBatch 内 _audit），
         //   只有整批没有可用条目时才丢弃（原实现是一条不过就丢整批，与 pushMessage 的截断口径不一致）。
         var batch = this._validateTickBatch(parsed);
-        if (!batch) { this._log('空闲发起：批量校验未通过（无可用条目），整批丢弃'); return; }
+        if (!batch) {
+          this._log('空闲发起：批量校验未通过（无可用条目），整批丢弃');
+          this._noteTickFailure(round, '整批条目都不合格（to/text/收件人/publicity 等，详见审计）', content);
+          return;
+        }
 
         // 落库：产物一律 flow:'info'，importance 最多 actionable
         batch.messages.forEach(function(m) {
@@ -833,6 +933,7 @@
         this._data.meta.lastTickAt = now;
         this._data.meta.lastTickRound = round;
         this._data.meta.aiSendCount = (this._data.meta.aiSendCount || 0) + batch.messages.length + (batch.broadcast ? 1 : 0);
+        if (this._data.meta.lastTickError) delete this._data.meta.lastTickError;   // P54·I-5：这轮成了，撤掉回灌提示
         this.save();
       } catch (e) {
         this._log('空闲发起失败：' + (e && e.message ? e.message : String(e)));
