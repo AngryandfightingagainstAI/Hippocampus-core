@@ -499,7 +499,8 @@ function runComponent() {
     ['engine/core/gamestate.js', 10413, 'AABB3146FA76593DD35D992629863BE1'],
     ['engine/core/prompt_builder.js', 51275, 'ED9AB8C65E72433D0CD11F718C6927C7'],
     // P54·I-4/I-6 重记：info_feed.js 补「静默失败可见性」（混流追加失败不再假成功、tick 批逐条容错）
-    ['engine/info_feed.js', 50371, '311BAEE0026C41ECEA8054654DE5478B']
+    // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
+    ['engine/info_feed.js', 49989, '6010CBD7FE4B1DCCA28E428DD634F280']
   ];
   BASE.forEach(function (b) {
     var p = path.join(root, b[0]);

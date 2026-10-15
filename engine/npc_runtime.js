@@ -982,9 +982,10 @@
       var s = String(content).trim();
       var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (m) s = m[1].trim();
-      var start = s.indexOf('{');
-      var end = s.lastIndexOf('}');
-      if (start >= 0 && end > start) s = s.slice(start, end + 1);
+      // O-8：共享件取第一个「花括号配平」的 JSON 对象（朴素首尾切片会把 JSON 后面
+      // 说明文字里的花括号也缝进来）
+      var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
+      if (ob) s = ob;
 
       var parsed = null;
       try { parsed = JSON.parse(s); }

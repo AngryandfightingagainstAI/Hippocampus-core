@@ -52,6 +52,9 @@ function mk(opts) {
     };
   }
   const sb = makeSandbox(over);
+  // O-8：JSON 提取收敛到共享件 CardDiagnose.firstJsonObject；沙箱按裸名挂成上下文全局
+  load(sb, 'engine/card_diagnose.js');
+  sb.CardDiagnose = sb.window.CardDiagnose;
   load(sb, 'engine/outputs.js');
   return { sb: sb, O: sb.window.Outputs, gs: gs, state: state };
 }

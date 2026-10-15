@@ -276,22 +276,11 @@
     // 字符串感知的括号扫描：取第一个平衡的 {...}（跳过字符串内的花括号与转义）
     //   旧写法「第一个 { 到最后一个 }」在模型于 JSON 之后继续解释（还带 } 或代码块）时就废了。
     _firstJsonObject: function(s) {
-      var start = s.indexOf('{');
-      while (start >= 0) {
-        var depth = 0, inStr = false, esc = false;
-        for (var i = start; i < s.length; i++) {
-          var ch = s.charAt(i);
-          if (inStr) {
-            if (esc) { esc = false; continue; }
-            if (ch === '\\') { esc = true; continue; }
-            if (ch === '"') inStr = false;
-            continue;
-          }
-          if (ch === '"') { inStr = true; continue; }
-          if (ch === '{') depth++;
-          else if (ch === '}') { depth--; if (depth === 0) return s.slice(start, i + 1); }
-        }
-        start = s.indexOf('{', start + 1);
+      // O-8：实现已收敛到共享件 engine/card_diagnose.js 的 CardDiagnose.firstJsonObject；
+      // 本方法保留原契约 —— 找不到就返回空串（调用方 parseReviewVerdict 用 `if (balanced)` 判空）。
+      if (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) {
+        var ob = CardDiagnose.firstJsonObject(s);
+        return ob == null ? '' : ob;
       }
       return '';
     },

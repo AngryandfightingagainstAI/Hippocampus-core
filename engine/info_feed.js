@@ -778,26 +778,11 @@
     // P54·I-5：从一段自由文本里取出**第一个花括号配平**的 JSON 对象。
     //   原实现用 indexOf('{')/lastIndexOf('}')：AI 只要在 JSON 后面又写一段带花括号的说明，
     //   两段就会被缝在一起 ⇒ JSON.parse 必失败 ⇒ 整批白丢。
-    //   名字与 engine/outputs.js 的同名实现一致（O-8 的目标是把它抽成公共件）。
+    //   O-8：实现已收敛到共享件 engine/card_diagnose.js 的 CardDiagnose.firstJsonObject
+    //   （本方法保留原契约：拿不到配平对象返回 null，调用方 _parseTick 会走修复路径）。
     _firstJsonObject: function(text) {
-      var s = String(text == null ? '' : text);
-      var start = s.indexOf('{');
-      if (start < 0) return null;
-      var depth = 0, inStr = false, esc = false;
-      for (var i = start; i < s.length; i++) {
-        var c = s.charAt(i);
-        if (inStr) {
-          if (esc) { esc = false; continue; }
-          if (c === '\\') { esc = true; continue; }
-          if (c === '"') inStr = false;
-          continue;
-        }
-        if (c === '"') { inStr = true; continue; }
-        if (c === '{') depth++;
-        else if (c === '}') {
-          depth--;
-          if (depth === 0) return s.slice(start, i + 1);
-        }
+      if (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) {
+        return CardDiagnose.firstJsonObject(text);
       }
       return null;
     },

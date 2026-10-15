@@ -136,11 +136,10 @@
       // 去掉可能的 markdown 包裹
       var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (m) s = m[1].trim();
-      // 提取 JSON 对象
-      var start = s.indexOf('{');
-      var end = s.lastIndexOf('}');
-      if (start < 0 || end <= start) return { ok: true };
-      s = s.slice(start, end + 1);
+      // 提取 JSON 对象（O-8：共享件做花括号配平扫描；拿不到完整对象就保留原文，
+      // 交给下面的 JSON.parse 与 fixJSONText 修复路径）
+      var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
+      if (ob) s = ob;
       var parsed = null;
       try { parsed = JSON.parse(s); } catch (e) {
         // 尝试修复

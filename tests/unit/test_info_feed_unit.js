@@ -19,6 +19,9 @@ function sb(over) {
     ErrorLog: { audit: function(k, t, d) { audits.push([k, t, String(d)]); return true; }, action: function() {}, error: function() {}, log: function() {} }
   }, over || {}));
   s.audits = audits;
+  // O-8：JSON 提取已收敛到共享件，引擎件按裸名找 CardDiagnose ⇒ 沙箱要把它挂成上下文全局
+  H.load(s, 'engine/card_diagnose.js');
+  s.CardDiagnose = s.window.CardDiagnose;
   H.load(s, 'engine/info_feed.js');
   s.IF = s.window.InfoFeed;
   return s;

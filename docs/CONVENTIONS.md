@@ -333,17 +333,18 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：4 套 / 85 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：5 套 / 99 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
-  `test_outputs_unit.js` 17 条）。
+  `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
   `setTimeout is not defined`）、`load(sb, 'engine/...')` 按仓根加载、`run/eq/deepEq/ok/contains/noThrow/finish`。
-- 被测的四个模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
-  `engine/core/tool_executor.js`、`engine/outputs.js`）都是**两仓同源件**；本轮单测只落在手机仓 ——
+- 被测的模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
+  `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`）都是**两仓同源件**
+  （`card_diagnose.js` 属「仅行尾不同」桶）；本轮单测只落在手机仓 ——
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
@@ -366,7 +367,14 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   I-7（坏档先原样备份到 `<档>.bad.json` 再降级空档并记 `load_corrupt`；坏线程条目移除时记
   `thread_dropped`；`save()` 无处可写/归属不符/写盘抛错都返回 `false` 并留审计，不再静默返回）、
   I-8（`_data` 记归属 `_owner`，`save()` 发现归属与当前档不一致时拒绝落盘，避免切档途中
-  某个 loader 抛错把 A 档的信息写进 B 档）。
+  某个 loader 抛错把 A 档的信息写进 B 档）；
+  `test_json_extract_unit.js` 的 J1–J14 锁住 O-8（JSON 提取收敛到唯一实现
+  `engine/card_diagnose.js` 的 `CardDiagnose.firstJsonObject(text)`：字符串/转义感知的花括号配平，
+  只取第一个能配平的对象、拿不到返回 `null`；`outputs.js` 的 `_firstJsonObject` 保持返回空串的老契约、
+  `info_feed.js` 保持返回 `null`；classify / npc_runtime / npc_deduction_ai / portrait /
+  proposal_semantic_check / import 六个文件里的 7 处朴素「第一个 `{` 到最后一个 `}`」切片全部改走共享件，
+  J12 用源码哨兵盯住这六个文件不再出现 `indexOf('{')`/`lastIndexOf('}')`，J14 用同一批输入证明旧写法
+  确实会 `JSON.parse` 失败 —— 模型在 JSON 之后继续解释（解释里又带花括号）时不再把两段缝在一起）。
 
 ================================================================
 【五、断言计数与报告口径】

@@ -212,9 +212,11 @@ function parseJsonLoose(text) {
   var fence = /```(?:json)?\s*([\s\S]*?)```/.exec(s);
   if (fence) s = fence[1].trim();
   try { return JSON.parse(s); } catch (e) {}
-  var first = s.indexOf('{'), last = s.lastIndexOf('}');
-  if (first >= 0 && last > first) {
-    try { return JSON.parse(s.slice(first, last + 1)); } catch (e2) {}
+  // O-8：共享件取第一个「花括号配平」的 JSON 对象（朴素首尾切片会把 JSON 后面
+  // 说明文字里的花括号也缝进来）
+  var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
+  if (ob) {
+    try { return JSON.parse(ob); } catch (e2) {}
   }
   return null;
 }

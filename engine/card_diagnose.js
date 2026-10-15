@@ -46,6 +46,35 @@
     return out;
   }
 
+  // O-8 共享件：从一段文本里取出第一个「花括号配平」的 JSON 对象。
+  //   与 fixJSONText 同一套字符串感知口径（单/双引号、反斜杠转义都算字符串内部），
+  //   但只**提取**不做修复：拿不到配平对象就返回 null，是否再走 fixJSONText 由调用方定。
+  //   旧写法「第一个 { 到最后一个 }」在模型于 JSON 之后继续解释（还带花括号）时就废了。
+  function firstJsonObject(text) {
+    if (!text) return null;
+    var s = String(text);
+    var start = s.indexOf('{');
+    if (start < 0) return null;
+    var depth = 0, inStr = false, strChar = '', escape = false;
+    for (var i = start; i < s.length; i++) {
+      var c = s.charAt(i);
+      if (escape) { escape = false; continue; }
+      if (inStr) {
+        if (c === '\\') escape = true;
+        else if (c === strChar) inStr = false;
+        continue;
+      }
+      if (c === '"' || c === "'") { inStr = true; strChar = c; continue; }
+      if (c === '{') depth++;
+      else if (c === '}') {
+        depth--;
+        if (depth === 0) return s.slice(start, i + 1);
+        if (depth < 0) return null;
+      }
+    }
+    return null;
+  }
+
   function fixJSONText(raw) {
     if (!raw) return { result: '', fixed: 0, changes: [] };
     var str = String(raw);
@@ -656,7 +685,8 @@
     renderTerminal: renderTerminal,
     generatePlayerReport: generatePlayerReport,
     generateAIReport: generateAIReport,
-    fixJSONText: fixJSONText
+    fixJSONText: fixJSONText,
+    firstJsonObject: firstJsonObject
   };
   if (typeof window !== 'undefined') window.CardDiagnose = CardDiagnose;
   if (typeof module !== 'undefined' && module.exports) module.exports = CardDiagnose;
