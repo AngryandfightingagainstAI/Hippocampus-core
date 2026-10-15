@@ -6,6 +6,12 @@
 // ============================================================
 
 (function() {
+  // 全局子系统探测（P54·第14条）：拿不到对象或没有该方法一律返回 null，交由调用方回落世界书
+  function _probeGlobal(host, method, id) {
+    if (host && typeof host[method] === 'function') return !!host[method](id);
+    return null;
+  }
+
   var ProposalValidator = {
 
     // 入口：校验一条提议，返回 { ok: bool, reason?: string }
@@ -53,109 +59,58 @@
       } catch (e3) { return false; }
     },
 
-    // ============ 通用查表 ============
-    _hasNpc: function(id) {
+    // ============ 通用查表（P54·第14条：表驱动）============
+    // 原先 12 个 _has* 各自手写一遍「取 worldbook 集合 → 遍历找 id」，现收敛为一张声明表 +
+    // 一个通用实现。对外函数名与返回语义不变，_handlers 的 34 处调用零改动。
+    //   collection : worldbook 里的集合名（数组；map:true 表示以 id 为键的对象）
+    //   matchName  : 数组元素额外按 name 命中（NPC 专用）
+    //   find       : 可选，全局子系统探测（裸标识符 + try 捕获，与重构前同语义）；
+    //                true/false 为定论，null 表示「本环境没有该子系统」→ 回落世界书
+    //   onlyFind   : 为 true 时只认 find 的结论（节点 / 伏笔没有世界书回落）
+    _hasSpecs: {
+      npc:         { collection: 'npcs', matchName: true },
+      mapNode:     { collection: 'mapNodes', map: true },
+      event:       { collection: 'events', find: function(id) { try { return _probeGlobal(Events, 'findDef', id); } catch (e) { return null; } } },
+      task:        { collection: 'tasks', find: function(id) { try { return _probeGlobal(Tasks, '_findDef', id); } catch (e) { return null; } } },
+      achievement: { collection: 'achievements' },
+      ending:      { collection: 'endings' },
+      node:        { onlyFind: true, find: function(id) { try { return _probeGlobal(StoryNodes, 'findNode', id); } catch (e) { return null; } } },
+      foreshadow:  { onlyFind: true, find: function(id) { try { return _probeGlobal(StoryNodes, 'findForeshadow', id); } catch (e) { return null; } } },
+      shop:        { collection: 'shops', find: function(id) { try { return _probeGlobal(Shop, 'findShop', id); } catch (e) { return null; } } }
+    },
+
+    _hasIn: function(specName, id) {
       if (!id) return false;
+      var spec = this._hasSpecs[specName];
+      if (!spec) return false;
+      if (spec.find) {
+        var hit = spec.find(id);
+        if (hit === true) return true;
+        if (hit === false) return false;   // 全局子系统给了定论（含「没有」）
+      }
+      if (spec.onlyFind || !spec.collection) return false;
       var card = GameState.currentCard;
       if (!card || !card.worldbook) return false;
-      var npcs = card.worldbook.npcs || [];
+      var src = card.worldbook[spec.collection];
+      if (spec.map) return !!(src && src[id]);
+      var list = src || [];
       var found = false;
-      npcs.forEach(function(n) { if (!found && (n.id === id || n.name === id)) found = true; });
+      list.forEach(function(x) {
+        if (found) return;
+        if (x.id === id || (spec.matchName && x.name === id)) found = true;
+      });
       return found;
     },
 
-    _hasMapNode: function(id) {
-      if (!id) return false;
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var nodes = card.worldbook.mapNodes || {};
-      return !!nodes[id];
-    },
-
-    _hasEvent: function(id) {
-      if (!id) return false;
-      try {
-        if (typeof Events !== 'undefined' && Events.findDef) {
-          return !!Events.findDef(id);
-        }
-      } catch (e) {}
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var list = card.worldbook.events || [];
-      var found = false;
-      list.forEach(function(x) { if (!found && x.id === id) found = true; });
-      return found;
-    },
-
-    _hasTask: function(id) {
-      if (!id) return false;
-      try {
-        if (typeof Tasks !== 'undefined' && Tasks._findDef) {
-          return !!Tasks._findDef(id);
-        }
-      } catch (e) {}
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var list = card.worldbook.tasks || [];
-      var found = false;
-      list.forEach(function(x) { if (!found && x.id === id) found = true; });
-      return found;
-    },
-
-    _hasAchievement: function(id) {
-      if (!id) return false;
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var list = card.worldbook.achievements || [];
-      var found = false;
-      list.forEach(function(x) { if (!found && x.id === id) found = true; });
-      return found;
-    },
-
-    _hasEnding: function(id) {
-      if (!id) return false;
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var list = card.worldbook.endings || [];
-      var found = false;
-      list.forEach(function(x) { if (!found && x.id === id) found = true; });
-      return found;
-    },
-
-    _hasNode: function(id) {
-      if (!id) return false;
-      try {
-        if (typeof StoryNodes !== 'undefined' && StoryNodes.findNode) {
-          return !!StoryNodes.findNode(id);
-        }
-      } catch (e) {}
-      return false;
-    },
-
-    _hasForeshadow: function(id) {
-      if (!id) return false;
-      try {
-        if (typeof StoryNodes !== 'undefined' && StoryNodes.findForeshadow) {
-          return !!StoryNodes.findForeshadow(id);
-        }
-      } catch (e) {}
-      return false;
-    },
-
-    _hasShop: function(id) {
-      if (!id) return false;
-      try {
-        if (typeof Shop !== 'undefined' && Shop.findShop) {
-          return !!Shop.findShop(id);
-        }
-      } catch (e) {}
-      var card = GameState.currentCard;
-      if (!card || !card.worldbook) return false;
-      var list = card.worldbook.shops || [];
-      var found = false;
-      list.forEach(function(x) { if (!found && x.id === id) found = true; });
-      return found;
-    },
+    _hasNpc: function(id) { return this._hasIn('npc', id); },
+    _hasMapNode: function(id) { return this._hasIn('mapNode', id); },
+    _hasEvent: function(id) { return this._hasIn('event', id); },
+    _hasTask: function(id) { return this._hasIn('task', id); },
+    _hasAchievement: function(id) { return this._hasIn('achievement', id); },
+    _hasEnding: function(id) { return this._hasIn('ending', id); },
+    _hasNode: function(id) { return this._hasIn('node', id); },
+    _hasForeshadow: function(id) { return this._hasIn('foreshadow', id); },
+    _hasShop: function(id) { return this._hasIn('shop', id); },
 
     _hasShopItem: function(shopId, itemId) {
       if (!shopId || !itemId) return false;
@@ -171,7 +126,6 @@
       return found;
     },
 
-    // 从 currentState 里查数值项（hud / sidebar / panels）
     _findStat: function(key) {
       if (!key) return null;
       var st = GameState.currentState;
@@ -221,20 +175,19 @@
       return found;
     },
 
+    // hud / sidebar 两条规则的规则体逐字相同（P54·第14条合并）
+    _statRule: function(pl) {
+      if (!pl.key) return { ok: false, reason: '提议缺少 key' };
+      if (!this._findStat(pl.key)) return { ok: false, reason: '数值项「' + pl.key + '」已不存在' };
+      return { ok: true };
+    },
+
     // ============ 各类型的校验规则 ============
     _handlers: {
 
-      modify_hud: function(pl) {
-        if (!pl.key) return { ok: false, reason: '提议缺少 key' };
-        if (!this._findStat(pl.key)) return { ok: false, reason: '数值项「' + pl.key + '」已不存在' };
-        return { ok: true };
-      },
+      modify_hud: function(pl) { return this._statRule(pl); },
 
-      modify_sidebar: function(pl) {
-        if (!pl.key) return { ok: false, reason: '提议缺少 key' };
-        if (!this._findStat(pl.key)) return { ok: false, reason: '数值项「' + pl.key + '」已不存在' };
-        return { ok: true };
-      },
+      modify_sidebar: function(pl) { return this._statRule(pl); },
 
       modify_entry: function(pl) {
         if (!pl.panelId || !pl.key) return { ok: false, reason: '提议缺少 panelId 或 key' };
