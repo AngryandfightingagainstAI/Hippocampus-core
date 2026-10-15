@@ -498,7 +498,8 @@ function runComponent() {
   var BASE = [
     ['engine/core/gamestate.js', 10413, 'AABB3146FA76593DD35D992629863BE1'],
     ['engine/core/prompt_builder.js', 51275, 'ED9AB8C65E72433D0CD11F718C6927C7'],
-    ['engine/info_feed.js', 40628, 'B4533EC5ED9249BE1AA3C46CACF1DF22']
+    // P54·I-4/I-6 重记：info_feed.js 补「静默失败可见性」（混流追加失败不再假成功、tick 批逐条容错）
+    ['engine/info_feed.js', 43865, '0B7E83858E378DFB33197E5E2EC1EB23']
   ];
   BASE.forEach(function (b) {
     var p = path.join(root, b[0]);

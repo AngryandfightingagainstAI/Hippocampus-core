@@ -436,21 +436,35 @@
       if (found.item.flow === 'story') return { ok: false, reason: '已混流' };
       opts = opts || {};
       var by = (opts.by === 'player') ? 'player' : 'ai';
-      found.item.flow = 'story';
-      if (IMPORTANCE.indexOf(opts.importance) >= 0) found.item.importance = opts.importance;
+      // P54·I-4：先追加正文、再改 flow。原实现先改 flow 再追加，而 _appendStoryLine 把异常吞成空
+      //   catch ⇒ 追加失败时条目已标成「已混流」、UI 显示已跟进而正文里没有，属静默失败。
+      //   现在追加失败就保持条目原状并显式返回失败原因（flow/importance 都不动，避免半成品状态）。
       // 叙事流追加一条「【手机】…」（桌面 Platform.ui.appendStory / RN 桥接到 story_store）
       var line = this._promoteLine(found);
-      this._appendStoryLine(line);
+      var ap = this._appendStoryLine(line);
+      if (!ap.ok) {
+        this._audit('promote_append_failed', id + '：' + ap.reason);
+        return { ok: false, reason: '混流未完成：正文追加失败（' + ap.reason + '）' };
+      }
+      found.item.flow = 'story';
+      if (IMPORTANCE.indexOf(opts.importance) >= 0) found.item.importance = opts.importance;
       // 玩家侧：写入 chatHistory 一条 role:'user'（调用方随后触发一次正常回合）
+      var warned = '';
       if (by === 'player') {
         // P9·S13：加「【系统 · 手机混流】」前缀，避免被全仓 6 处「真实玩家输入」
         //   判定（role==='user' && !content.startsWith('【系统 ·')）误判为真实玩家输入，
         //   防止轮次 +1 / 10 轮窗口污染 / 按轮次回退日志错删。两仓同源，须同步改。
         var content = '【系统 · 手机混流】' + (opts.note ? String(opts.note) : ('（跟进手机信息）' + line));
-        try { GameState.chatHistory.push({ role: 'user', content: content }); } catch (e) {}
+        try { GameState.chatHistory.push({ role: 'user', content: content }); }
+        catch (e) {
+          warned = 'chatHistory 写入失败：' + ((e && e.message) ? e.message : String(e));
+          this._audit('promote_history_failed', id + '：' + warned);
+        }
       }
       this.save();
-      return { ok: true, id: id, by: by, flow: 'story', line: line };
+      var out = { ok: true, id: id, by: by, flow: 'story', line: line };
+      if (warned) out.warning = warned;
+      return out;
     },
 
     _promoteLine: function(found) {
@@ -461,12 +475,17 @@
       return '【手机·广播】' + String(it.title || '') + '：' + String(it.body || '');
     },
 
+    // P54·I-4：返回 {ok, reason} —— 原实现把异常吞成空 catch，调用方无从知道追加是否成功。
     _appendStoryLine: function(line) {
       try {
         if (typeof Platform !== 'undefined' && Platform.ui && typeof Platform.ui.appendStory === 'function') {
           Platform.ui.appendStory(line, null, 0, null, this._roundCount(), null);
+          return { ok: true };
         }
-      } catch (e) {}
+        return { ok: false, reason: 'Platform.ui.appendStory 不可用' };
+      } catch (e) {
+        return { ok: false, reason: (e && e.message) ? e.message : String(e) };
+      }
     },
 
     // ============ 广播 ============
@@ -726,6 +745,15 @@
       } catch (e) {}
     },
 
+    // P54·I-4/I-6：给「不抛错但失败」的分支留痕（审计槽，只进 ErrorLog.actions）。
+    //   与 _log 的分工：_log 记正常流程日志，_audit 记静默降级/失败原因，便于事后定位。
+    _audit: function(kind, detail) {
+      try {
+        if (typeof ErrorLog !== 'undefined' && ErrorLog.audit) ErrorLog.audit('info_feed', kind, detail);
+      } catch (e) {}
+      try { if (console.warn) console.warn('[InfoFeed] ' + kind + '：' + detail); } catch (e2) {}
+    },
+
     // 空闲期 AI 主动发起；失败静默（只记 ErrorLog），无 key / 网络错 / JSON 坏一律直接 return
     tick: async function(ctx) {
       ctx = ctx || {};
@@ -763,14 +791,15 @@
         var parsed = this._parseTick(content);
         if (!parsed) { this._log('空闲发起：AI 输出无法解析，整批丢弃'); return; }
 
-        // 整批校验：任一不过 ⇒ 整批丢弃
+        // P54·I-6：逐条校验 —— 坏条目跳过并留痕（_validateTickBatch 内 _audit），
+        //   只有整批没有可用条目时才丢弃（原实现是一条不过就丢整批，与 pushMessage 的截断口径不一致）。
         var batch = this._validateTickBatch(parsed);
-        if (!batch) { this._log('空闲发起：批量校验未通过，整批丢弃'); return; }
+        if (!batch) { this._log('空闲发起：批量校验未通过（无可用条目），整批丢弃'); return; }
 
         // 落库：产物一律 flow:'info'，importance 最多 actionable
         batch.messages.forEach(function(m) {
           var cp = self._counterpart(m.to);
-          if (!cp) return;
+          if (!cp) { self._audit('counterpart_missing', String(m.to)); return; }
           self.pushMessage({
             from: cp.from,
             fromName: cp.fromName,
@@ -802,19 +831,25 @@
       }
     },
 
+    // P54·I-6：逐条容错。原实现任一坏条目就 return null（整批丢弃，含同批里的好条目与广播），
+    //   而写入侧 pushMessage 对超长是**截断**、publish 对超长 body 也是截断 —— 口径不一致。
+    //   现在：坏条目/坏广播逐条跳过并记入 _audit（tick_batch_partial / tick_batch_rejected），
+    //   超长按 MAX_TEXT / MAX_BODY 截断（与 pushMessage / publish 一致），全批无可用条目才返回 null。
     _validateTickBatch: function(parsed) {
       var out = { messages: [], broadcast: null };
+      if (!parsed || typeof parsed !== 'object') return null;
+      var skipped = [];
       var msgs = Array.isArray(parsed.messages) ? parsed.messages : [];
       for (var i = 0; i < msgs.length && out.messages.length < 2; i++) {
         var m = msgs[i];
-        if (!m || typeof m !== 'object') return null;
+        if (!m || typeof m !== 'object') { skipped.push('#' + i + ' 不是对象'); continue; }
         var to = String(m.to || '').trim();
         var text = (m.text != null) ? String(m.text) : '';
-        if (!to || !text) return null;
+        if (!to || !text) { skipped.push('#' + i + ' 缺 to/text'); continue; }
         if (to !== 'player') {
-          if (to.indexOf('group:') !== 0 && !this._findNpcDef(to)) return null;
+          if (to.indexOf('group:') !== 0 && !this._findNpcDef(to)) { skipped.push('#' + i + ' 收件人不存在：' + to); continue; }
         }
-        if (text.length > MAX_TEXT) return null;
+        if (text.length > MAX_TEXT) { text = text.slice(0, MAX_TEXT); skipped.push('#' + i + ' 正文超长已截断'); }
         var imp = (IMPORTANCE.indexOf(m.importance) >= 0) ? m.importance : 'actionable';
         out.messages.push({ to: to, text: text, importance: imp });
       }
@@ -822,18 +857,25 @@
       if (bc && typeof bc === 'object' && (bc.title || bc.body)) {
         var title = String(bc.title || '').trim();
         var body = String(bc.body || '');
-        if (!title || !body) return null;
-        if (body.length > MAX_BODY) return null;
-        if (PUBLICITY.indexOf(bc.publicity) < 0) return null;
-        if (SCOPE.indexOf(bc.scope) < 0) return null;
-        out.broadcast = {
-          title: title,
-          body: body,
-          publicity: bc.publicity,
-          scope: bc.scope,
-          sourceName: String(bc.sourceName || '')
-        };
+        if (!title || !body) skipped.push('broadcast 缺 title/body');
+        else if (PUBLICITY.indexOf(bc.publicity) < 0) skipped.push('broadcast publicity 非法：' + bc.publicity);
+        else if (SCOPE.indexOf(bc.scope) < 0) skipped.push('broadcast scope 非法：' + bc.scope);
+        else {
+          if (body.length > MAX_BODY) { body = body.slice(0, MAX_BODY); skipped.push('broadcast 正文超长已截断'); }
+          out.broadcast = {
+            title: title,
+            body: body,
+            publicity: bc.publicity,
+            scope: bc.scope,
+            sourceName: String(bc.sourceName || '')
+          };
+        }
       }
+      if (!out.messages.length && !out.broadcast) {
+        if (skipped.length) this._audit('tick_batch_rejected', skipped.join('；'));
+        return null;
+      }
+      if (skipped.length) this._audit('tick_batch_partial', skipped.join('；'));
       return out;
     }
   };

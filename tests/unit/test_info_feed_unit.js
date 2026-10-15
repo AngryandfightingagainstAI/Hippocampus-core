@@ -187,4 +187,105 @@ H.run('I17-_parseTick 面对垃圾输入不抛（畸形 JSON 只入 ErrorLog）'
   H.noThrow(function() { return s.IF._parseTick('{"threads": 不是数组}'); }, '结构不对');
 });
 
+// ============ I18–I21 · 静默失败可见性（P54·I-4 / I-6）============
+H.run('I18-_appendStoryLine 返回 {ok,reason}（不再把异常吞成空 catch）', function() {
+  const boom = sb({ Platform: { ui: { appendStory: function() { throw new Error('渲染层爆了'); } } } });
+  const r1 = boom.IF._appendStoryLine('【手机】阿甲：你好');
+  H.eq(r1.ok, false, '抛错 ⇒ ok:false');
+  H.contains(r1.reason, '渲染层爆了', 'reason 带原异常 message');
+
+  const missing = sb(); // 默认 Platform.ui 没有 appendStory
+  const r2 = missing.IF._appendStoryLine('x');
+  H.eq(r2.ok, false, 'appendStory 不可用 ⇒ ok:false');
+  H.contains(r2.reason, 'appendStory', 'reason 说明不可用');
+
+  let got = null;
+  const good = sb({ Platform: { ui: { appendStory: function(l) { got = l; } } } });
+  const r3 = good.IF._appendStoryLine('【手机】阿甲：你好');
+  H.eq(r3.ok, true, '可用 ⇒ ok:true');
+  H.eq(got, '【手机】阿甲：你好', '正文透传给 Platform.ui.appendStory');
+});
+
+H.run('I19-promoteToStory 追加失败 ⇒ ok:false 且条目回到原状（不留半成品）', function() {
+  const audits = [];
+  const s = sb({
+    Platform: { ui: { appendStory: function() { throw new Error('没有渲染容器'); } } },
+    ErrorLog: { audit: function(k, t, d) { audits.push([k, t, String(d)]); return true; }, action: function() {}, error: function() {}, log: function() {} }
+  });
+  s.IF.pushMessage({ from: 'npc_a', fromName: '阿甲', to: 'player', text: '你好' });
+  const id = s.IF.listThreads() && s.IF.getThread('th_npc_a').messages[0].id;
+  const r = s.IF.promoteToStory(id, { by: 'ai', importance: 'actionable' });
+  H.eq(r.ok, false, '失败 ⇒ ok:false');
+  H.contains(r.reason, '混流未完成', 'reason 说明未完成');
+  const it = s.IF.getThread('th_npc_a').messages[0];
+  H.eq(it.flow, 'info', 'flow 未被改成 story');
+  H.eq(it.importance, 'background', 'importance 也未被改');
+  H.eq(audits.length, 1, '留一条审计');
+  H.eq(audits[0][0], 'info_feed', '审计来源');
+  H.eq(audits[0][1], 'promote_append_failed', '审计 kind');
+});
+
+H.run('I20-promoteToStory 成功路径 + chatHistory 写入失败留痕（不静默）', function() {
+  const lines = [];
+  const audits = [];
+  const hist = [];
+  hist.push = function() { throw new Error('对话历史只读'); };
+  const s = sb({
+    GameState: {
+      currentCardId: 'card1', currentSaveId: 'save1', chatHistory: hist,
+      formatGameTime: function() { return '1-1-1 08:00'; }
+    },
+    Platform: { ui: { appendStory: function(l) { lines.push(l); } } },
+    ErrorLog: { audit: function(k, t, d) { audits.push([t, String(d)]); return true; }, action: function() {}, error: function() {}, log: function() {} }
+  });
+  s.IF.pushMessage({ from: 'npc_a', fromName: '阿甲', to: 'player', text: '你好' });
+  const id = s.IF.getThread('th_npc_a').messages[0].id;
+  const r = s.IF.promoteToStory(id, { by: 'player', note: '我去看看' });
+  H.eq(r.ok, true, '正文已追加 ⇒ ok:true');
+  H.eq(lines.length, 1, '叙事流 +1 行');
+  H.eq(s.IF.getThread('th_npc_a').messages[0].flow, 'story', 'flow 改成 story');
+  H.contains(r.warning || '', 'chatHistory', 'warning 指出历史写入失败');
+  H.eq(audits.length, 1, '一条审计');
+  H.eq(audits[0][0], 'promote_history_failed', '审计 kind');
+});
+
+H.run('I21-_validateTickBatch 逐条容错（坏条目不再连坐整批）', function() {
+  const audits = [];
+  const s = sb({ ErrorLog: { audit: function(k, t, d) { audits.push([t, String(d)]); return true; }, action: function() {}, error: function() {}, log: function() {} } });
+  s.GameState.currentCard = { worldbook: { npcs: [{ id: 'npc_a', name: '阿甲' }] } };
+  const kindOf = function(name) { return audits.some(function(a) { return a[0] === name; }); };
+
+  // 一坏一好 + 合法广播：好条目与广播都要留下
+  const b1 = s.IF._validateTickBatch({
+    messages: [{ to: '', text: '缺收件人' }, { to: 'npc_a', text: '在' }],
+    broadcast: { title: '号外', body: 'b', publicity: '公开', scope: '城市' }
+  });
+  H.ok(b1, '仍有可用条目 ⇒ 不为 null');
+  H.eq(b1.messages.length, 1, '好条目保留');
+  H.eq(b1.messages[0].to, 'npc_a', '保留的是好条目');
+  H.ok(b1.broadcast && b1.broadcast.title === '号外', '广播保留');
+  H.ok(kindOf('tick_batch_partial'), '留 partial 审计');
+  H.contains(audits[0][1] || '', '缺 to/text', '审计写明跳过原因');
+
+  // 超长正文：截断（与 pushMessage / publish 口径一致），不丢批
+  const long = 'x'.repeat(600);
+  const b2 = s.IF._validateTickBatch({ messages: [{ to: 'npc_a', text: long }], broadcast: null });
+  H.ok(b2 && b2.messages.length === 1, '超长条目仍保留');
+  H.eq(b2.messages[0].text.length, 500, '截断到 MAX_TEXT');
+
+  // 收件人不存在：只丢那一条
+  const b3 = s.IF._validateTickBatch({ messages: [{ to: 'npc_nope', text: '喂' }, { to: 'player', text: '喂' }], broadcast: null });
+  H.ok(b3 && b3.messages.length === 1 && b3.messages[0].to === 'player', '未知收件人只丢自己那条');
+
+  // 全坏 ⇒ null，并留 rejected 审计
+  const before = audits.length;
+  const b4 = s.IF._validateTickBatch({ messages: [{ to: '', text: '' }], broadcast: { title: '', body: '' } });
+  H.eq(b4, null, '没有任何可用条目 ⇒ null');
+  H.ok(audits.length > before && kindOf('tick_batch_rejected'), '留 rejected 审计');
+
+  // 非对象入参不抛
+  H.eq(s.IF._validateTickBatch(null), null, 'null 入参');
+  H.eq(s.IF._validateTickBatch('字符串'), null, '字符串入参');
+});
+
 H.finish();

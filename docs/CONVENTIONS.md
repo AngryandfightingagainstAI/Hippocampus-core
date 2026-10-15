@@ -333,8 +333,8 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：4 套 / 59 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
-  `test_info_feed_unit.js` 17 条、`test_tool_executor_unit.js` 18 条、
+- **当前基线：4 套 / 63 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+  `test_info_feed_unit.js` 21 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 7 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
@@ -347,7 +347,9 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）与 O-5（送审失败不把
-  已定论打回 `pending`，正文不掉出提示词）。
+  已定论打回 `pending`，正文不掉出提示词）；`test_info_feed_unit.js` 的 I18–I21 锁住 P54·第12条
+  的 I-4（混流追加失败 ⇒ `ok:false` 且条目回到原状、`chatHistory` 写失败留 `warning`+审计）与
+  I-6（tick 批逐条容错：坏条目跳过并审计、超长按 `MAX_TEXT`/`MAX_BODY` 截断，全批无可用条目才丢）。
 
 ================================================================
 【五、断言计数与报告口径】
