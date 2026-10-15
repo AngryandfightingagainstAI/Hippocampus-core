@@ -38,16 +38,33 @@
         if (typeof o.title !== 'string' || !o.title) o.title = String(o.name || '');
         if (typeof o.content !== 'string') o.content = '';
         if (typeof o.desc !== 'string') o.desc = '';
+        // P54·第12条（O-1）：events / stirCooldowns 在 tick 与 _buildCandidates 里被裸解引用，
+        // 老存档或导入卡带缺这两个字段就会 TypeError ⇒ 读时补齐（只补空值，不动已有内容）
+        if (!Array.isArray(o.events)) o.events = [];
+        if (!o.stirCooldowns || typeof o.stirCooldowns !== 'object') o.stirCooldowns = {};
         if (!o.review || typeof o.review !== 'object') o.review = { state: 'none', reason: '', at: '', round: 0 };
         if (typeof o.review.state !== 'string') o.review.state = 'none';
         if (typeof o.review.raw !== 'string') o.review.raw = '';
       });
     },
 
+    // P54·第12条（可见性）：静默失败一律留痕——与 proposal_validator 的审计槽（P53·③）同思路
+    _audit: function(kind, detail) {
+      try {
+        if (typeof ErrorLog !== 'undefined' && ErrorLog.audit) ErrorLog.audit('outputs', kind, detail);
+      } catch (e) {}
+      if (typeof console !== 'undefined' && console.warn) console.warn('[Outputs] ' + kind + '：' + detail);
+    },
+
     load: function() {
       var p = this._path();
       if (!p) { this._data = this._emptyData(); return; }
       var d = VFS.readJSON(p);
+      // P54·第12条（O-4）：文件在、却解析不出来 = 坏档。原先静默按空态加载，下一次 save 直接覆盖，
+      // 玩家数据无痕消失；现在至少留一条审计痕（语义不变，仍是空态起步）
+      if (d === null && typeof VFS.exists === 'function' && VFS.exists(p)) {
+        this._audit('load_corrupt', p + ' 存在但解析失败，已按空态加载（下一次 save 会覆盖原文件）');
+      }
       this._data = (d && typeof d === 'object') ? d : this._emptyData();
       this._ensureShape();
     },
@@ -504,6 +521,7 @@
       var settled = [];
 
       all.forEach(function(snap) {
+       try {
         var live = self._data.outputs[snap.id];
         if (!live) return;
 
@@ -528,6 +546,11 @@
 
         // 5. 覆盖写回
         self._data.outputs[live.id] = live;
+       } catch (e) {
+        // P54·第12条（O-2）：原先单条产出物抛错会中断整批 forEach，异常又被 story.js 吞掉，
+        // 而 _lastIntervalKey 已推进 ⇒ 整个发酵周期静默消失。现在逐条隔离 + 留痕。
+        self._audit('tick_failed', snap.id + '：' + (e && e.message ? e.message : String(e)));
+       }
       });
 
       this.save();
