@@ -181,6 +181,12 @@ android/app/build/outputs/apk/release/app-release.apk
 
 `assets/index.android.bundle` 是 Hermes 字节码（Metro 打包产物），所以直接对 APK 搜中文会搜不到——属正常现象。
 
+> **产物只含一套 ABI**：`android/gradle.properties` 的 `reactNativeArchitectures` 决定包里带哪几套原生库，
+> 当前值为 `arm64-v8a`。P54 实测同一份源码：四 ABI 全打 **62,967,094 B**，只留 `arm64-v8a` 后 **22,005,657 B**
+> （其中原生库 14,578,360 B / 13 个 `.so`）。要联调 x86 模拟器时把该行改回
+> `armeabi-v7a,arm64-v8a,x86,x86_64` 再打包即可。历史归档件名里的 `-universal-` 是当时的口径，
+> 与当前这只包不符——认版本号和 SHA256，别认文件名。
+
 ---
 
 ## 跑测试
