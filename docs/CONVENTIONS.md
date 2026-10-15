@@ -333,17 +333,21 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：3 套 / 52 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
-  `test_info_feed_unit.js` 17 条、`test_tool_executor_unit.js` 18 条）。
+- **当前基线：4 套 / 59 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+  `test_info_feed_unit.js` 17 条、`test_tool_executor_unit.js` 18 条、
+  `test_outputs_unit.js` 7 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
   `setTimeout is not defined`）、`load(sb, 'engine/...')` 按仓根加载、`run/eq/deepEq/ok/contains/noThrow/finish`。
-- 被测的三个模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
-  `engine/core/tool_executor.js`）都是**两仓同源件**；本轮单测只落在手机仓 —— 桌面侧若要复用，
-  须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
+- 被测的四个模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
+  `engine/core/tool_executor.js`、`engine/outputs.js`）都是**两仓同源件**；本轮单测只落在手机仓 ——
+  桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
+- 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
+  与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）与 O-5（送审失败不把
+  已定论打回 `pending`，正文不掉出提示词）。
 
 ================================================================
 【五、断言计数与报告口径】

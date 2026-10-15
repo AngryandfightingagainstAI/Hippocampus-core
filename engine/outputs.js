@@ -445,15 +445,18 @@
         var now = (typeof GameState !== 'undefined' && GameState && typeof GameState.formatGameTime === 'function') ? GameState.formatGameTime() : '';
         if (!v.ok) {
           var shortRaw = String(lastRaw || '').slice(0, 600);
-          o.review = {
-            state: 'pending',
-            reason: 'AI 回复无法解析为裁决（第 ' + attempts + ' 次尝试）：' + String(lastRaw || v.raw || '').slice(0, 200),
-            raw: shortRaw,
-            at: now,
-            round: 0
-          };
+          var failReason = 'AI 回复无法解析为裁决（第 ' + attempts + ' 次尝试）：' + String(lastRaw || v.raw || '').slice(0, 200);
+          var prev = o.review || {};
+          var decided = (prev.state === 'included' || prev.state === 'revised' || prev.state === 'rejected');
+          // P54·第12条（O-5）：原先无条件把 state 写回 pending，会把上一轮已经纳入/修改/驳回的结论
+          //   覆盖掉；而 formatForPrompt 只给 included/revised/none 注入正文 ⇒ 玩家已经看到的正文会
+          //   静默掉出提示词。现在已定论的原样保留（失败原因另存 lastError 供面板显示），只有本来
+          //   没定论的才落 pending（面板显示「待审」）。
+          o.review = decided
+            ? { state: prev.state, reason: prev.reason || '', raw: prev.raw || '', at: prev.at || now, round: prev.round || 0, lastError: failReason }
+            : { state: 'pending', reason: failReason, raw: shortRaw, at: now, round: 0, lastError: failReason };
           self.save();
-          return { ok: false, reason: 'AI 回复无法解析为裁决（已自动重试）', raw: v.raw, attempts: attempts, review: o.review };
+          return { ok: false, reason: 'AI 回复无法解析为裁决（已自动重试）', raw: v.raw, attempts: attempts, review: o.review, kept: decided ? prev.state : '' };
         }
         if (v.verdict === 'include') {
           o.review = { state: 'included', reason: v.reason, raw: '', at: now, round: 0 };
@@ -705,17 +708,19 @@
     },
 
     // ============ 主动定论（少见） ============
-    // 批 1：只标记，不应用 affects（批 2 补）
+    // P54·第12条（O-3）：原先这里只改 fate/finalVerdict/settledAt，既不应用 settleRules.affects
+    //   也不推系统通知 ⇒「定论时影响属性」是否生效取决于走哪条路（tick 会应用，面板「定论」按钮
+    //   与 AI 的 output_settle 工具不会）。现在与 tick 共用 _settle()，两条通道行为一致。
     settle: function(id, verdict) {
       if (!this._data) this.load();
+      this._ensureShape();
       var o = this._data.outputs[id];
       if (!o) return { ok: false, reason: '产出物不存在：' + id };
       if (o.fate === 'settled') return { ok: false, reason: '该产出物已定论' };
-      o.fate = 'settled';
-      o.finalVerdict = String(verdict || '');
-      o.settledAt = GameState.formatGameTime();
+      if (verdict != null && String(verdict) !== '') o.finalVerdict = String(verdict);
+      var r = this._settle(o, this.getCardConfig() || {}, '手动定论');
       this.save();
-      return { ok: true, id: id, name: o.name };
+      return { ok: true, id: id, name: o.name, fate: o.fate, finalVerdict: o.finalVerdict, applied: r.applied };
     },
 
     // ============ Prompt 注入 ============
