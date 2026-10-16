@@ -7,7 +7,7 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：38 套 RN smoke 共 2585 条断言全绿；桌面版另有 14 项预检 + 52 套回归
+- **测试**：38 套 RN smoke 共 2585 条断言全绿；桌面版另有 14 项预检 + 53 套回归
 - **版本**：1.3.0（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10300，已真机装机复核）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
@@ -218,7 +218,7 @@ P54·第17条 再 +1 套（`secure_envelope_smoke.js`）并分两阶段长大：
 
 引擎本身也能离开 React Native 跑：`engine/` + `vfs/` 在纯 Node 下可加载（只有 `rn/export_util.js`、`rn/rn_platform.js`、`rn/use_theme.js` 三个文件 `require('react-native')`），因此可以做无头回合驱动测试。
 
-除集成 smoke 外，`tests/unit/` 还有 9 套**单元测试**（`node tools/run_unit_tests.js`，纯 Node + `vm` 沙箱、零新依赖、秒级）：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（30 条）、`json_extract`（14 条）、`story_compress`（8 条）、`story_channel`（8 条）、`prompt_deduction`（5 条）、`snapshot_cut`（9 条），共 142 条。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
+除集成 smoke 外，`tests/unit/` 还有 10 套**单元测试**（`node tools/run_unit_tests.js`，纯 Node + `vm` 沙箱、零新依赖、秒级）：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（30 条）、`json_extract`（14 条）、`story_compress`（8 条）、`story_channel`（8 条）、`prompt_deduction`（5 条）、`snapshot_cut`（9 条）、`vfs_write_contract`（13 条），共 155 条。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
 
 ---
 

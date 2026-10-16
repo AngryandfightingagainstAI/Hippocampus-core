@@ -86,13 +86,18 @@ var GameState = {
     return true;
   },
 
+  // P55·写入契约：返回「这次落盘是不是全部成功」。
+  // false 只表示有写失败；没有存档可写时返回 true，免得调用方把「没东西可写」当失败。
+  // 旧实现在这里返回 undefined（写失败也看不出来）。
   persist() {
-    if (!this.currentCardId || !this.currentSaveId) return;
-    Saves.savePlayer(this.currentCardId, this.currentSaveId, this.playerData, this.currentState, this._gameTime);
-    Saves.saveChat(this.currentCardId, this.currentSaveId, this._pruneOldMetaForSave(this.chatHistory));
+    if (!this.currentCardId || !this.currentSaveId) return true;
+    var ok = true;
+    if (Saves.savePlayer(this.currentCardId, this.currentSaveId, this.playerData, this.currentState, this._gameTime) === false) ok = false;
+    if (Saves.saveChat(this.currentCardId, this.currentSaveId, this._pruneOldMetaForSave(this.chatHistory)) === false) ok = false;
     const d = Math.floor((Date.now() - (this._sessionStart || Date.now())) / 1000);
-    Saves.touch(this.currentCardId, this.currentSaveId, d > 0 ? d : 0);
+    if (Saves.touch(this.currentCardId, this.currentSaveId, d > 0 ? d : 0) === false) ok = false;
     this._sessionStart = Date.now();
+    return ok;
   },
 
   // 落盘前构造“剥过旧 meta”的浅拷贝数组。

@@ -601,7 +601,8 @@ function runG() {
   //   P45 重记（2026-10-07）：补 Qwen 那轮加的「资料：query_source 用法行 / 位置：set_location +
   //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 当时现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
   var bases = [
-    ['engine/core/gamestate.js', 'AABB3146FA76593DD35D992629863BE1'],
+    // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 AABB3146…）
+    ['engine/core/gamestate.js', '3FC5184404E781718B9B149A1BCA20B0'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
     ['engine/info_feed.js', '6010CBD7FE4B1DCCA28E428DD634F280'],

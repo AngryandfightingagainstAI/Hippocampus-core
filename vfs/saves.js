@@ -51,13 +51,13 @@
       return VFS.readJSON(this.npcRuntimePath(cardId, saveId)) || {};
     },
     saveNpcRuntime(cardId, saveId, data) {
-      VFS.writeJSON(this.npcRuntimePath(cardId, saveId), data || {});
+      return VFS.writeJSON(this.npcRuntimePath(cardId, saveId), data || {}) !== false;
     },
     loadPortrait(cardId, saveId) {
       return VFS.readJSON(this.portraitPath(cardId, saveId)) || null;
     },
     savePortrait(cardId, saveId, data) {
-      VFS.writeJSON(this.portraitPath(cardId, saveId), data || null);
+      return VFS.writeJSON(this.portraitPath(cardId, saveId), data || null) !== false;
     },
     // ---- v2 新增结束 ----
 
@@ -164,13 +164,15 @@
       return { meta: meta, card: card, player: player, chat: chat };
     },
 
+    // P55：返回写盘是否成功（旧实现返回 undefined）
     savePlayer(cardId, saveId, playerData, currentState, gameTime) {
-      VFS.writeJSON(this.playerPath(cardId, saveId), {
+      return VFS.writeJSON(this.playerPath(cardId, saveId), {
         playerData: playerData,
         currentState: currentState,
         gameTime: gameTime || null
-      });
+      }) !== false;
     },
+    // P55：分片或索引任一次写失败都返回 false（旧实现忽略全部返回值）
     saveChat(cardId, saveId, messages) {
       messages = messages || [];
       var dir = this.chatDir(cardId, saveId);
@@ -182,6 +184,7 @@
       var newTotal = messages.length;
       var newChunkCount = Math.ceil(newTotal / CHUNK);
       var newLastIdx = newChunkCount - 1;
+      var ok = true;
 
       if (newTotal === 0) {
         // 空：删全部分片
@@ -192,7 +195,7 @@
         // append：只重写最后一个分片
         var lastStart = newLastIdx * CHUNK;
         var lastChunk = messages.slice(lastStart, lastStart + CHUNK);
-        VFS.writeJSON(this.chatChunkPath(cardId, saveId, newLastIdx), { messages: lastChunk });
+        if (VFS.writeJSON(this.chatChunkPath(cardId, saveId, newLastIdx), { messages: lastChunk }) === false) ok = false;
       } else {
         // 首次 / 截断 / 长度不变：全量重写
         VFS.listAll(dir).forEach(function(p) {
@@ -200,39 +203,41 @@
         });
         for (var i = 0; i < newChunkCount; i++) {
           var chunk = messages.slice(i * CHUNK, (i + 1) * CHUNK);
-          VFS.writeJSON(this.chatChunkPath(cardId, saveId, i), { messages: chunk });
+          if (VFS.writeJSON(this.chatChunkPath(cardId, saveId, i), { messages: chunk }) === false) ok = false;
         }
       }
 
-      VFS.writeJSON(this.chatIndexPath(cardId, saveId), {
+      if (VFS.writeJSON(this.chatIndexPath(cardId, saveId), {
         chunkSize: CHUNK,
         totalMessages: newTotal
-      });
+      }) === false) ok = false;
+      return ok;
     },
     saveCard(cardId, saveId, card) {
-      VFS.writeJSON(this.cardPath(cardId, saveId), card);
+      return VFS.writeJSON(this.cardPath(cardId, saveId), card) !== false;
     },
 
+    // P55：meta 读不到（没这份存档）也算没写成，返回 false
     touch(cardId, saveId, playTimeDelta) {
       const m = VFS.readJSON(this.metaPath(cardId, saveId));
-      if (!m) return;
+      if (!m) return false;
       m.lastPlayedAt = new Date().toISOString();
       if (playTimeDelta) m.playTime = (m.playTime || 0) + playTimeDelta;
-      VFS.writeJSON(this.metaPath(cardId, saveId), m);
+      return VFS.writeJSON(this.metaPath(cardId, saveId), m) !== false;
     },
 
     rename(cardId, saveId, newName) {
       const m = VFS.readJSON(this.metaPath(cardId, saveId));
-      if (!m) return;
+      if (!m) return false;
       m.displayName = newName;
-      VFS.writeJSON(this.metaPath(cardId, saveId), m);
+      return VFS.writeJSON(this.metaPath(cardId, saveId), m) !== false;
     },
 
     setPlayerName(cardId, saveId, playerName) {
       const m = VFS.readJSON(this.metaPath(cardId, saveId));
-      if (!m) return;
+      if (!m) return false;
       m.playerName = playerName;
-      VFS.writeJSON(this.metaPath(cardId, saveId), m);
+      return VFS.writeJSON(this.metaPath(cardId, saveId), m) !== false;
     },
 
     delete(cardId, saveId) {

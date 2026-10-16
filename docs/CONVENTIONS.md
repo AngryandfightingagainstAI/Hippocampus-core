@@ -301,13 +301,13 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（52 套）
+node tools\run_batch.js                   # 前置门 + 全量（53 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
 ```
 
-**当前基线：52 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
+**当前基线：53 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
 
 ### 4.3 环境坑（都真踩过）
 
@@ -336,11 +336,12 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：9 套 / 142 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：10 套 / 155 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
-  `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条）。
+  `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
+  `test_vfs_write_contract_unit.js` 13 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -438,6 +439,21 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   ⇒ L1–L7 的行为断言同时覆盖桌面；Q2 同上词法哨兵；Q3/Q4/Q5 锁桌面三个接入点
   （设置页控件与写入口、`ui_core.js` 契约入口委托、`ui_prompt.js` 实装 + NAMES 登记）；
   Q6 锁 `storyChannel` **不在 `defaultGlobal`** ⇒ 老档免迁移，靠引擎侧 fail-open 兜底。
+- `test_vfs_write_contract_unit.js` 的 V1–V13 锁住 **P55·写入契约**（存储满时「没存上」能不能被知道）：
+  真实 `vfs/vfs.js` + `vfs/saves.js` + `engine/core/gamestate.js` 装进 vm 沙箱，配一个可控
+  `StorageAdapter`（`fail` 开关让 `setItem` 抛 `QuotaExceededError`），全组零 Electron、零 DOM。
+  V1/V2 写成功时 `writeFile` 与 `writeJSON` **都必须返回 true**（旧实现 `writeJSON` 丢弃 `writeFile`
+  的布尔值 ⇒ 恒 `undefined`，`engine/import/vault.js:85` 的 `writeJSON(...) === true` 因此**恒假**：
+  清单明明写成功也会被当成失败）；V3 存储抛错且无兜底 ⇒ 两者都 `false`；V4 `_vfsOnWriteFail`
+  救回 ⇒ `true` 且不触发 `_vfsOnFatal`；V5 兜底也失败 ⇒ `false` 且 `_vfsOnFatal` 收到一次；
+  V6–V10 `Saves.savePlayer/saveChat/saveCard/touch/rename/setPlayerName` 成功 `true`、写坏 `false`
+  （`touch/rename/setPlayerName` 找不到 meta 也返回 `false`，不抛）；V11 `GameState.persist()`
+  全成功 `true`、任一写点失败 `false`、无存档 `true`；V12 是源码哨兵（`writeJSON` 必须
+  `return this.writeFile(`、`saveDirs` 带兜底、写方法体内 `!== false`、`saveChat` 三处
+  `=== false` 累计、`persist` 三处判断）；V13 只让 `vfs_dirs` 索引键写失败 ⇒ `mkdir`/`writeFile`
+  不抛且数据文件照写。桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W8）逐条比
+  两仓 `vfs/vfs.js`、`vfs/saves.js`、`engine/core/gamestate.js`、`engine/import/vault.js` 的形状，
+  并断言 `vault.js` 两仓**逐字节相同** —— 行为断言全在手机仓，桌面只靠同源连坐，所以同源本身也钉住。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

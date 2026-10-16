@@ -12,7 +12,12 @@
     try { return JSON.parse(StorageAdapter.getItem(DIRS_KEY) || '[]'); }
     catch (e) { return []; }
   }
-  function saveDirs(dirs) { StorageAdapter.setItem(DIRS_KEY, JSON.stringify(dirs)); }
+  // P55：目录索引只是缓存（listAll/listDir 也能从真实键推出来），写不进去不该抛，
+  // 更不能把异常带出 writeFile/mkdir —— 存储满时那会变成「写成功却抛错」。
+  function saveDirs(dirs) {
+    try { StorageAdapter.setItem(DIRS_KEY, JSON.stringify(dirs)); }
+    catch (e) { /* 索引写失败：忽略，数据文件不受影响 */ }
+  }
   function addDir(path) {
     var dirs = getDirs();
     var parts = path.split('/').filter(Boolean);
@@ -65,7 +70,9 @@
       try { return JSON.parse(s); } catch (e) { return null; }
     },
 
-    writeJSON: function(path, obj) { this.writeFile(path, JSON.stringify(obj)); },
+    // P55·写入契约：把 writeFile 的真实结果透出去。旧实现丢弃返回值 ⇒ 永远 undefined，
+    // 调用方无从判断写盘成功（engine/import/vault.js 的 === true 判断曾因此恒假）。
+    writeJSON: function(path, obj) { return this.writeFile(path, JSON.stringify(obj)); },
 
     exists: function(path) { return StorageAdapter.getItem(PREFIX + normalizePath(path)) !== null; },
 
