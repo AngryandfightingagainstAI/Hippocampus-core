@@ -75,7 +75,12 @@
       //   tick 无从知道数据其实没落盘。现在直接调 writeFile 拿真实结果，失败由调用方回滚。
       //   （极简 VFS 桩可能只实现 writeJSON ⇒ 退回旧调用，此时探测不到失败，语义同旧版。）
       if (typeof VFS.writeFile === 'function') {
-        return VFS.writeFile(p, JSON.stringify(this._data)) !== false;
+        var ok = VFS.writeFile(p, JSON.stringify(this._data)) !== false;
+        // P54·第12条（O-2 补充）：save 的返回值原先只有 tick 看。其余 12 个调用方（create/update/remove/
+        //   stir/review…）全都不看 ⇒ 存档写不进去时，那些改动静默留在内存里，读档即消失。这里统一留一条
+        //   审计痕（只做可见化，不替它们回滚——它们只改 _data，没有「施加了却回不去」的副作用）。
+        if (!ok) this._audit('save_failed', p + ' 写入失败（writeFile 返回 false）');
+        return ok;
       }
       VFS.writeJSON(p, this._data);
       return true;
@@ -793,9 +798,32 @@
       var o = this._data.outputs[id];
       if (!o) return { ok: false, reason: '产出物不存在：' + id };
       if (o.fate === 'settled') return { ok: false, reason: '该产出物已定论' };
+      // P54·第12条（O-2 补充）：与 tick 同一条事务口径 —— 先落盘、落盘成功才把 settleRules.affects 的
+      //   数值影响与系统通知施加到 GameState。原先这里是「_settle 先施加效果（加数值 + 推通知）→
+      //   save 且不看返回值」：写盘失败时内存里这条已定论、数值已加，磁盘上却还是发酵中 ⇒ 读档后重新
+      //   定论会把同一份 delta 加第二遍、系统通知也重来一遍（跨档重复结算，比 O-2 原案更隐蔽）。
+      var snapshot = JSON.parse(JSON.stringify(this._data));
       if (verdict != null && String(verdict) !== '') o.finalVerdict = String(verdict);
-      var r = this._settle(o, this.getCardConfig() || {}, '手动定论');
-      this.save();
+      var effects = [];
+      var r = this._settle(o, this.getCardConfig() || {}, '手动定论', effects);
+      var saved = false;
+      try {
+        saved = (this.save() !== false);
+      } catch (e) {
+        this._audit('settle_save_threw', id + '：' + (e && e.message ? e.message : String(e)));
+      }
+      if (!saved) {
+        this._data = snapshot;
+        this._audit('settle_rolled_back', id + '：定论未能落盘，已整条回滚（数值与系统通知未施加）');
+        return { ok: false, reason: '存档写入失败，这次定论没有生效（可稍后重试）', rolledBack: true };
+      }
+      for (var i = 0; i < effects.length; i++) {
+        try {
+          effects[i]();
+        } catch (e2) {
+          this._audit('settle_effect_failed', id + '：' + (e2 && e2.message ? e2.message : String(e2)));
+        }
+      }
       return { ok: true, id: id, name: o.name, fate: o.fate, finalVerdict: o.finalVerdict, applied: r.applied };
     },
 

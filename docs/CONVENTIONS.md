@@ -336,9 +336,9 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：9 套 / 138 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：9 套 / 142 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
-  `test_outputs_unit.js` 26 条、`test_json_extract_unit.js` 14 条、
+  `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
@@ -375,7 +375,12 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   tick 里那句自赋值空操作）、O-12（tick 把 `settled` 消费成 `tick_settled` 汇总审计；系统通知
   通道抛错时留 `settle_notice_failed` 审计，而不是空 `catch {}` 静默）、O-2（tick 真事务化：
   落盘失败（`writeFile` 抛错或返回 false）与起手抛错都整批回滚并留 `tick_rolled_back` 审计；
-  对 GameState 的数值影响与系统通知推迟到落盘成功之后才施加，回滚不会漏掉它们；空批也落盘消费周期）；
+  对 GameState 的数值影响与系统通知推迟到落盘成功之后才施加，回滚不会漏掉它们；空批也落盘消费周期）。
+  同一条事务口径也覆盖**手动 / AI 定论**（`settle()` 现在是「快照 → 落盘 → 成功才施加 effects」：
+  写盘被拒或抛错时整条回滚、留 `settle_rolled_back` / `settle_save_threw` 审计并返回
+  `{ok:false, rolledBack:true}` —— 原先「先加数值 / 推通知、再 `save()` 且不看返回值」在读档后会
+  把同一份 delta 重复结算一遍）；`save()` 自身在写失败时统一留 `save_failed` 审计，其余 12 个
+  只改 `_data` 的调用方（create/update/remove/stir/review…）不再静默丢改动；
   `test_info_feed_unit.js` 的 I18–I21 锁住 P54·第12条
   的 I-4（混流追加失败 ⇒ `ok:false` 且条目回到原状、`chatHistory` 写失败留 `warning`+审计）与
   I-6（tick 批逐条容错：坏条目跳过并审计、超长按 `MAX_TEXT`/`MAX_BODY` 截断，全批无可用条目才丢）；

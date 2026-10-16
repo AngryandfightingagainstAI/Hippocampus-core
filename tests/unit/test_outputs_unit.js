@@ -21,6 +21,8 @@ const notOk = h.notOk;
 const contains = h.contains;
 const noThrow = h.noThrow;
 const finish = h.finish;
+const fs = require('fs');
+const path = require('path');
 
 // 造一个能跑 outputs.js 的最小环境；opts.state 会被 _modifyStat 桩就地改写
 function mk(opts) {
@@ -441,7 +443,7 @@ run('O-2g 没有发酵物时也收口落盘：键推进要落盘，落盘失败�
   eq(bad.O.getRuntime()._lastIntervalKey, '', 'O-2g 空批回滚后键不得推进');
 });
 
-run('O-2h 手动定论不传 defer ⇒ 效果立刻施加（O-3 通道一致不回归）', function() {
+run('O-2h 手动定论（单条通道）成功 ⇒ 效果施加、applied 契约不变（O-3 通道一致不回归）', function() {
   const e = mkTick({ progress: 20 });
   const r = e.O.settle('o1', '玩家拍板');
   ok(r.ok, 'O-2h 手动定论应成功：' + JSON.stringify(r));
@@ -449,6 +451,117 @@ run('O-2h 手动定论不传 defer ⇒ 效果立刻施加（O-3 通道一致不�
   eq(e.gs._pendingSystemNotices.length, 1, 'O-2h 手动定论应立即推通知');
   eq(e.O.get('o1').fate, 'settled', 'O-2h 应已定论');
   eq(r.applied.length, 1, 'O-2h 返回体应带 applied');
+});
+
+// ---------- O-2 补充：手动 / AI 定论（settle）也走两阶段 ----------
+// 原先 settle() 是「_settle 先施加效果（加数值 + 推系统通知）→ save 且不看返回值」：
+//   写盘失败时内存里已定论、数值已加，磁盘上却还是发酵中 ⇒ 读档后重新定论会把同一份
+//   delta 加第二遍、系统通知也重来一遍（跨档重复结算）。现在与 tick 同一条事务口径。
+
+function mkSettle(opts) {
+  opts = opts || {};
+  const e = mk({
+    card: CARD_WITH_AFFECTS,
+    state: { hud: [{ key: '民心', value: 0 }], sidebar: [], panels: {} },
+    time: opts.time || '1-1-1',
+    audits: opts.audits
+  });
+  e.O.setRuntime({
+    outputs: {
+      o1: {
+        id: 'o1', name: '祭典', title: '祭典', content: 'x', desc: '',
+        fate: 'fermenting', progress: 100,
+        audience: [], keywords: [], events: [], stirCooldowns: {},
+        review: { state: 'none', reason: '', raw: '', at: '', round: 0 }
+      }
+    },
+    _lastIntervalKey: ''
+  });
+  return e;
+}
+
+function settleAudits(audits) {
+  return audits.filter(function(a) { return a[1] === 'settle_rolled_back'; });
+}
+
+run('O-2i 手动定论落盘被拒 ⇒ 整条回滚：数值/通知未施加、盘上仍发酵，重试只结算一次', function() {
+  const audits = [];
+  const e = mkSettle({ audits: audits });
+  const before = JSON.stringify(e.O.getRuntime());
+  e.sb.VFS.writeFile = function() { return false; };
+  const r = e.O.settle('o1', '手动');
+  eq(r.ok, false, 'O-2i 落盘被拒不得报成功：' + JSON.stringify(r));
+  eq(r.rolledBack, true, 'O-2i 应回报 rolledBack');
+  eq(e.state.hud[0].value, 0, 'O-2i 数值不得施加（真事务）');
+  eq(e.gs._pendingSystemNotices.length, 0, 'O-2i 系统通知不得推出');
+  eq(e.O.get('o1').fate, 'fermenting', 'O-2i 产出物应回到发酵中');
+  eq(e.O.get('o1').finalVerdict, undefined, 'O-2i 定论文案也应一并回滚');
+  eq(JSON.stringify(e.O.getRuntime()), before, 'O-2i 内存应逐字回到快照');
+  eq(settleAudits(audits).length, 1, 'O-2i 应留一条 settle_rolled_back 审计：' + JSON.stringify(audits));
+  eq(audits.filter(function(a) { return a[1] === 'save_failed'; }).length, 1, 'O-2i save 失败应统一留痕 save_failed');
+  delete e.sb.VFS.writeFile;   // 恢复可用存储后重试
+  const r2 = e.O.settle('o1', '手动');
+  ok(r2.ok, 'O-2i 恢复落盘后重试应成功：' + JSON.stringify(r2));
+  eq(e.state.hud[0].value, 5, 'O-2i 重试只应结算一次（+5，不是 +10）');
+  eq(e.gs._pendingSystemNotices.length, 1, 'O-2i 通知只应有一条');
+});
+
+run('O-2j 手动定论落盘抛错 ⇒ 同样回滚，并留痕 settle_save_threw', function() {
+  const audits = [];
+  const e = mkSettle({ audits: audits });
+  e.sb.VFS.writeFile = function() { throw new Error('存储满'); };
+  let r = null;
+  noThrow(function() { r = e.O.settle('o1', '手动'); }, 'O-2j settle 不该把落盘异常抛给调用方');
+  ok(r, 'O-2j 应返回结果对象');
+  eq(r.ok, false, 'O-2j 抛错不得报成功');
+  eq(r.rolledBack, true, 'O-2j 应回报 rolledBack');
+  eq(e.state.hud[0].value, 0, 'O-2j 数值不得施加');
+  eq(e.O.get('o1').fate, 'fermenting', 'O-2j 产出物应回到发酵中');
+  const hit = audits.filter(function(a) { return a[1] === 'settle_save_threw'; });
+  eq(hit.length, 1, 'O-2j 应留一条 settle_save_threw 审计：' + JSON.stringify(audits));
+  ok(String(hit[0][2]).indexOf('存储满') >= 0, 'O-2j 审计应带原始错误');
+});
+
+run('O-2k 手动定论成功 ⇒ 先落盘后施加：写盘时数值还没加、盘上已含定论、applied 在返回体里', function() {
+  const e = mkSettle({});
+  let valueAtWrite = null, sawSettled = false;
+  e.sb.VFS.writeFile = function(p, txt) {
+    valueAtWrite = e.state.hud[0].value;
+    try {
+      const d = JSON.parse(txt);
+      const o = d.outputs && d.outputs.o1;
+      if (o && o.fate === 'settled') sawSettled = true;
+    } catch (err) {}
+    return true;
+  };
+  const r = e.O.settle('o1', '手动');
+  ok(r.ok, 'O-2k 手动定论应成功：' + JSON.stringify(r));
+  eq(valueAtWrite, 0, 'O-2k 落盘时数值还没施加（先落盘、后施加）');
+  eq(sawSettled, true, 'O-2k 落盘内容里应已含定论结果');
+  eq(e.state.hud[0].value, 5, 'O-2k 落盘成功后数值应施加 +5');
+  eq(e.gs._pendingSystemNotices.length, 1, 'O-2k 应推 1 条系统通知');
+  eq(r.applied.length, 1, 'O-2k applied 应回填：' + JSON.stringify(r));
+  eq(r.applied[0].statKey, '民心', 'O-2k applied 应记录属性名');
+  eq(e.O.get('o1').fate, 'settled', 'O-2k 应已定论');
+});
+
+run('O-2l 源码哨兵：两处 _settle 调用都传 defer，settle 里 save 必须先于 effects 施加', function() {
+  const src = fs.readFileSync(path.join(h.ROOT, 'engine', 'outputs.js'), 'utf8');
+  // 注释里也会出现 `_settle()`（讲清共用关系），所以先去掉整行注释再数调用点
+  const code = src.split(/\r?\n/).filter(function(l) { return l.trim().indexOf('//') !== 0; }).join('\n');
+  const calls = code.split('_settle(').length - 1;
+  eq(calls, 2, 'O-2l _settle 调用点应恰为 2 处（tick 与 settle），实际 ' + calls);
+  contains(src, 'self._settle(live, cfg, rule.reason, effects)', 'O-2l tick 必须传 defer');
+  contains(src, "this._settle(o, this.getCardConfig() || {}, '手动定论', effects)", 'O-2l 手动定论必须传 defer');
+  const body = src.slice(src.indexOf('settle: function(id, verdict)'));
+  const iEffects = body.indexOf('var effects = [];');
+  const iSave = body.indexOf('saved = (this.save() !== false)');
+  const iApply = body.indexOf('effects[i]();');
+  ok(iEffects >= 0 && iSave > iEffects && iApply > iSave,
+    'O-2l settle 顺序应为 声明 effects → save → 施加 effects（实测 ' + iEffects + '/' + iSave + '/' + iApply + '）');
+  contains(src, 'settle_rolled_back', 'O-2l 应有定论回滚留痕');
+  contains(src, 'settle_save_threw', 'O-2l 应有落盘抛错留痕');
+  contains(src, 'save_failed', 'O-2l save 失败应统一留痕');
 });
 
 finish();
