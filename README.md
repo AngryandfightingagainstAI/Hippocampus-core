@@ -7,7 +7,7 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：38 套 RN smoke 共 2566 条断言全绿；桌面版另有 14 项预检 + 51 套回归
+- **测试**：38 套 RN smoke 共 2585 条断言全绿；桌面版另有 14 项预检 + 51 套回归
 - **版本**：1.3.0（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10300，已真机装机复核）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
@@ -201,16 +201,16 @@ node tools/settings_smoke.js
 node tools/longline_token_smoke.js
 ```
 
-当前基线：**38 套 / 2566 ok / 0 failed**（两仓同在的本机环境）。
+当前基线：**38 套 / 2585 ok / 0 failed**（两仓同在的本机环境）。
 
 CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：
 CI 里看不到桌面仓，于是跨仓同源断言自动降级为 SKIP —— 最早实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**
 （该次实测于提交 `66fe662`、CI run `38275495453`；当时记 10 条是因为 `num_editor_smoke.js` 的 H 组用 1 条组级 skip 吞掉了 8 条断言，
 P54·④ 已改为逐条记 skip ⇒ 单仓口径变为 `TOTAL_SKIP=17`、`TOTAL_OK` 仍是 2485）；
 此后本机断言总数从 2495 长到 2502（+7），单仓执行数同步为 `2492 ok / 17 skipped`。
-P54·第17条 再 +1 套（`secure_envelope_smoke.js`：本机 64 条，单仓 63 ok + 1 skip）⇒
-本机两仓同在时是 2566 ok / 0 failed / `TOTAL_SKIP=0`，单仓**实测为 2548 ok / 0 failed / `TOTAL_SKIP=18`**
-（口径：`HIPPOCAMPUS_PC` 指向不存在的目录跑完整 38 套；此前按「逐套相加」推算的 2555 偏 7 条，
+P54·第17条 再 +1 套（`secure_envelope_smoke.js`）并分两阶段长大：stage 1 只钉引擎层信封原语（64 条），stage 2 接了「导出/导入要口令」后 83 条（W 组 10 条 + S 组 9 条）⇒
+本机两仓同在时是 2585 ok / 0 failed / `TOTAL_SKIP=0`，单仓**实测为 2565 ok / 0 failed / `TOTAL_SKIP=19`**
+（口径：造出真正只有手机仓的环境跑完整 38 套（把桌面仓 `package.json` 临时改名，等价于 `HIPOCAMPUS_PC` 指向不存在的目录）；此前按「逐套相加」推算的 2555 偏 7 条，
 以实测为准 —— 原因是各套降级粒度不同，相加减会重复计入跨仓断言）。
 降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 

@@ -235,5 +235,74 @@ if (!HAVE_OTHER || !fs.existsSync(PC_PATH)) {
 }
 
 // ------------------------------------------------------------
+section('10. wrap / unwrap 薄封装（stage 2 调用面）');
+check('W-0 wrap / unwrap 都是函数', typeof SE.wrap === 'function' && typeof SE.unwrap === 'function', true);
+{
+  var w0 = SE.wrap('明文内容', '');
+  check('W-1 空口令 wrap ⇒ 明文原样 + encrypted:false', w0.ok === true && w0.text === '明文内容' && w0.encrypted === false);
+  check('W-2 空口令 wrap(null / undefined) ⇒ 空串（不是字符串 "null"）', SE.wrap(null, '').text === '' && SE.wrap(undefined, '').text === '');
+  var w1 = SE.wrap('明文内容', 'pw', { iter: 1000 });
+  check('W-3 有口令 wrap ⇒ isEnvelope + encrypted:true + 不再是明文', w1.ok === true && w1.encrypted === true && w1.text !== '明文内容' && SE.isEnvelope(w1.text) === true);
+  var u0 = SE.unwrap('明文内容', '');
+  check('W-4 明文 unwrap ⇒ 原样放行（不要口令、encrypted:false）', u0.ok === true && u0.text === '明文内容' && u0.encrypted === false);
+  var u1 = SE.unwrap(w1.text, 'pw');
+  check('W-5 信封 unwrap(对口令) ⇒ 还原明文 + encrypted:true', u1.ok === true && u1.text === '明文内容' && u1.encrypted === true);
+  var u2 = SE.unwrap(w1.text, 'bad');
+  check('W-6 信封 unwrap(错口令) ⇒ ok:false 且只给 reason（不吐半截明文）', u2.ok === false && String(u2.reason).indexOf('口令') >= 0 && u2.text === undefined);
+  check('W-7 信封 unwrap(空口令) ⇒ ok:false（不静默降级成明文）', SE.unwrap(w1.text, '').ok === false);
+  var payload = JSON.stringify({ format: 'ai_tg_save', version: 1, cardId: 'c1', files: { '/saves/c1/s1/chat.json': 'x'.repeat(3000) } });
+  var w2 = SE.wrap(payload, '中文口令 & 空格', { iter: 1000 });
+  check('W-8 存档载荷口令往返（中文 + 空格口令）', SE.unwrap(w2.text, '中文口令 & 空格').text === payload);
+  check('W-9 信封文本本身是合法 JSON 且首字符是 {（能直接粘进粘贴框/存成文件）',
+    w1.text.charAt(0) === '{' && (function () { try { return JSON.parse(w1.text).format === 'ai_tg_secure'; } catch (e) { return false; } })());
+}
+
+// ------------------------------------------------------------
+section('11. stage 2 接线哨兵（导出走口令 / 导入先解封 / 明文路径不变）');
+var RN_FILES = {
+  util: path.join(root, 'rn', 'export_util.js'),
+  saves: path.join(root, 'rn', 'screens', 'SavesScreen.js'),
+  cards: path.join(root, 'rn', 'screens', 'CardsScreen.js'),
+  data: path.join(root, 'rn', 'screens', 'settings', 'DataTab.js')
+};
+var RNF = {};
+Object.keys(RN_FILES).forEach(function (k) { RNF[k] = fs.readFileSync(RN_FILES[k], 'utf8'); });
+check('S-1 export_util 引入信封件并导出 secureWrap / secureUnwrap / isEnvelopeText',
+  RNF.util.indexOf("require('../vfs/secure_envelope.js')") >= 0 &&
+  RNF.util.indexOf('secureWrap: secureWrap') >= 0 &&
+  RNF.util.indexOf('secureUnwrap: secureUnwrap') >= 0 &&
+  RNF.util.indexOf('isEnvelopeText: isEnvelopeText') >= 0);
+check('S-2 空口令在 secureWrap 里直接回明文（不调 encrypt）',
+  RNF.util.indexOf('if (!pass) return { ok: true, text: s, encrypted: false };') >= 0);
+check('S-3 存档 / 卡带导出都先弹口令（password: true）再封装',
+  RNF.saves.indexOf('ExportUtil.secureWrap(') >= 0 && RNF.saves.indexOf('password: true') >= 0 &&
+  RNF.cards.indexOf('ExportUtil.secureWrap(') >= 0 && RNF.cards.indexOf('password: true') >= 0);
+check('S-4 粘贴导入（存档 / 卡带）都先判信封再解封',
+  RNF.data.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.data.indexOf('ExportUtil.secureUnwrap(raw, pass)') >= 0 &&
+  RNF.cards.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.cards.indexOf('ExportUtil.secureUnwrap(raw, pass)') >= 0);
+check('S-5 取消口令框 ⇒ 放弃导出 / 导入（不是静默走明文）',
+  RNF.saves.indexOf("if (pass === null) { showToast('已取消导出', 'warn'); return; }") >= 0 &&
+  RNF.data.indexOf("if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }") >= 0);
+check('S-6 「导出全部 / 导出 VFS 备份」保持明文（没有对应导入入口，不做单向加密）',
+  RNF.data.indexOf('secureWrap') < 0);
+var PC_UI = path.join(PC_ROOT, 'engine', 'ui_cards.js');
+var PC_HTML = path.join(PC_ROOT, 'index.html');
+if (!HAVE_OTHER || !fs.existsSync(PC_UI)) {
+  skip('S-7 桌面 engine/ui_cards.js 接线哨兵', '另一仓不可见（' + PC_UI + '）');
+  skip('S-8 桌面 index.html 加载 vfs/secure_envelope.js', '另一仓不可见（' + PC_HTML + '）');
+} else {
+  var pcUi = fs.readFileSync(PC_UI, 'utf8');
+  var pcHtml = fs.readFileSync(PC_HTML, 'utf8');
+  check('S-7 桌面导出 / 导入都过口令（_sealText + _unsealText + promptAsync password + wrap/unwrap）',
+    pcUi.indexOf('_sealText(text, pass)') >= 0 && pcUi.indexOf('async _unsealText(raw)') >= 0 &&
+    pcUi.indexOf('password: true') >= 0 && pcUi.indexOf('SecureEnvelope.wrap(') >= 0 &&
+    pcUi.indexOf('SecureEnvelope.unwrap(') >= 0);
+  check('S-8 桌面 index.html 在 vfs.js 之后加载 secure_envelope.js',
+    pcHtml.indexOf('<script src="vfs/secure_envelope.js"></script>') > pcHtml.indexOf('<script src="vfs/vfs.js"></script>'));
+  check('S-9 桌面卡带导入在 CardDiagnose 之前解封（否则信封会被诊断器当坏 JSON）',
+    pcUi.indexOf('解密必须在 CardDiagnose 之前') >= 0);
+}
+
+// ------------------------------------------------------------
 console.log('SECURE_ENVELOPE_SMOKE: ' + ok + ' ok, ' + fail + ' failed' + (skipN ? ', ' + skipN + ' skipped' : ''));
 process.exit(fail ? 1 : 0);

@@ -36,6 +36,7 @@ var VFS = require('../../../vfs/vfs.js');
 var StorageAdapter = require('../../../vfs/storage_adapter.js');
 var NavStore = require('../../nav_store.js');
 var StoryStore = require('../../story_store.js');
+var ExportUtil = require('../../export_util.js');
 
 function DataTab() {
   var themeApi = useTheme();
@@ -115,11 +116,21 @@ function DataTab() {
   }
 
   // ---------- 导入单存档 ----------
-  function doImportSave() {
+  async function doImportSave() {
     var raw = String(importText || '').trim();
     if (!raw) {
       setImportMsg({ type: 'warn', text: '内容为空' });
       return;
+    }
+    // P54·第17条 stage 2：加密导出先要口令再解密（明文原样放行）
+    if (ExportUtil.isEnvelopeText(raw)) {
+      var pass = await StoryStore.promptOpen('这份 JSON 是加密导出，请输入口令：', '', {
+        password: true, okText: '解密', placeholder: '口令'
+      });
+      if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }
+      var unsealed = ExportUtil.secureUnwrap(raw, pass);
+      if (!unsealed.ok) { setImportMsg({ type: 'error', text: unsealed.reason }); return; }
+      raw = unsealed.text;
     }
     // 粘贴清洗（同 CardsScreen:119-124）
     var text = raw

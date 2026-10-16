@@ -40,6 +40,7 @@ var Model = require('../home_model.js');
 var UiClassify = require('../ui_classify_rn.js');
 var InstructionModal = require('../components/InstructionModal.js').InstructionModal;
 var ExportUtil = require('../export_util.js');
+var StoryStore = require('../story_store.js');
 // P20：系统选文件（Android SAF 原生模块 android/.../FilePickerModule.kt；
 //   iOS 侧还没接，那时 available() 为 false，界面会给一句人话而不是静默失败）
 var FilePicker = require('../file_picker.js');
@@ -152,11 +153,19 @@ function CardsScreen() {
   function exportCard(id) {
     var r = ExportUtil.buildCardText(id);
     if (!r.ok) { setImportMsg({ type: 'error', text: r.reason }); return; }
-    ExportUtil.shareOrCopy(r.text, '导出卡带').then(function (s) {
-      if (s.shared) setImportMsg({ type: 'success', text: '已发送：' + r.filename });
-      else if (s.copied) setImportMsg({ type: 'warn', text: '卡带 JSON 已复制到剪贴板（' + r.filename + '）' });
-      else if (s.dismissed) setImportMsg({ type: 'warn', text: '已取消导出' });
-      else setImportMsg({ type: 'error', text: '导出失败' });
+    // P54·第17条 stage 2：可选口令 —— 留空 = 明文导出（默认行为不变）；取消 = 放弃导出
+    StoryStore.promptOpen('给这次导出的卡带加个口令？（留空 = 明文导出）', '', {
+      password: true, okText: '导出', placeholder: '口令（可留空）'
+    }).then(function (pass) {
+      if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导出' }); return; }
+      var w = ExportUtil.secureWrap(r.text, pass);
+      if (!w.ok) { setImportMsg({ type: 'error', text: w.reason }); return; }
+      return ExportUtil.shareOrCopy(w.text, '导出卡带').then(function (s) {
+        if (s.shared) setImportMsg({ type: 'success', text: '已发送：' + r.filename });
+        else if (s.copied) setImportMsg({ type: 'warn', text: '卡带 JSON 已复制到剪贴板（' + r.filename + '）' });
+        else if (s.dismissed) setImportMsg({ type: 'warn', text: '已取消导出' });
+        else setImportMsg({ type: 'error', text: '导出失败' });
+      });
     }).catch(function (e) {
       setImportMsg({ type: 'error', text: '导出失败：' + (e && e.message) });
     });
@@ -179,12 +188,23 @@ function CardsScreen() {
   //     会把 "喊了一声「出发」" 提前闭合，真机上正好报 Unexpected character: 出；
   //   · Hermes 的 JSON.parse 不带 position，只能贴开头 40 字（＝「第 0 字符附近」）
   //     ⇒ 两次都失败时自己扫描出真实偏移 + 上下文 + 可能原因。
-  function doImport() {
+  async function doImport() {
     if (!String(importText || '').trim()) {
       setImportMsg({ type: 'warn', text: '内容为空' });
       return;
     }
-    var parsed = JsonLocate.parseCardJson(importText);
+    var raw = String(importText || '');
+    // P54·第17条 stage 2：加密导出先要口令再解密（明文原样放行）
+    if (ExportUtil.isEnvelopeText(raw)) {
+      var pass = await StoryStore.promptOpen('这份 JSON 是加密导出，请输入口令：', '', {
+        password: true, okText: '解密', placeholder: '口令'
+      });
+      if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }
+      var unsealed = ExportUtil.secureUnwrap(raw, pass);
+      if (!unsealed.ok) { setImportMsg({ type: 'error', text: unsealed.reason }); return; }
+      raw = unsealed.text;
+    }
+    var parsed = JsonLocate.parseCardJson(raw);
     if (!parsed.ok) {
       var loc = parsed.loc;
       var detail = loc

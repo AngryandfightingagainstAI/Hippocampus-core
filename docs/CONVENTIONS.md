@@ -239,7 +239,7 @@ vfs/vfs_guard.js
 `process.cwd()` 真实调用 **0 处**），babel 也显式传了 `configFile`，所以从任何目录跑结果都一样。
 实测：从 `%TEMP%` 直跑 16 套（含 5 套头部注释仍写「cwd 必须是仓根」的 `claim_fact` / `import` /
 `p10` / `log_query` / `npc_boundary`）断言数与仓根**逐字相同**；从 `%TEMP%` 直跑整个跑批器同样是
-`RN_ALL_END SUITES=38 TOTAL_OK=2566 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`（P54·第17条 复测时 cwd =
+`RN_ALL_END SUITES=38 TOTAL_OK=2585 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`（P54·第17条 stage 2 复测时 cwd =
 工作目录 `D:\AI文游\神秘小引擎测试版`，同样逐字相同）。
 在仓库根下跑仍是最省事的习惯，但不再是硬约束。
 （注：约 19 个 `tools\*.js` 的头部注释还留着「cwd = RN 仓根」的旧口径，属过时注释，本次未逐条订正。）
@@ -283,7 +283,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `polyfill_smoke.js` | 22 |
 | `proposal_audit_smoke.js` | 19 |
 | `saves_smoke.js` | 17 |
-| `secure_envelope_smoke.js` | 64 |
+| `secure_envelope_smoke.js` | 83 |
 | `settings_smoke.js` | 144 |
 | `source_readable_smoke.js` | 23 |
 | `story_smoke.js` | 195 |
@@ -294,7 +294,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `web_search_smoke.js` | 51 |
 | `worldbook_smoke.js` | 180 |
 
-**当前基线：38 套 / 2566 ok / 0 failed。**
+**当前基线：38 套 / 2585 ok / 0 failed。**
 
 ### 4.2 桌面侧
 
@@ -342,7 +342,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条、
   `test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
-  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2566 条」这组数字。
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
@@ -363,7 +363,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - P54·第17条 的 `vfs/secure_envelope.js`（导出信封加密；stage 1 只做引擎层原语，不碰 UI）也是**两仓
   同源件**（「仅行尾不同」桶：手机 LF / 桌面 CRLF）。它**不另立桌面单测** —— 手机
-  `tools/secure_envelope_smoke.js` 用 Node crypto + RFC 8439 官方向量现算对拍（64 条），R-6 再断言
+官方向量现算对拍（stage 1 64 条；P54·第17条 stage 2 又加了 W 组 10 条 `wrap`/`unwrap` 薄封装与 S 组 9 条「导出/导入接线」哨兵，共 83 条）
   两仓归一后逐字相同 ⇒ 桌面那份被同源哨兵连坐覆盖。stage 2 接线桌面 UI（`index.html` 加 `<script>`、
   导出/导入口令弹窗）时再补桌面侧断言。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论

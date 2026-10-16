@@ -541,6 +541,28 @@
     return { ok: true, text: plain };
   }
 
+
+  // ---- P54·第17条 stage 2：给导出/导入用的薄封装（仍然零依赖、不碰 UI） ----
+  // 空口令 ⇒ 明文原样返回（「默认不加密」的语义就落在这里，调用方只管传口令）
+  function wrap(text, passphrase, opts) {
+    var s = String(text == null ? '' : text);
+    var pass = String(passphrase == null ? '' : passphrase);
+    if (!pass) return { ok: true, text: s, encrypted: false };
+    var r = encrypt(s, pass, opts);
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return { ok: true, text: r.text, encrypted: true };
+  }
+
+  // 明文原样放行；信封则必须口令对；解不开只回 { ok:false, reason }（绝不吐半截明文）
+  function unwrap(text, passphrase) {
+    var s = String(text == null ? '' : text);
+    if (!isEnvelope(s)) return { ok: true, text: s, encrypted: false };
+    var r = decrypt(s, passphrase);
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return { ok: true, text: r.text, encrypted: true };
+  }
+
+
   var SecureEnvelope = {
     FORMAT: FORMAT,
     VERSION: VERSION,
@@ -549,6 +571,8 @@
     decrypt: decrypt,
     isEnvelope: isEnvelope,
     parseEnvelope: parseEnvelope,
+    wrap: wrap,
+    unwrap: unwrap,
     // 内部件给单测 / 冒烟对拍用（不做兼容承诺）
     _internals: {
       sha256: sha256,

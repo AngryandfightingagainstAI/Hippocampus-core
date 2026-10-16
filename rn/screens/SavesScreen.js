@@ -34,6 +34,7 @@ var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
 var StoryRuntime = require('../story_runtime.js');
 var ExportUtil = require('../export_util.js');
+var StoryStore = require('../story_store.js');
 // P10·A7：空态文案单一来源（逐字照桌面 ui_cards.js:70）
 var EmptyTexts = require('../empty_texts.js');
 
@@ -120,11 +121,19 @@ function SavesScreen() {
   function exportSave(cardId, saveId) {
     var r = ExportUtil.buildSaveText(cardId, saveId);
     if (!r.ok) { showToast(r.reason, 'warn'); return; }
-    ExportUtil.shareOrCopy(r.text, '导出存档').then(function (s) {
-      if (s.shared) showToast('已发送：' + r.filename, 'success');
-      else if (s.copied) showToast('导出内容已复制到剪贴板（' + r.filename + '）', 'info');
-      else if (s.dismissed) showToast('已取消导出', 'warn');
-      else showToast('导出失败', 'error');
+    // P54·第17条 stage 2：可选口令 —— 留空 = 明文导出（默认行为不变）；取消 = 放弃导出
+    StoryStore.promptOpen('给这次导出的存档加个口令？（留空 = 明文导出）', '', {
+      password: true, okText: '导出', placeholder: '口令（可留空）'
+    }).then(function (pass) {
+      if (pass === null) { showToast('已取消导出', 'warn'); return; }
+      var w = ExportUtil.secureWrap(r.text, pass);
+      if (!w.ok) { showToast(w.reason, 'error'); return; }
+      return ExportUtil.shareOrCopy(w.text, '导出存档').then(function (s) {
+        if (s.shared) showToast('已发送：' + r.filename, 'success');
+        else if (s.copied) showToast('导出内容已复制到剪贴板（' + r.filename + '）', 'info');
+        else if (s.dismissed) showToast('已取消导出', 'warn');
+        else showToast('导出失败', 'error');
+      });
     }).catch(function (e) {
       showToast('导出失败：' + (e && e.message || e), 'error');
     });

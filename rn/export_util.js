@@ -17,6 +17,9 @@ var RN = require('react-native');
 var Share = RN.Share;
 var Clipboard = RN.Clipboard;
 
+// P54·第17条 stage 2：信封加密件（纯 Node 可测；空口令一律明文 ⇒ 默认行为不变）
+var SecureEnvelope = require('../vfs/secure_envelope.js');
+
 // 卡带导出（桌面 exportCard：卡对象 JSON.parse(JSON.stringify(card)) 等价）
 function buildCardText(cardId) {
   try {
@@ -54,6 +57,32 @@ function buildSaveText(cardId, saveId) {
   }
 }
 
+// P54·第17条 stage 2：口令封装（薄一层 —— 口令由屏幕层的 OverlayHost.PromptModal 收）
+//   · secureWrap：空口令 ⇒ 明文原样回（encrypted:false）；有口令 ⇒ encrypt()
+//   · secureUnwrap：明文原样放行；信封 ⇒ decrypt()（口令不对只回 reason）
+//   · isEnvelopeText：屏幕层用它决定「要不要弹口令框」
+function secureWrap(text, passphrase, opts) {
+  var s = String(text == null ? '' : text);
+  var pass = String(passphrase == null ? '' : passphrase);
+  if (!pass) return { ok: true, text: s, encrypted: false };
+  if (!SecureEnvelope || typeof SecureEnvelope.encrypt !== 'function') return { ok: false, reason: '加密模块不可用' };
+  var r = SecureEnvelope.encrypt(s, pass, opts);
+  if (!r.ok) return { ok: false, reason: r.reason };
+  return { ok: true, text: r.text, encrypted: true };
+}
+function secureUnwrap(text, passphrase) {
+  var s = String(text == null ? '' : text);
+  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') return { ok: true, text: s, encrypted: false };
+  if (!SecureEnvelope.isEnvelope(s)) return { ok: true, text: s, encrypted: false };
+  var r = SecureEnvelope.decrypt(s, passphrase);
+  if (!r.ok) return { ok: false, reason: r.reason };
+  return { ok: true, text: r.text, encrypted: true };
+}
+function isEnvelopeText(text) {
+  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') return false;
+  return SecureEnvelope.isEnvelope(String(text == null ? '' : text));
+}
+
 // 设备通道：Share.share → 失败降级 Clipboard（同 DataTab.shareOrCopy）
 // resolve：{ shared:true } | { copied:true } | { dismissed:true }
 function shareOrCopy(text, title) {
@@ -71,5 +100,9 @@ function shareOrCopy(text, title) {
 module.exports = {
   buildCardText: buildCardText,
   buildSaveText: buildSaveText,
-  shareOrCopy: shareOrCopy
+  shareOrCopy: shareOrCopy,
+  // P54·第17条 stage 2：口令封装 / 信封判别
+  secureWrap: secureWrap,
+  secureUnwrap: secureUnwrap,
+  isEnvelopeText: isEnvelopeText
 };
