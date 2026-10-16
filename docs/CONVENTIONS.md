@@ -70,8 +70,8 @@
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（P53）：**逐字节相同 38 个**、**仅行尾不同 22 个**、**真差异 18 个**，
-合计 78 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
+最近一次实算（P53）：**逐字节相同 38 个**、**仅行尾不同 23 个**、**真差异 18 个**，
+合计 79 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
 **逐字节相同**（38 个；改任何一个都必须两仓同步、连行尾一起）：
@@ -118,7 +118,7 @@ vfs/local_store.js
 vfs/storage_adapter.js
 ```
 
-**仅行尾不同**（22 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
+**仅行尾不同**（23 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
 这类**不是内容不同**：P13 时曾把其中一部分误列进「内容不同」）：
 
 ```text
@@ -145,6 +145,7 @@ engine/theme.js
 templates/number.js
 templates/relation.js
 vfs/logger.js
+vfs/secure_envelope.js
 ```
 
 **真差异**（18 个；按各自仓的语义改，逻辑对齐靠测试而不是靠字节）：
@@ -232,13 +233,14 @@ vfs/vfs_guard.js
 【四、跑测口径】
 ================================================================
 
-### 4.1 RN 侧（37 套）
+### 4.1 RN 侧（38 套）
 
 **cwd 随意（P54 实测订正）**：所有 smoke 都用 `__dirname` 锚定仓根（`tools\*.js` 里
 `process.cwd()` 真实调用 **0 处**），babel 也显式传了 `configFile`，所以从任何目录跑结果都一样。
 实测：从 `%TEMP%` 直跑 16 套（含 5 套头部注释仍写「cwd 必须是仓根」的 `claim_fact` / `import` /
 `p10` / `log_query` / `npc_boundary`）断言数与仓根**逐字相同**；从 `%TEMP%` 直跑整个跑批器同样是
-`RN_ALL_END SUITES=37 TOTAL_OK=2502 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`。
+`RN_ALL_END SUITES=38 TOTAL_OK=2566 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`（P54·第17条 复测时 cwd =
+工作目录 `D:\AI文游\神秘小引擎测试版`，同样逐字相同）。
 在仓库根下跑仍是最省事的习惯，但不再是硬约束。
 （注：约 19 个 `tools\*.js` 的头部注释还留着「cwd = RN 仓根」的旧口径，属过时注释，本次未逐条订正。）
 
@@ -281,6 +283,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `polyfill_smoke.js` | 22 |
 | `proposal_audit_smoke.js` | 19 |
 | `saves_smoke.js` | 17 |
+| `secure_envelope_smoke.js` | 64 |
 | `settings_smoke.js` | 144 |
 | `source_readable_smoke.js` | 23 |
 | `story_smoke.js` | 195 |
@@ -291,7 +294,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `web_search_smoke.js` | 51 |
 | `worldbook_smoke.js` | 180 |
 
-**当前基线：37 套 / 2502 ok / 0 failed。**
+**当前基线：38 套 / 2566 ok / 0 failed。**
 
 ### 4.2 桌面侧
 
@@ -339,7 +342,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条、
   `test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
-  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2566 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
@@ -358,6 +361,11 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   变成「CI 红」（P54·P1 已踩过一次），可见性用 `HIPOCAMPUS_PC` 环境变量换仓，不可见时打印跳过
   原因、只查本仓；本轮单测只落在手机仓 ——
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
+- P54·第17条 的 `vfs/secure_envelope.js`（导出信封加密；stage 1 只做引擎层原语，不碰 UI）也是**两仓
+  同源件**（「仅行尾不同」桶：手机 LF / 桌面 CRLF）。它**不另立桌面单测** —— 手机
+  `tools/secure_envelope_smoke.js` 用 Node crypto + RFC 8439 官方向量现算对拍（64 条），R-6 再断言
+  两仓归一后逐字相同 ⇒ 桌面那份被同源哨兵连坐覆盖。stage 2 接线桌面 UI（`index.html` 加 `<script>`、
+  导出/导入口令弹窗）时再补桌面侧断言。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
   已定论打回 `pending`，正文不掉出提示词）与 O-6（`update()` 改写标题/正文/描述后作废已纳入的
