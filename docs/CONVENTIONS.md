@@ -301,13 +301,13 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（51 套）
+node tools\run_batch.js                   # 前置门 + 全量（52 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
 ```
 
-**当前基线：51 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
+**当前基线：52 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
 
 ### 4.3 环境坑（都真踩过）
 
@@ -336,11 +336,11 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：8 套 / 122 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：9 套 / 130 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 18 条、`test_json_extract_unit.js` 14 条、
-  `test_story_compress_unit.js` 8 条、`test_prompt_deduction_unit.js` 5 条、
-  `test_snapshot_cut_unit.js` 9 条）。
+  `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
+  `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -414,6 +414,23 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   F4 钉住），`vfs/logger.js` 不再声称与 `Snapshots._currentRound` 同轴（改称「本日志自身的批次
   局部轮号」，被 `tools/longline_token_smoke.js` 钉住的 `var BLOCK = 40;` 与「chunks 是 fullText
   的唯一真源」两串仍在）。
+- `test_story_channel_unit.js` 的 L1–L8 锁住 P54·第10条（可选外部 AI 通道）的**可测缝**：
+  引擎侧把「通道裁决」抽成 `StoryLoop._channelKind()`、把「外部回复归一化」抽成
+  `StoryLoop._externalReply(toSend)`（`callAI` 只用这两处，不再内联碰设置与平台）。
+  L1–L5 夹 `_channelKind` 的五条边界 —— 老档没有 `storyChannel` 键 ⇒ `direct`（fail-open，
+  老存档行为逐字不变）、设置写着 `external` 但平台没实装契约 ⇒ 回落 `direct`（不把用户卡死）、
+  `Storage.getGlobal()` 抛错 ⇒ `direct` 且异常不外抛、只认严格字面量（`'EXTERNAL'`/`'External'`/
+  `'foo'`/`true` 一律 `direct`）；L6 夹 `_externalReply` 的返回约定（取消/空/纯空白 ⇒ `null`，
+  其余 `String(...)` 原样 —— **不 trim**，与旧 `content = String(__manual)` 逐字一致，
+  整轮提示词同一引用透传给契约）；L7 是源码哨兵：裁决只有一个真源
+  （`this._channelKind()` 与 `this._externalReply(` 各只出现一次、`Platform.ui.requestExternalReply`
+  只被两个缝碰），旧内联形态 `let __channel = 'direct'` / `__gCh` 不许复活；
+  L8 是手机侧入口哨兵（设置页有「对话通道」、落盘只写两个合法值、`platform_adapter.js` NAMES
+  已登记契约、`rn_platform.js` 已 `wrapRet` 转发）。桌面侧对应守卫在
+  `tests/unit/test_p54_story_channel.js`：Q1 现算 md5 断言两仓 `engine/story.js` **逐字节相同**
+  ⇒ L1–L7 的行为断言同时覆盖桌面；Q2 同上词法哨兵；Q3/Q4/Q5 锁桌面三个接入点
+  （设置页控件与写入口、`ui_core.js` 契约入口委托、`ui_prompt.js` 实装 + NAMES 登记）；
+  Q6 锁 `storyChannel` **不在 `defaultGlobal`** ⇒ 老档免迁移，靠引擎侧 fail-open 兜底。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

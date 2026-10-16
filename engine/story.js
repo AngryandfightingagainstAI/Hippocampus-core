@@ -182,6 +182,27 @@ var StoryLoop = {
     await this.callAI();
   },
 
+  // P54·第10条（可测缝）：把「通道裁决」与「外部回复归一化」抽成两个小函数。
+  //   动机：这条路径最容易静默回归 —— 老档没有 storyChannel 键时行为必须与改动前逐字一致，
+  //   而 callAI 整体太大、单测喂不动。抽出来后 test_story_channel_unit.js 直接夹这几条边界。
+  _channelKind() {
+    try {
+      const g = Storage.getGlobal();
+      if (g && g.storyChannel === 'external' &&
+          Platform.ui && typeof Platform.ui.requestExternalReply === 'function') {
+        return 'external';
+      }
+    } catch (e) { /* fail-open：读设置失败一律按直连，绝不因为读不出设置就换通道 */ }
+    return 'direct';
+  },
+
+  async _externalReply(toSend) {
+    const r = await Platform.ui.requestExternalReply(toSend);
+    // 取消 / 空回复 / 纯空白 ⇒ null：调用方据此提示并跳过本轮（不写历史、不推进时间）
+    if (r === null || r === undefined || String(r).trim() === '') return null;
+    return String(r);
+  },
+
   async callAI() {
     // ★ 结局锁死检查
     if (typeof Endings !== 'undefined' && Endings.isLocked()) {
@@ -253,27 +274,20 @@ var StoryLoop = {
 
       // P54·第10条：可选「外部 AI 通道」—— 把这一轮的提示词交给用户复制，再把 AI 回的正文粘回来。
       //   默认 direct（= 现状，直连 API）。只有 Storage.getGlobal().storyChannel === 'external'
-      //   且平台实装了 Platform.ui.requestExternalReply 才切走，其余情况一律照旧（fail-open：
-      //   老档没有这个键 ⇒ 行为与改动前逐字一致）。
-      let __channel = 'direct';
-      try {
-        const __gCh = Storage.getGlobal();
-        if (__gCh && __gCh.storyChannel === 'external' &&
-            Platform.ui && typeof Platform.ui.requestExternalReply === 'function') {
-          __channel = 'external';
-        }
-      } catch (__eCh) { __channel = 'direct'; }
-      
+      //   且平台实装了外部回复契约（requestExternalReply）才切走，其余情况一律照旧（fail-open：
+      //   老档没有这个键 ⇒ 行为与改动前逐字一致）。裁决本身在 _channelKind()（可单测）。
+      const __channel = this._channelKind();
+
       if (__channel === 'external') {
         // 外部通道：整轮提示词交给 UI（用户复制给任意 AI），等他把回复粘回来。
         //   取消 / 空回复 ⇒ 本轮跳过（不写历史、不推进时间）；busy 由外层 finally 收（story.js:494）。
-        const __manual = await Platform.ui.requestExternalReply(toSend);
+        const __manual = await this._externalReply(toSend);
         if (myToken !== GameState._sessionToken) return;
-        if (__manual === null || __manual === undefined || String(__manual).trim() === '') {
+        if (__manual === null) {
           Platform.ui.appendHint('（这一轮没拿到外部 AI 的回复，已跳过）');
           return;
         }
-        content = String(__manual);
+        content = __manual;
       } else if (useStream && typeof ApiClient.chatStream === 'function') {
         // 流式模式：实时渲染思考链
         Platform.ui.showStoryLoading(false);
