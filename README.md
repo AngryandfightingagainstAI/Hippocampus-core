@@ -209,7 +209,9 @@ CI 里看不到桌面仓，于是跨仓同源断言自动降级为 SKIP —— �
 P54·④ 已改为逐条记 skip ⇒ 单仓口径变为 `TOTAL_SKIP=17`、`TOTAL_OK` 仍是 2485）；
 此后本机断言总数从 2495 长到 2502（+7），单仓执行数同步为 `2492 ok / 17 skipped`。
 P54·第17条 再 +1 套（`secure_envelope_smoke.js`：本机 64 条，单仓 63 ok + 1 skip）⇒
-本机两仓同在时是 2566 ok / 0 failed / `TOTAL_SKIP=0`，单仓推算为 **2555 ok / 18 skipped**（准确值以本批 CI 日志为准）。
+本机两仓同在时是 2566 ok / 0 failed / `TOTAL_SKIP=0`，单仓**实测为 2548 ok / 0 failed / `TOTAL_SKIP=18`**
+（口径：`HIPPOCAMPUS_PC` 指向不存在的目录跑完整 38 套；此前按「逐套相加」推算的 2555 偏 7 条，
+以实测为准 —— 原因是各套降级粒度不同，相加减会重复计入跨仓断言）。
 降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 
 > 跑法：`node tools/run_all_smokes.js`（跑批器自己定位仓根）。单套 `node tools/xxx_smoke.js` 也可从任意目录跑 —— P54 从 `%TEMP%` 直跑 16 套与整套跑批，断言数与在仓库根下跑**逐字相同**。
