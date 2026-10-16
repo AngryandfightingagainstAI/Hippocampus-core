@@ -12,8 +12,15 @@ const path = require('path');
 const H = require(path.join(__dirname, '_harness.js'));
 
 const RN_ROOT = H.ROOT;
-const PC_ROOT = 'D:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
+// 另一仓（桌面）可能不在本机（CI 上就没有）：按 tools/card_compat_smoke.js 的惯例，
+// 允许用环境变量覆盖，读不到就**明确跳过**跨仓那半，而不是让 fs 抛异常把整套打红。
+const PC_ROOT = process.env.HIPPOCAMPUS_PC || 'D:\\AI文游\\神秘小引擎测试版\\神秘小引擎测试版';
+const HAVE_PC = fs.existsSync(path.join(PC_ROOT, 'engine', 'story.js'));
+if (!HAVE_PC) {
+  console.log('       （另一仓不可见：' + PC_ROOT + ' ⇒ D4/D5 的跨仓断言跳过，只查本仓）');
+}
 function readNorm(p) { return fs.readFileSync(p, 'utf8').replace(/\r\n/g, '\n'); }
+function otherRepos() { return HAVE_PC ? [RN_ROOT, PC_ROOT] : [RN_ROOT]; }
 
 // 用给定全局配置建一个能跑 buildStatic 的沙箱
 function mk(globalCfg) {
@@ -75,7 +82,7 @@ H.run('D3 缺 npcDeduction 键 ⇒ 按开处理（不比现状更少）', functi
 
 // ---------- D4 源码哨兵：prompt_builder 两仓 ----------
 H.run('D4 源码哨兵：两仓 prompt_builder 三处注入点都过 _deductionOn()', function() {
-  for (const root of [RN_ROOT, PC_ROOT]) {
+  for (const root of otherRepos()) {
     const p = path.join(root, 'engine', 'core', 'prompt_builder.js');
     const src = readNorm(p);
     H.contains(src, 'function _deductionOn()', 'D4 助手应在（' + root + '）');
@@ -90,8 +97,12 @@ H.run('D4 源码哨兵：两仓 prompt_builder 三处注入点都过 _deductionO
 // ---------- D5 源码哨兵 + 同源：story.js 两仓 ----------
 H.run('D5 源码哨兵：两仓 story.js 改为波次闸 2 且仍同源', function() {
   const rn = readNorm(path.join(RN_ROOT, 'engine', 'story.js'));
-  const pc = readNorm(path.join(PC_ROOT, 'engine', 'story.js'));
-  H.eq(rn, pc, 'D5 两仓 story.js 归一后应逐字相同');
+  if (HAVE_PC) {
+    const pc = readNorm(path.join(PC_ROOT, 'engine', 'story.js'));
+    H.eq(rn, pc, 'D5 两仓 story.js 归一后应逐字相同');
+  } else {
+    console.log('       （D5 跨仓同源断言跳过：另一仓不可见）');
+  }
   H.contains(rn, 'var _dQueue = _pendings.slice();', 'D5 队列');
   H.contains(rn, 'var _wave = _dQueue.splice(0, 2);', 'D5 每波 2 个');
   H.contains(rn, '_dStep();', 'D5 递归推进');
