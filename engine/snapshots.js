@@ -4,6 +4,12 @@
 //     覆盖：NPC 运行时 / 事件 / 任务 / 成就 / 天气 / 状态卡 / 商店 / 骰子历史
 // 每轮 AI 调用前压快照，回退时恢复数据 + 截断历史 + 删后续快照
 // 保留最近 MAX 轮
+// ★ P54·§四 F1：chatLength 是「当时的数组下标」，而日志压缩会把历史重建成
+//   [system] + 保留窗口（story.js maybeCompress）⇒ 下标整体前移，老的
+//   chatLength 不再指向同一位置。现在压快照时另外记下最后一条消息（及其
+//   前驱）的指纹当锚点，回退时按内容找切点；锚点本身也已被压缩归档时
+//   **拒绝回退**，不再做「状态回退、对话不动」的分裂回退（旧实现还会把
+//   之后的快照删掉，玩家连再退一次的机会都没有）。
 // ============================================================
 
 (function() {
@@ -28,6 +34,42 @@
       return (GameState.chatHistory || []).filter(function(m) {
         return m.role === 'user' && !String(m.content || '').startsWith('【系统 ·');
       }).length;
+    },
+
+    // ---------- ★ P54·§四 F1：跨压缩回退的切点 ----------
+    // 压缩只从头部丢消息、保留尾部连续段 ⇒ 只要快照点上那条消息还在，
+    // 就能按内容把它找回来，切在它后面。
+    _fp: function(m) {
+      var c = String((m && m.content) || '');
+      var h = 0;
+      for (var i = 0; i < c.length; i++) h = (h * 31 + c.charCodeAt(i)) | 0;
+      return { role: (m && m.role) || '', len: c.length, hash: h };
+    },
+
+    _fpMatch: function(m, fp) {
+      if (!m || !fp) return false;
+      return m.role === fp.role && String(m.content || '').length === fp.len &&
+             this._fp(m).hash === fp.hash;
+    },
+
+    // 返回 { cut, how, drift }：cut = 要保留的历史条数；cut < 0 表示原文已被
+    // 压缩归档、无法可靠回退（reason 给玩家看）。前驱指纹用来消歧：玩家重复
+    // 同一句输入时，只认「前一条也对得上」的那个位置。
+    _cutIndex: function(snap) {
+      var hist = GameState.chatHistory || [];
+      var want = snap.chatLength || 0;
+      if (!snap.anchor) {
+        // 升级前压的旧快照：没有锚点，沿用老口径（长度没缩就还能对上）；缩过就拒绝
+        if (want <= hist.length) return { cut: want, how: 'legacy-length', drift: 0 };
+        return { cut: -1, reason: '这份快照的对话原文已被压缩归档，无法可靠回退' };
+      }
+      var bound = Math.min(hist.length, want || hist.length);
+      for (var i = bound - 1; i >= 0; i--) {
+        if (!this._fpMatch(hist[i], snap.anchor)) continue;
+        if (snap.anchorLead && !this._fpMatch(hist[i - 1], snap.anchorLead)) continue;
+        return { cut: i + 1, how: 'anchor', drift: want - (i + 1) };
+      }
+      return { cut: -1, reason: '这份快照的对话原文已被压缩归档，无法可靠回退' };
     },
 
     // ============ 系统运行时抓取 ============
@@ -103,11 +145,15 @@
         this._dirEnsured = d;
       }
 
+      var hist = GameState.chatHistory || [];
       var snap = {
         round: round,
         timestamp: Date.now(),
         reason: reason || '',
-        chatLength: GameState.chatHistory.length,
+        chatLength: hist.length,
+        // ★ P54·§四 F1：切点锚点（见 _cutIndex 注释）
+        anchor: this._fp(hist[hist.length - 1]),
+        anchorLead: hist.length > 1 ? this._fp(hist[hist.length - 2]) : null,
         playerData: JSON.parse(JSON.stringify(GameState.playerData || {})),
         currentState: JSON.parse(JSON.stringify(GameState.currentState || {})),
         gameTime: GameState._gameTime ? JSON.parse(JSON.stringify(GameState._gameTime)) : null,
@@ -138,14 +184,20 @@
       var snap = VFS.readJSON(this._path(round));
       if (!snap) return { ok: false, reason: '快照不存在' };
 
+      // 0. ★ P54·§四 F1：先算切点 —— 算不出来就整条拒绝，绝不进入
+      //    「状态已回退、对话没截断」的分裂状态（下面第 4 步还会把之后的
+      //    快照删掉，那玩家连再退一次都不行）。
+      var cut = this._cutIndex(snap);
+      if (cut.cut < 0) return { ok: false, reason: cut.reason, split: true };
+
       // 1. 恢复基础数据
       GameState.playerData = snap.playerData || {};
       GameState.currentState = snap.currentState || null;
       GameState._gameTime = snap.gameTime || null;
       GameState._pendingSystemNotices = snap.pendingNotices || [];
 
-      // 2. 截断历史
-      GameState.chatHistory = (GameState.chatHistory || []).slice(0, snap.chatLength);
+      // 2. 截断历史（按锚点算出的切点，不再是「当时的下标」）
+      GameState.chatHistory = (GameState.chatHistory || []).slice(0, cut.cut);
 
       // 3. 恢复各系统运行时状态
       if (snap.systems) {
@@ -167,7 +219,7 @@
       // 6. 静态缓存失效（玩家数据变了）
       try { GameState.invalidateCache(); } catch (e) {}
 
-      return { ok: true, round: round, snap: snap };
+      return { ok: true, round: round, snap: snap, cut: cut.cut, cutBy: cut.how };
     },
 
     rollbackLast: function() {

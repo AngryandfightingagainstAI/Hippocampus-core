@@ -333,10 +333,11 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：7 套 / 111 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：8 套 / 120 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条、
-  `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条）。
+  `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条、
+  `test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -345,12 +346,17 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `setTimeout is not defined`）、`load(sb, 'engine/...')` 按仓根加载、`run/eq/deepEq/ok/contains/noThrow/finish`。
 - 被测的模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
   `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`、
-  `engine/story.js`、`vfs/logger.js`）都是**两仓同源件**
-  （`card_diagnose.js`、`vfs/logger.js` 属「仅行尾不同」桶，`engine/story.js` 属「逐字节相同」桶；
+  `engine/story.js`、`engine/snapshots.js`、`vfs/logger.js`）都是**两仓同源件**
+  （`card_diagnose.js`、`vfs/logger.js` 属「仅行尾不同」桶，`engine/story.js`、
+  `engine/snapshots.js` 属「逐字节相同」桶；
   `test_story_compress_unit.js` 的 K7 只把 `engine/core/storage.js` 当**源码文本**读，
   该文件两仓本就不同源）；`test_prompt_deduction_unit.js` 另外要读
   **两仓不同源**的 `engine/core/prompt_builder.js`，所以它走「源码哨兵（两仓都查）+ 假件行为
-  （只加载手机仓那一份）」两路，不去比两仓字节；本轮单测只落在手机仓 ——
+  （只加载手机仓那一份）」两路，不去比两仓字节；`test_snapshot_cut_unit.js` 的 F1-9 同样只走
+  「源码哨兵」一路（读两仓 `engine/snapshots.js` 归一后比逐字）。**跨仓读取必须先
+  `fs.existsSync`**：CI（ubuntu-latest）不 checkout 桌面仓，直接 `readFileSync` 会把「本机绿」
+  变成「CI 红」（P54·P1 已踩过一次），可见性用 `HIPOCAMPUS_PC` 环境变量换仓，不可见时打印跳过
+  原因、只查本仓；本轮单测只落在手机仓 ——
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
@@ -408,6 +414,19 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   且推演触发已从「一次 `Promise.all(_pendings.map(...))` 全量打出去」改成
   `_dQueue.splice(0, 2)` 的**波次闸 2**（10 个 pending 最坏 5 波，而不是 10 路并发），
   旧变量 `_promises` 与旧写法都不再出现，汇总提示文案保留。
+- `test_snapshot_cut_unit.js` 的 F1-1–F1-9 锁住 P54·§四 F1（快照跨压缩回退）：
+  快照 `push` 除 `chatLength` 外再记 `anchor`（最后一条消息的 role/长度/指纹）与 `anchorLead`
+  （前一条），回退切点改由 `_cutIndex(snap)` 决定 —— 数组长度仍 ≥ `chatLength` 时按老口径切
+  （F1-1/F1-4 是回归锚），已被压缩时从 `min(长度, chatLength)-1` **往前找锚点**且要求前驱也对得上
+  （F1-2 造「压缩丢掉 u1/G1 ⇒ 锚点下标前移 2」，断言切点 5 而不是老实现的 7；F1-6 用重复的
+  「继续」证明前驱指纹能拦下切错位置）；锚点被归档、或旧档没有锚点却已压缩时**整条拒绝**
+  （`{ok:false, reason:'这份快照的对话原文已被压缩归档，无法可靠回退', split:true}`，F1-3/F1-5）——
+  拒绝路径一个字段都不改、后续快照也不删，取代原先「状态回退、对话不动」的静默分裂回退
+  （`slice(0, snap.chatLength)` 在压缩后长度不够就变成 no-op）；F1-8 锁 `rollbackLast`
+  （「重新生成」走的路）仍能定位最新快照。语义取舍：只认**仍在原文里**的快照点，不引入
+  `_currentRound()` 的轮号基准（那要落盘，且牵动 `vfs/logger.js` 的 `msgFrom/msgTo` 口径 ⇒
+  另立 F1b 行）；桌面 `engine/ui_snapshot.js` 两处 `Logger.deleteLogsAfter(...)` 同时补第 4 参
+  `r.snap.round`，与手机仓 P4（`rn/snapshot_actions.js:34`）对齐。
 
 ================================================================
 【五、断言计数与报告口径】
