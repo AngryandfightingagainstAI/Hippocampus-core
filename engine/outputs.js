@@ -70,8 +70,15 @@
 
     save: function() {
       var p = this._path();
-      if (!p || !this._data) return;
+      if (!p || !this._data) return true;
+      // P54·第12条（O-2）：原先走 VFS.writeJSON，而 writeJSON 把 writeFile 的失败吞掉（返回 undefined），
+      //   tick 无从知道数据其实没落盘。现在直接调 writeFile 拿真实结果，失败由调用方回滚。
+      //   （极简 VFS 桩可能只实现 writeJSON ⇒ 退回旧调用，此时探测不到失败，语义同旧版。）
+      if (typeof VFS.writeFile === 'function') {
+        return VFS.writeFile(p, JSON.stringify(this._data)) !== false;
+      }
       VFS.writeJSON(p, this._data);
+      return true;
     },
 
     getRuntime: function() {
@@ -512,13 +519,45 @@
       var interval = cfg.fermentInterval || 'year';
       var curKey = this._intervalKey(now, interval);
       if (this._data._lastIntervalKey === curKey) return { fermented: false };
+      // P54·第12条（O-2）：真事务化。原先先把 _lastIntervalKey 推进内存、最后才 save：
+      //   落盘失败（或起手抛错）时内存键已推进 ⇒ 本会话永久跳过这个发酵周期，内存与磁盘还不一致。
+      //   只把键退回去也不行 —— 已应用的 progress 会在下个 tick 重复累加。
+      //   现在先深拷贝快照，任何一步失败都整批回滚（内存回到与磁盘一致的状态），下个 tick 重跑同一周期。
+      var self = this;
+      var snapshot = JSON.parse(JSON.stringify(this._data));
       this._data._lastIntervalKey = curKey;
 
-      var all = this.listFermenting();
-      if (!all.length) return { fermented: true, outputs: [], settled: [] };
-
-      var self = this;
       var settled = [];
+      var effects = []; // 对 GameState 的效果（数值 / 系统通知），落盘成功后才施加（见 _settle 的 defer）
+      var all = [];
+
+      // 落盘成功 ⇒ true；失败 ⇒ 整批回滚 + 留痕 + false
+      var commit = function() {
+        var why = '';
+        try {
+          if (self.save() === false) why = '落盘被拒（writeFile 返回 false）';
+        } catch (e) {
+          why = '落盘抛错：' + (e && e.message ? e.message : String(e));
+        }
+        if (!why) return true;
+        self._data = snapshot;
+        self._audit('tick_rolled_back', '本轮发酵' + why + '，已整批回滚（下个 tick 重跑同一周期，不重复累加）');
+        return false;
+      };
+
+      try {
+        all = this.listFermenting() || [];
+      } catch (e) {
+        this._data = snapshot;
+        this._audit('tick_rolled_back', '本轮发酵起手就抛错，已整批回滚：' + (e && e.message ? e.message : String(e)));
+        return { fermented: false, rolledBack: true };
+      }
+
+      if (!all.length) {
+        // 没有在发酵的产出物：也照旧「消费」这个周期，但要落盘才算数（旧版这里只改内存、不 save）
+        if (!commit()) return { fermented: false, rolledBack: true };
+        return { fermented: true, outputs: [], settled: [] };
+      }
 
       all.forEach(function(snap) {
        try {
@@ -540,7 +579,7 @@
         // 4. 检查定论
         var rule = self._checkSettleRule(live, cfg);
         if (rule.ok) {
-          var v = self._settle(live, cfg, rule.reason);
+          var v = self._settle(live, cfg, rule.reason, effects);
           if (v.ok) settled.push(v);
         }
 
@@ -551,13 +590,27 @@
        }
       });
 
+      // P54·第12条（O-2）：先落盘，成功了才继续。失败 ⇒ 整批回滚（快照里也含定论结果，
+      //   产出物回到发酵中、progress 回到本轮之前），下个 tick 重跑同一周期。
+      if (!commit()) return { fermented: false, rolledBack: true };
+
       // P54·第12条（O-12）：定论的玩家可见性原来全押在 GameState._pendingSystemNotices 上，
       //   而 tick 的返回值 settled 被 story.js 丢弃（story.js:456-459）⇒ 通知通道一旦失败就彻底静默。
       //   这里把 settled 消费成一条汇总审计：本轮定论了几件、分别叫什么，在行动日志里可查。
+      //   （放在 commit 之后：回滚的那一轮不该留下「定论了几件」的假痕。）
       if (settled.length) {
-        self._audit('tick_settled', settled.length + ' 件定论：' + settled.map(function(s) { return (s && (s.name || s.id)) || '（无名）'; }).join('、'));
+        this._audit('tick_settled', settled.length + ' 件定论：' + settled.map(function(s) { return (s && (s.name || s.id)) || '（无名）'; }).join('、'));
       }
-      this.save();
+
+      // 落盘成功后才施加对 GameState 的效果（数值 / 系统通知）
+      for (var i = 0; i < effects.length; i++) {
+        try {
+          effects[i]();
+        } catch (e) {
+          this._audit('settle_effect_failed', (e && e.message ? e.message : String(e)));
+        }
+      }
+
       return { fermented: true, outputs: all, settled: settled };
     },
 
@@ -629,13 +682,32 @@
       return { ok: false };
     },
 
-    _settle: function(o, cfg, reason) {
+    _settle: function(o, cfg, reason, defer) {
       o.fate = 'settled';
       o.settledAt = GameState.formatGameTime();
       o.finalVerdict = o.finalVerdict || ('发酵完成（' + reason + '，progress=' + o.progress + '）');
 
       var rules = cfg.settleRules || {};
       var affects = Array.isArray(rules.affects) ? rules.affects : [];
+
+      // P54·第12条（O-2）：tick 传 defer ⇒ 这里只改 _data，对 GameState 的效果（数值影响 + 系统通知）
+      //   推迟到本轮落盘成功之后才施加。这样落盘失败整批回滚才是真事务：不会「数值已经加过、
+      //   产出物却还停在发酵中」。手动定论 / AI 定论不传 defer ⇒ 与 O-3 之后完全一致（同一条 _settle）。
+      if (Array.isArray(defer)) {
+        var actor = this;
+        var rec = { id: o.id, name: o.name, verdict: o.finalVerdict, applied: [] };
+        defer.push(function() {
+          var got = actor._applyAffects(affects);
+          for (var i = 0; i < got.length; i++) rec.applied.push(got[i]);
+          try {
+            GameState._pendingSystemNotices.push('产出物《' + rec.name + '》定论：' + rec.verdict);
+          } catch (e) {
+            actor._audit('settle_notice_failed', rec.id + '：' + (e && e.message ? e.message : String(e)));
+          }
+        });
+        return { ok: true, id: o.id, name: o.name, applied: rec.applied, deferred: true };
+      }
+
       var applied = this._applyAffects(affects);
 
       try {

@@ -6,6 +6,8 @@
 //       一定应用 settleRules.affects、一定推系统通知。
 //   O-5 送审失败时不得把上一轮的结论（included / revised / rejected）打回 pending ——
 //       打回会让 formatForPrompt 只给「待审」提示，玩家已经看到的正文静默掉出提示词。
+//   O-2 发酵 tick 的事务性：落盘失败 / 起手抛错必须整批回滚（内存与磁盘一致），
+//       且对 GameState 的效果要等落盘成功后才施加（否则回滚会漏掉数值与系统通知）。
 //
 // 跑法：node tests/unit/test_outputs_unit.js
 // ============================================================
@@ -17,6 +19,7 @@ const eq = h.eq;
 const ok = h.ok;
 const notOk = h.notOk;
 const contains = h.contains;
+const noThrow = h.noThrow;
 const finish = h.finish;
 
 // 造一个能跑 outputs.js 的最小环境；opts.state 会被 _modifyStat 桩就地改写
@@ -294,6 +297,158 @@ run('O-6c 改写后重新送审成功 ⇒ 回到 included 并注入新正文', f
     eq(e.O.get(c.id).review.state, 'included', 'O-6c 应回到 included');
     contains(e.O.formatForPrompt(), '新文本', 'O-6c 新正文应在提示词里');
   });
+});
+
+// ---------- O-2 发酵 tick 的事务性：落盘失败 / 起手抛错 ⇒ 整批回滚 ----------
+// 旧行为：先推进 _lastIntervalKey（内存）、最后才 save；落盘失败或循环外抛错时
+//   内存键已推进 ⇒ 本会话永久跳过这个发酵周期，内存与磁盘还不一致；
+//   只把键退回去也不行 —— 已应用的 progress 会在下个 tick 重复累加。
+// 新行为：深拷贝快照 → 任何一步失败整批回滚；对 GameState 的效果（数值 / 系统通知）
+//   推迟到落盘成功之后才施加，所以回滚是真事务（不会「数值加过了、产出物还在发酵中」）。
+
+function mkTick(opts) {
+  opts = opts || {};
+  const e = mk({
+    card: CARD_WITH_AFFECTS,
+    state: { hud: [{ key: '民心', value: 0 }], sidebar: [], panels: {} },
+    time: opts.time || '1-1-1',
+    audits: opts.audits
+  });
+  const outputs = {};
+  if (!opts.empty) {
+    outputs.o1 = {
+      id: 'o1', name: '祭典', title: '祭典', content: 'x', desc: '',
+      fate: 'fermenting', progress: opts.progress == null ? 10 : opts.progress,
+      audience: [], keywords: [], events: [], stirCooldowns: {},
+      review: { state: 'none', reason: '', raw: '', at: '', round: 0 }
+    };
+  }
+  e.O.setRuntime({ outputs: outputs, _lastIntervalKey: '' });
+  return e;
+}
+
+function rolledBackAudits(audits) {
+  return audits.filter(function(a) { return a[1] === 'tick_rolled_back'; });
+}
+
+run('O-2a 落盘抛错 ⇒ 整批回滚：键不推进、progress 不长、留痕 tick_rolled_back', function() {
+  const audits = [];
+  const e = mkTick({ audits: audits });
+  const before = JSON.stringify(e.O.getRuntime());
+  e.sb.VFS.writeFile = function() { throw new Error('存储满'); };
+  let t = null;
+  noThrow(function() { t = e.O.tick(); }, 'O-2a tick 不该把落盘异常抛给调用方');
+  ok(t, 'O-2a 应返回结果对象');
+  eq(t.fermented, false, 'O-2a 落盘失败不得报 fermented');
+  eq(t.rolledBack, true, 'O-2a 应显式回报 rolledBack');
+  eq(JSON.stringify(e.O.getRuntime()), before, 'O-2a 内存应整批回到快照（键与 progress 都不动）');
+  eq(e.O.getRuntime()._lastIntervalKey, '', 'O-2a 周期键不得推进');
+  eq(e.O.get('o1').progress, 10, 'O-2a progress 不得留在内存里');
+  const hit = rolledBackAudits(audits);
+  ok(hit.length === 1, 'O-2a 应留一条 tick_rolled_back 审计：' + JSON.stringify(audits));
+  ok(String(hit[0][2]).indexOf('存储满') >= 0, 'O-2a 审计应带原始错误：' + JSON.stringify(hit[0]));
+});
+
+run('O-2b 落盘被拒（writeFile 返回 false，不抛错）⇒ 同样整批回滚', function() {
+  const audits = [];
+  const e = mkTick({ audits: audits });
+  const before = JSON.stringify(e.O.getRuntime());
+  e.sb.VFS.writeFile = function() { return false; };
+  const t = e.O.tick();
+  eq(t.fermented, false, 'O-2b 落盘被拒不得报 fermented');
+  eq(t.rolledBack, true, 'O-2b 应回报 rolledBack');
+  eq(JSON.stringify(e.O.getRuntime()), before, 'O-2b 内存应整批回到快照');
+  const hit = rolledBackAudits(audits);
+  ok(hit.length === 1 && String(hit[0][2]).indexOf('被拒') >= 0, 'O-2b 审计应写明「落盘被拒」：' + JSON.stringify(audits));
+});
+
+run('O-2c 回滚后重跑同一周期只累加一次，成功落盘后才推进键', function() {
+  const e = mkTick({});
+  const real = e.sb.VFS.writeFile;
+  e.sb.VFS.writeFile = function() { return false; };
+  eq(e.O.tick().rolledBack, true, 'O-2c 先制造一次落盘失败');
+  e.sb.VFS.writeFile = real;
+  const t2 = e.O.tick();
+  eq(t2.fermented, true, 'O-2c 恢复落盘后应发酵成功');
+  eq(e.O.get('o1').progress, 15, 'O-2c 只应累加一次（10→15）');
+  eq(e.O.getRuntime()._lastIntervalKey, '1', 'O-2c 成功后键才推进');
+  const t3 = e.O.tick();
+  eq(t3.fermented, false, 'O-2c 同一周期不得二次发酵');
+  eq(e.O.get('o1').progress, 15, 'O-2c 二次 tick 不得再加 progress');
+});
+
+run('O-2d 定论那一轮落盘失败 ⇒ GameState 侧效果（数值/通知）完全没施加', function() {
+  const audits = [];
+  const e = mkTick({ progress: 96, audits: audits });
+  e.sb.VFS.writeFile = function() { throw new Error('存储满'); };
+  const t = e.O.tick();
+  eq(t.rolledBack, true, 'O-2d 应回报 rolledBack');
+  eq(e.state.hud[0].value, 0, 'O-2d 定论数值不得在落盘失败时施加（真事务）');
+  eq(e.gs._pendingSystemNotices.length, 0, 'O-2d 系统通知不得在落盘失败时推出');
+  eq(e.O.get('o1').fate, 'fermenting', 'O-2d 产出物应仍是发酵中');
+  eq(e.O.get('o1').progress, 96, 'O-2d progress 应回到 96');
+  const hit = rolledBackAudits(audits);
+  ok(hit.length === 1, 'O-2d 应留一条 tick_rolled_back 审计');
+});
+
+run('O-2e 定论成功 ⇒ 先落盘、后施加效果，settled/applied 契约不变', function() {
+  const e = mkTick({ progress: 96 });
+  const real = e.sb.VFS.writeFile;
+  let valueAtWrite = null;
+  let sawSettled = null;
+  e.sb.VFS.writeFile = function(p, s) {
+    valueAtWrite = e.state.hud[0].value;
+    sawSettled = String(s).indexOf('"fate":"settled"') >= 0;
+    return real(p, s);
+  };
+  const t = e.O.tick();
+  eq(t.fermented, true, 'O-2e 应发酵成功');
+  eq(valueAtWrite, 0, 'O-2e 落盘时数值还没施加（先落盘、后施加）');
+  eq(sawSettled, true, 'O-2e 落盘内容里应已含定论结果');
+  eq(e.state.hud[0].value, 5, 'O-2e 落盘成功后数值应施加 +5');
+  eq(e.gs._pendingSystemNotices.length, 1, 'O-2e 应推 1 条系统通知');
+  ok(t.settled.length === 1 && t.settled[0].id === 'o1', 'O-2e settled 契约应保留：' + JSON.stringify(t.settled));
+  eq(t.settled[0].applied.length, 1, 'O-2e applied 应在落盘后回填：' + JSON.stringify(t.settled[0]));
+  eq(t.settled[0].applied[0].statKey, '民心', 'O-2e applied 应记录属性名');
+  ok(e.O.get('o1').fate === 'settled', 'O-2e 产出物应已定论');
+});
+
+run('O-2f 起手（listFermenting）抛错 ⇒ 也整批回滚 + 留痕', function() {
+  const audits = [];
+  const e = mkTick({ audits: audits });
+  const before = JSON.stringify(e.O.getRuntime());
+  e.O.listFermenting = function() { throw new Error('数据坏了'); };
+  const t = e.O.tick();
+  eq(t.rolledBack, true, 'O-2f 应回报 rolledBack');
+  eq(t.fermented, false, 'O-2f 不得报 fermented');
+  eq(JSON.stringify(e.O.getRuntime()), before, 'O-2f 内存应回到快照');
+  const hit = rolledBackAudits(audits);
+  ok(hit.length === 1 && String(hit[0][2]).indexOf('起手') >= 0, 'O-2f 审计应写明起手抛错：' + JSON.stringify(audits));
+});
+
+run('O-2g 没有发酵物时也收口落盘：键推进要落盘，落盘失败则回滚', function() {
+  const ok1 = mkTick({ empty: true });
+  const t1 = ok1.O.tick();
+  eq(t1.fermented, true, 'O-2g 空批也应照常推进周期');
+  const path = '/saves/card1/save1/outputs_runtime.json';
+  const onDisk = ok1.sb.VFS.readJSON(path);
+  ok(onDisk && onDisk._lastIntervalKey === '1', 'O-2g 周期键应已落盘：' + JSON.stringify(onDisk));
+
+  const bad = mkTick({ empty: true, audits: [] });
+  bad.sb.VFS.writeFile = function() { return false; };
+  const t2 = bad.O.tick();
+  eq(t2.rolledBack, true, 'O-2g 空批落盘失败也应回滚');
+  eq(bad.O.getRuntime()._lastIntervalKey, '', 'O-2g 空批回滚后键不得推进');
+});
+
+run('O-2h 手动定论不传 defer ⇒ 效果立刻施加（O-3 通道一致不回归）', function() {
+  const e = mkTick({ progress: 20 });
+  const r = e.O.settle('o1', '玩家拍板');
+  ok(r.ok, 'O-2h 手动定论应成功：' + JSON.stringify(r));
+  eq(e.state.hud[0].value, 5, 'O-2h 手动定论应立即施加数值效果');
+  eq(e.gs._pendingSystemNotices.length, 1, 'O-2h 手动定论应立即推通知');
+  eq(e.O.get('o1').fate, 'settled', 'O-2h 应已定论');
+  eq(r.applied.length, 1, 'O-2h 返回体应带 applied');
 });
 
 finish();
