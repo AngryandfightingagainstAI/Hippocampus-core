@@ -333,10 +333,10 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：6 套 / 106 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：7 套 / 111 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条、
-  `test_story_compress_unit.js` 7 条）。
+  `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「37 套 / 2502 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -348,7 +348,9 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `engine/story.js`、`vfs/logger.js`）都是**两仓同源件**
   （`card_diagnose.js`、`vfs/logger.js` 属「仅行尾不同」桶，`engine/story.js` 属「逐字节相同」桶；
   `test_story_compress_unit.js` 的 K7 只把 `engine/core/storage.js` 当**源码文本**读，
-  该文件两仓本就不同源）；本轮单测只落在手机仓 ——
+  该文件两仓本就不同源）；`test_prompt_deduction_unit.js` 另外要读
+  **两仓不同源**的 `engine/core/prompt_builder.js`，所以它走「源码哨兵（两仓都查）+ 假件行为
+  （只加载手机仓那一份）」两路，不去比两仓字节；本轮单测只落在手机仓 ——
   桌面侧若要复用，须连带更新「51 套」这组口径及其守卫（`test_p53_license_docs.js` P53-49…57）。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
   与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
@@ -393,6 +395,19 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `newMessageCount`，旧名与实际语义不符）；K7 是源码哨兵：`engine/core/storage.js` 不再出现
   零读取方的死配置 `autoCompressRounds`（三个真配置项仍在同一行 —— 等长改写，行号不变，
   以免 `test_p52_schema_compat.js` 锁的 `:12/:137/:153` 迁移标记漂移）。
+- `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
+  D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
+  默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、
+  **没有** `query_deductions()`，但 `npc_knows(id, text, source)` 那半句和查询扩展其余 3 个工具
+  照旧（只删推演协议，不连坐别的协议）；D2 打开开关后三项全回来，并顺手量出**关/开静态段字符差
+  161**（深审 §五 方案 7 原先估的是「约 290 字符」，实测后按 161 记账）；D3 喂一个**没有**
+  `npcDeduction` 键的老档全局 ⇒ 按「开」处理（读不到配置时不能悄悄少发协议）；
+  D4 是源码哨兵：两仓 `engine/core/prompt_builder.js` 都有 `function _deductionOn()`、缺键回落
+  `true`、`_deductionOn()` 恰好 4 次出现（1 声明 + 3 处注入：引擎规则那半句 / NPC 推演协议行 /
+  查询扩展拼接）；D5 是源码哨兵 + 同源检查：两仓 `engine/story.js` 仍是逐字节相同件，
+  且推演触发已从「一次 `Promise.all(_pendings.map(...))` 全量打出去」改成
+  `_dQueue.splice(0, 2)` 的**波次闸 2**（10 个 pending 最坏 5 波，而不是 10 路并发），
+  旧变量 `_promises` 与旧写法都不再出现，汇总提示文案保留。
 
 ================================================================
 【五、断言计数与报告口径】

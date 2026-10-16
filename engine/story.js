@@ -362,16 +362,28 @@ var StoryLoop = {
             });
             if (_pendings.length > 0) {
               Platform.ui.appendHint('（引擎正在推演 ' + _pendings.length + ' 条 NPC 知识…）');
-              var _promises = _pendings.map(function(p) { return NpcDeductionAI.run(p.id); });
-              Promise.all(_promises).then(function(_results) {
-                var _okCount = 0;
-                _results.forEach(function(r) {
-                  if (r && r.ok && !r.rejected) _okCount++;
-                });
-                if (_okCount > 0) {
-                  Platform.ui.appendHint('（' + _okCount + ' 位 NPC 好像知道了什么，去人物面板看看原因）');
+              // P54·P1：并发闸 2 —— 原先一次性 Promise.all 全部 pending（最坏 10 路同时打模型）
+              var _dQueue = _pendings.slice();
+              var _okCount = 0;
+              var _dStep = function() {
+                var _wave = _dQueue.splice(0, 2);
+                if (_wave.length === 0) {
+                  if (_okCount > 0) {
+                    Platform.ui.appendHint('（' + _okCount + ' 位 NPC 好像知道了什么，去人物面板看看原因）');
+                  }
+                  return;
                 }
-              }).catch(function(e) { console.warn('[NpcDeductionAI] 推演 Promise 失败：', e); });
+                Promise.all(_wave.map(function(p) { return NpcDeductionAI.run(p.id); })).then(function(_results) {
+                  _results.forEach(function(r) {
+                    if (r && r.ok && !r.rejected) _okCount++;
+                  });
+                  _dStep();
+                }).catch(function(e) {
+                  console.warn('[NpcDeductionAI] 推演 Promise 失败：', e);
+                  _dStep();
+                });
+              };
+              _dStep();
             }
           }
         }

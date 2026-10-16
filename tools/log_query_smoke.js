@@ -599,13 +599,14 @@ function runG() {
   //     · gamestate.js：旧记录 10383/DE10B95F… 早于 RN 仓首次提交 44a15e4（git 证该文件自那以后未动）
   //     · prompt_builder.js：P26 query_source 协议行 / P27 产出物 title,content,desc / P28 后台进程注入 之后的现盘值
   //   P45 重记（2026-10-07）：补 Qwen 那轮加的「资料：query_source 用法行 / 位置：set_location +
-  //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
+  //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 当时现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
   var bases = [
     ['engine/core/gamestate.js', 'AABB3146FA76593DD35D992629863BE1'],
-    ['engine/core/prompt_builder.js', 'ED9AB8C65E72433D0CD11F718C6927C7'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
-    ['engine/info_feed.js', '6010CBD7FE4B1DCCA28E428DD634F280']
+    ['engine/info_feed.js', '6010CBD7FE4B1DCCA28E428DD634F280'],
+    // P54·P1 再重记：推演协议条件注入 ⇒ 52285 B / 7246723C904BA39C1A258D283007908E
+    ['engine/core/prompt_builder.js', '7246723C904BA39C1A258D283007908E']
   ];
   bases.forEach(function (b) {
     eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5(path.join(root, b[0])), b[1]);

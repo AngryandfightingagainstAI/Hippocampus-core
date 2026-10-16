@@ -497,7 +497,8 @@ function runComponent() {
   //   P45 重记（prompt_builder 因 Qwen 那轮补 set_location / list_destinations / output_publish 字段而变，51275 B）
   var BASE = [
     ['engine/core/gamestate.js', 10413, 'AABB3146FA76593DD35D992629863BE1'],
-    ['engine/core/prompt_builder.js', 51275, 'ED9AB8C65E72433D0CD11F718C6927C7'],
+    // P54·P1 重记：推演协议条件注入（推演关闭时不下发 request_deduction 半句 / NPC 推演行 / query_deductions）
+    ['engine/core/prompt_builder.js', 52285, '7246723C904BA39C1A258D283007908E'],
     // P54·I-4/I-6 重记：info_feed.js 补「静默失败可见性」（混流追加失败不再假成功、tick 批逐条容错）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
     ['engine/info_feed.js', 49989, '6010CBD7FE4B1DCCA28E428DD634F280']

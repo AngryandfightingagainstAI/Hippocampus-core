@@ -215,7 +215,7 @@ P54·④ 已改为逐条记 skip ⇒ 同一单仓环境现为 `TOTAL_SKIP=17`、
 
 引擎本身也能离开 React Native 跑：`engine/` + `vfs/` 在纯 Node 下可加载（只有 `rn/export_util.js`、`rn/rn_platform.js`、`rn/use_theme.js` 三个文件 `require('react-native')`），因此可以做无头回合驱动测试。
 
-除集成 smoke 外，`tests/unit/` 还有 6 套**单元测试**（`node tools/run_unit_tests.js`，纯 Node + `vm` 沙箱、零新依赖、秒级）：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（17 条）、`json_extract`（14 条）、`story_compress`（7 条），共 106 条。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
+除集成 smoke 外，`tests/unit/` 还有 7 套**单元测试**（`node tools/run_unit_tests.js`，纯 Node + `vm` 沙箱、零新依赖、秒级）：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（17 条）、`json_extract`（14 条）、`story_compress`（7 条）、`prompt_deduction`（5 条），共 111 条。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
 
 ---
 

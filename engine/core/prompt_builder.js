@@ -66,6 +66,18 @@ var DEGRADE_STEPS = [
 // 取值理由见报告：正常局第四部分约 1200-2200 token，3000 只兜异常膨胀。
 var PROMPT_BUDGET_DEFAULT = { enabled: true, maxTokens: 3000 };
 
+// P54·P1：NPC 推演是否开启（设置 → 通用 → NPC 推演，落盘在 Storage.getGlobal().npcDeduction）。
+//   关闭时不下发 request_deduction / query_deductions 协议（单测实测每轮少 161 字符）；
+//   读不到该配置（老档 / 夹具）时按「开」处理，避免悄悄改掉协议文本。
+function _deductionOn() {
+  try {
+    const _g = Storage.getGlobal();
+    const _c = _g ? _g.npcDeduction : null;
+    if (!_c || typeof _c !== 'object' || !('enabled' in _c)) return true;
+    return !!_c.enabled;
+  } catch (e) { return true; }
+}
+
 var PromptBuilder = {
   buildStatic() {
     const card = GameState.currentCard;
@@ -104,7 +116,13 @@ var PromptBuilder = {
     lines.push('════════════════════════════════════════');
     lines.push('');
     lines.push('【引擎规则】');
-    GM_DEFAULTS.engineRules.forEach(r => lines.push('· ' + r));
+    GM_DEFAULTS.engineRules.forEach(r => {
+      // P54·P1：推演关闭时从这条规则里去掉 request_deduction 那半句（npc_knows 那半句照旧）
+      if (r && r.indexOf('request_deduction') >= 0 && !_deductionOn()) {
+        r = r.replace('；从已知事实推演 → 调 request_deduction(id, text)，引擎会验证它能否推出', '');
+      }
+      lines.push('· ' + r);
+    });
     lines.push('');
     lines.push('【写作协议】');
     GM_DEFAULTS.promptRules.forEach((r, i) => lines.push((i+1) + '. ' + r));
@@ -218,7 +236,7 @@ var PromptBuilder = {
     lines.push('手机广播：info_broadcast(title, body, opts)（publicity: 暗中/半公开/公开/轰动；scope: 当事人/家庭/势力/城市/世界）');
     lines.push('手机查询：info_read(kind, limit)（查看你已经发过、玩家看过的讯息与广播，避免重复发送）');
     lines.push('手机混流：info_promote(id)（把某条讯息/广播并入正文，只在它会改变局面、需要主角立刻回应时才用）');
-    lines.push('NPC 推演：request_deduction(id, text, sourceNote?)（当你认为 NPC 能从已知事实推出某事、但不确定它能否推出时，用这个让引擎验证）');
+    if (_deductionOn()) lines.push('NPC 推演：request_deduction(id, text, sourceNote?)（当你认为 NPC 能从已知事实推出某事、但不确定它能否推出时，用这个让引擎验证）');
     lines.push('商店：open_shop(id) / buy_item(shopId, itemId, count) / sell_item(shopId, itemName)');
     lines.push('状态卡：update_status(key, value) / update_status_bulk(fields) / set_inner_voice(npcId, text)');
     // P10·B6：set_weather 的 icon 可选（CONTRACTS.md:249）；补 ban_event / unban_event
@@ -237,7 +255,9 @@ var PromptBuilder = {
     // P10·B2②：原「查询扩展」行重复声明了 query_nodes/query_endings/query_events/
     //   query_tasks/query_achievements/query_weather 六个工具（上面各功能行已声明），
     //   按「同一工具只在一处声明」收敛——这里只留无别处声明的 4 个扩展查询。
-    lines.push('查询扩展：query_dice_history({recent?, label?, round?}) / query_avatar({npcId?}) / query_proposals() / query_deductions()');
+    var _qExtLine = '查询扩展：query_dice_history({recent?, label?, round?}) / query_avatar({npcId?}) / query_proposals()';
+    if (_deductionOn()) _qExtLine += ' / query_deductions()';
+    lines.push(_qExtLine);
     lines.push('元层提议：玩家说“应该加/应该改/不该再”时，调 propose_change 把变更落成提议（叙事里的口头答应不算）。');
     lines.push('');
     // P10·B6：output_publish 仅 name 必填（CONTRACTS.md:269-271）。
