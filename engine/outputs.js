@@ -470,9 +470,18 @@
       }, function(err) {
         var msg = (err && err.message) ? err.message : String(err);
         var now2 = (typeof GameState !== 'undefined' && GameState && typeof GameState.formatGameTime === 'function') ? GameState.formatGameTime() : '';
-        o.review = { state: 'pending', reason: '审核调用失败：' + msg, raw: String(lastRaw || '').slice(0, 600), at: now2, round: 0 };
+        var failReason2 = '审核调用失败：' + msg;
+        var prev2 = o.review || {};
+        var decided2 = (prev2.state === 'included' || prev2.state === 'revised' || prev2.state === 'rejected');
+        // P54·第12条（O-5d）：送审「抛错」与送审「解析失败」必须同一口径 —— 原先这里无条件把 state
+        //   写回 pending，会把上一轮已经纳入/修改/驳回的结论覆盖掉；而 formatForPrompt 只给
+        //   included/revised/none 注入正文 ⇒ 玩家已经看到的正文会静默掉出提示词。
+        //   已定论的原样保留（失败原因另存 lastError 供面板显示），只有本来没定论的才落 pending。
+        o.review = decided2
+          ? { state: prev2.state, reason: prev2.reason || '', raw: prev2.raw || '', at: prev2.at || now2, round: prev2.round || 0, lastError: failReason2 }
+          : { state: 'pending', reason: failReason2, raw: String(lastRaw || '').slice(0, 600), at: now2, round: 0, lastError: failReason2 };
         self.save();
-        return { ok: false, reason: o.review.reason };
+        return { ok: false, reason: failReason2, raw: lastRaw, attempts: attempts, review: o.review, kept: decided2 ? prev2.state : '' };
       });
     },
 

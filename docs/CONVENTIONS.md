@@ -336,10 +336,10 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：8 套 / 120 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：8 套 / 122 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
-  `test_outputs_unit.js` 17 条、`test_json_extract_unit.js` 14 条、
-  `test_story_compress_unit.js` 7 条、`test_prompt_deduction_unit.js` 5 条、
+  `test_outputs_unit.js` 18 条、`test_json_extract_unit.js` 14 条、
+  `test_story_compress_unit.js` 8 条、`test_prompt_deduction_unit.js` 5 条、
   `test_snapshot_cut_unit.js` 9 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
@@ -367,8 +367,8 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   两仓归一后逐字相同 ⇒ 桌面那份被同源哨兵连坐覆盖。stage 2 接线桌面 UI（`index.html` 加 `<script>`、
   导出/导入口令弹窗）时再补桌面侧断言。
 - 单测也是「语义收口」的落地护栏：`test_outputs_unit.js` 锁住 P54·第12条的 O-3（手动/AI 定论
-  与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5（送审失败不把
-  已定论打回 `pending`，正文不掉出提示词）与 O-6（`update()` 改写标题/正文/描述后作废已纳入的
+  与 tick 共用 `_settle` ⇒ 一定应用 `settleRules.affects`、一定推系统通知）、O-5/O-5d（送审失败
+  或**送审调用抛错**都不把已定论打回 `pending`，正文不掉出提示词）与 O-6（`update()` 改写标题/正文/描述后作废已纳入的
   审核结论、退回 `pending` 并回报 `reviewReset`；只改 keywords/audience 或 pending/none 项不触发）、
   O-7（`buildReviewPrompt` 改走 `getCardConfig()`：卡带写 `"outputs": {}` 时审核员也能看到 P43
   默认定论条件）、O-9/O-10/O-11（删掉零调用方的 `remove()`、零读取的 `_lastFermentDate`、
@@ -395,8 +395,8 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   proposal_semantic_check / import 六个文件里的 7 处朴素「第一个 `{` 到最后一个 `}`」切片全部改走共享件，
   J12 用源码哨兵盯住这六个文件不再出现 `indexOf('{')`/`lastIndexOf('}')`，J14 用同一批输入证明旧写法
   确实会 `JSON.parse` 失败 —— 模型在 JSON 之后继续解释（解释里又带花括号）时不再把两段缝在一起）；
-  `test_story_compress_unit.js` 的 K1–K7 锁住 P54·§四 story.js 组（假进度提示 / 保留窗口口径 /
-  归档原文 / 死配置）：K1 是 `applyWindow` 「按轮」口径的回归锚（首条仍是 system、窗口内的
+  `test_story_compress_unit.js` 的 K1–K8 锁住 P54·§四 story.js 组（假进度提示 / 保留窗口口径 /
+  归档原文 / 死配置 / 批次轮号口径）：K1 是 `applyWindow` 「按轮」口径的回归锚（首条仍是 system、窗口内的
   「【系统 ·」条目保留、恰好留下 N 轮真实玩家发言）；K2 证明「可压缩量 < 4 条」时**一条提示都不发**
   （旧实现先把「（正在生成日志…）」挂上去再提前返回，成功/失败提示都到不了 ⇒ 进度提示永久假挂）；
   K3 走成功路径断言两条提示的顺序、以及保留窗口**按轮**计（14 轮里留 10 轮真实玩家发言，
@@ -408,7 +408,12 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   K6 锁 `shouldCompress` 三态与「跨日不看条数」的语义（形参 `dayMessageCount` 已改名
   `newMessageCount`，旧名与实际语义不符）；K7 是源码哨兵：`engine/core/storage.js` 不再出现
   零读取方的死配置 `autoCompressRounds`（三个真配置项仍在同一行 —— 等长改写，行号不变，
-  以免 `test_p52_schema_compat.js` 锁的 `:12/:137/:153` 迁移标记漂移）。
+  以免 `test_p52_schema_compat.js` 锁的 `:12/:137/:153` 迁移标记漂移）；K8 是 F1b·B 的两仓源码
+  哨兵：`story.js` 的批次轮号只数**批次开始前**已发生的真实玩家发言（新增 `const batchHead = 1;`，
+  旧形态不再出现，而 `msgFrom: batchMsgFrom` 表达式与变量名保持原样 —— 被 `tools/log_query_smoke.js`
+  F4 钉住），`vfs/logger.js` 不再声称与 `Snapshots._currentRound` 同轴（改称「本日志自身的批次
+  局部轮号」，被 `tools/longline_token_smoke.js` 钉住的 `var BLOCK = 40;` 与「chunks 是 fullText
+  的唯一真源」两串仍在）。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、
@@ -433,7 +438,9 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   （`slice(0, snap.chatLength)` 在压缩后长度不够就变成 no-op）；F1-8 锁 `rollbackLast`
   （「重新生成」走的路）仍能定位最新快照。语义取舍：只认**仍在原文里**的快照点，不引入
   `_currentRound()` 的轮号基准（那要落盘，且牵动 `vfs/logger.js` 的 `msgFrom/msgTo` 口径 ⇒
-  另立 F1b 行）；桌面 `engine/ui_snapshot.js` 两处 `Logger.deleteLogsAfter(...)` 同时补第 4 参
+  另立 F1b 行；F1b 已按 **B 口径**收口：`msgFrom` 只数**批次开始前**已发生的真实玩家发言
+  —— 典型值 0，logger 的轮号是**本日志自身的批次局部轮号**，不再声称与 `snap.round` 同轴，
+  比较时按偏保守处理，源码哨兵见 §4.4 的 K8）；桌面 `engine/ui_snapshot.js` 两处 `Logger.deleteLogsAfter(...)` 同时补第 4 参
   `r.snap.round`，与手机仓 P4（`rn/snapshot_actions.js:34`）对齐。
 
 ================================================================

@@ -227,6 +227,23 @@ run('O-5c 送审成功仍照常置 included（回归护栏）', function() {
   });
 });
 
+run('O-5d 送审调用抛错不把「已纳入」打回 pending，reason 是新失败串', function() {
+  const e = mk();
+  const c = e.O.create({ name: '已纳入案·抛错', content: '正文内容在此' });
+  ok(c.ok, 'O-5d create 应成功');
+  const f = e.O.force(c.id, 'included', '上一轮已纳入');
+  ok(f.ok, 'O-5d force 应成功：' + JSON.stringify(f));
+  return e.O.review(c.id, { chat: function() { return Promise.reject(new Error('网络断了')); } }).then(function(r) {
+    notOk(r.ok, 'O-5d 本次送审应失败');
+    const o = e.O.get(c.id);
+    eq(o.review.state, 'included', 'O-5d 状态应仍是 included');
+    eq(r.kept, 'included', 'O-5d 返回值应说明保留了哪个状态');
+    ok(String(r.reason).indexOf('网络断了') >= 0, 'O-5d 返回 reason 应是本次失败串：' + r.reason);
+    ok(String(o.review.lastError || '').indexOf('网络断了') >= 0, 'O-5d 失败原因应记进 lastError');
+    contains(e.O.formatForPrompt(), '正文内容在此', 'O-5d 送审抛错后正文必须仍在提示词里');
+  });
+});
+
 // ---------- O-6 改写标题/正文/描述后作废已纳入的审核结论 ----------
 
 run('O-6a 已纳入项改正文 ⇒ 退回 pending、未审正文不进提示词、回报 reviewReset', function() {

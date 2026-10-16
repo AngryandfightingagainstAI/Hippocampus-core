@@ -147,7 +147,7 @@
     },
 
     // 删除指定游戏日期之后的日志（撤销回退用）
-    // ★ P4：可选第四参 round（轮次号，定义与 Snapshots._currentRound 同源）。
+    // ★ P4：可选第四参 round（本日志自身的批次局部轮号 —— 跨压缩不保证与 snap.round 同轴，比较时按偏保守处理）。
     //   传 round 时：跨天的日志照旧整条删；恰好落在 gameDate 当天的日志按
     //   chunks 的 msgTo 截断 —— 只删该轮之后的原文，当天更早的原文仍在。
     //   不传 round：行为与旧版完全一致（向后兼容）。
@@ -241,8 +241,8 @@
         if (!m || m.role !== 'user') return false;
         return !String(m.content || '').startsWith('【系统 ·');
       };
-      // 轮次号：与 Snapshots._currentRound 同源（当前 chatHistory 中真实玩家发言的累计条数）。
-      //   本批第一条消息的轮次号由 opts.msgFrom 传入（story.js 给），
+      // 轮次号：本日志自身的批次局部轮号 —— 跨压缩不保证与 snap.round 同轴，比较时按偏保守处理。
+      //   本批第一条消息的轮次号由 opts.msgFrom 传入（story.js 给；F1b·B 修正后典型值是 0），
       //   批次内之后每一条真实玩家发言 +1。
       var roundOf = [];
       var rn = (opts.msgFrom != null) ? opts.msgFrom : null;

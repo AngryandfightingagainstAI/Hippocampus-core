@@ -582,8 +582,8 @@ function runF() {
     pd.indexOf('搜索/清空按钮不搬（DOM 依赖）') < 0);
   check('F12 rn_bootstrap.js 装载 LogQuery',
     read(path.join(root, 'rn', 'rn_bootstrap.js')).indexOf("load('LogQuery'") >= 0);
-  if (!HAVE_OTHER) skip('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 21001 B CRLF / RN 20509 B LF）', '另一仓不可见（' + DESK + '）');
-  else check('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 21001 B CRLF / RN 20509 B LF）',
+  if (!HAVE_OTHER) skip('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 21113 B CRLF / RN 20621 B LF）', '另一仓不可见（' + DESK + '）');
+  else check('F13 桌面 vfs/logger.js 与 RN 同源（P30：行尾归一后比内容；桌面 21113 B CRLF / RN 20621 B LF）',
     lfText(path.join(DESK, 'vfs', 'logger.js')) === lfText(path.join(root, 'vfs', 'logger.js')));
 }
 

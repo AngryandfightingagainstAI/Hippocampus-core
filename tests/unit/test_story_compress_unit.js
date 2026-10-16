@@ -187,4 +187,17 @@ H.run('K7 死配置 autoCompressRounds 已摘掉，三个真配置项仍在', fu
   H.contains(src, 'logging: { enabled: true, windowRounds: 10, summaryInject: 3 }', 'K7 三个真配置项仍在同一行');
 });
 
+// ---------- K8（F1b·B）----------
+H.run('K8 F1b·B：msgFrom 只数批次开始前的真实玩家发言；logger 不再声称与 snap.round 同轴', function() {
+  const st = fs.readFileSync(path.join(H.ROOT, 'engine', 'story.js'), 'utf8');
+  H.ok(st.indexOf('const batchHead = 1;') >= 0, 'K8 story.js 有批次起点常量 batchHead');
+  H.ok(st.indexOf('for (let i = 0; i < batchHead; i++)') >= 0, 'K8 story.js 计数循环只走到批次起点');
+  H.notOk(st.indexOf('i <= 1') >= 0, 'K8 旧 `i <= 1` 形态已不在');
+  H.ok(st.indexOf('msgFrom: batchMsgFrom') >= 0, 'K8 msgFrom: batchMsgFrom 表达式原样保留（log_query_smoke F4 pin）');
+  const lg = fs.readFileSync(path.join(H.ROOT, 'vfs', 'logger.js'), 'utf8');
+  H.ok(lg.indexOf('本日志自身的批次局部轮号') >= 0, 'K8 logger.js 注释改为批次局部轮号');
+  H.notOk(lg.indexOf('与 Snapshots._currentRound 同源') >= 0, 'K8 logger.js 不再声称与 snap.round 同轴');
+  H.ok(lg.indexOf('var BLOCK = 40;') >= 0 && lg.indexOf('chunks 是 fullText 的唯一真源') >= 0, 'K8 两串被 pin 的字面量仍在');
+});
+
 H.finish();

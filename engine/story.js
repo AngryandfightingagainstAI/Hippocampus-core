@@ -580,8 +580,14 @@ var StoryLoop = {
 
     Platform.ui.appendHint('（正在生成日志…）');
 
+    // F1b·B（口径修正）：只数「批次开始前」已经发生的真实玩家发言 —— 本批从 chatHistory[batchHead]
+    //   之后开始（第 0 条是系统/开篇），批次之前的玩家发言属于上一批、已在各自批次里记过轮号，
+    //   所以这里的典型值是 0，与变量名和 msgFrom 的语义对齐（旧写法按「前两条」计数，会把开篇后
+    //   第 1 条也算进来，且随 chatHistory 增长而语义漂移）—— 那正是本修正要拿掉的口径。
+    //   注意：`msgFrom: batchMsgFrom` 表达式与变量名被 tools/log_query_smoke.js F4 钉住，不要改。
+    const batchHead = 1;
     let batchMsgFrom = 0;
-    for (let i = 0; i < GameState.chatHistory.length && i <= 1; i++) {
+    for (let i = 0; i < batchHead; i++) {
       if (isRealUserMsg(GameState.chatHistory[i])) batchMsgFrom++;
     }
 
