@@ -36,6 +36,8 @@ var ShopStore = require('../shop_store.js');
 var ShopModal = require('./ShopModal.js').ShopModal;
 // P42（用户 m09047）：浮层里的多行输入也跟内容长高
 var AutoInput = require('./AutoInput.js').AutoInput;
+// P54·第10条：外部 AI 通道的「复制提示词」（仓内先例 rn/export_util.js:18、InstructionModal.js:36）
+var Clipboard = RN.Clipboard;
 
 // toast 型 → token 色键（同 index.html L763-781）
 var TOAST_BG = {
@@ -196,6 +198,9 @@ function PromptModal(props) {
       fontSize: f.base, color: c.ink, marginBottom: 12
     },
     inputMulti: { minHeight: 92, textAlignVertical: 'top' },
+    copyBlock: { marginBottom: 10 },
+    copyHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 6 },
+    copyLabel: { flex: 1, fontSize: f.sm, color: c.muted },
     btnRow: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
     btn: {
       borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
@@ -217,6 +222,36 @@ function PromptModal(props) {
           <TouchableWithoutFeedback onPress={function () { /* 吞内容点击，不冒泡关框 */ }}>
             <View style={styles.box}>
               <Text style={styles.message}>{pending.message}</Text>
+              {opts.copyText ? (
+                <View style={styles.copyBlock}>
+                  <View style={styles.copyHead}>
+                    <Text style={styles.copyLabel}>{opts.copyLabel || '提示词（复制给任意 AI）'}</Text>
+                    <TouchableOpacity
+                      style={styles.btn}
+                      onPress={function () {
+                        try {
+                          Clipboard.setString(String(opts.copyText));
+                          StoryStore.pushToast('已复制提示词', { type: 'success' });
+                        } catch (eCopy) {
+                          StoryStore.pushToast('复制失败：' + eCopy.message, { type: 'error' });
+                        }
+                      }}
+                    >
+                      <Text style={styles.btnCancelText}>复制</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <AutoInput
+                    style={[styles.input, styles.inputMulti]}
+                    value={String(opts.copyText)}
+                    onChangeText={function () { /* 只读展示 */ }}
+                    editable={false}
+                    minLines={6}
+                    maxLines={10}
+                    lineHeight={Math.round(f.sm * 1.7)}
+                    paddingV={10}
+                  />
+                </View>
+              ) : null}
               {opts.multiline ? (
                 <AutoInput
                   style={[styles.input, styles.inputMulti]}

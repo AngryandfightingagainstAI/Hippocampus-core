@@ -250,8 +250,31 @@ var StoryLoop = {
       // ★ 流式 API 支持：检查 profile.stream 标志
       let content = '';
       const useStream = __activeProfile && __activeProfile.stream === true;
+
+      // P54·第10条：可选「外部 AI 通道」—— 把这一轮的提示词交给用户复制，再把 AI 回的正文粘回来。
+      //   默认 direct（= 现状，直连 API）。只有 Storage.getGlobal().storyChannel === 'external'
+      //   且平台实装了 Platform.ui.requestExternalReply 才切走，其余情况一律照旧（fail-open：
+      //   老档没有这个键 ⇒ 行为与改动前逐字一致）。
+      let __channel = 'direct';
+      try {
+        const __gCh = Storage.getGlobal();
+        if (__gCh && __gCh.storyChannel === 'external' &&
+            Platform.ui && typeof Platform.ui.requestExternalReply === 'function') {
+          __channel = 'external';
+        }
+      } catch (__eCh) { __channel = 'direct'; }
       
-      if (useStream && typeof ApiClient.chatStream === 'function') {
+      if (__channel === 'external') {
+        // 外部通道：整轮提示词交给 UI（用户复制给任意 AI），等他把回复粘回来。
+        //   取消 / 空回复 ⇒ 本轮跳过（不写历史、不推进时间）；busy 由外层 finally 收（story.js:494）。
+        const __manual = await Platform.ui.requestExternalReply(toSend);
+        if (myToken !== GameState._sessionToken) return;
+        if (__manual === null || __manual === undefined || String(__manual).trim() === '') {
+          Platform.ui.appendHint('（这一轮没拿到外部 AI 的回复，已跳过）');
+          return;
+        }
+        content = String(__manual);
+      } else if (useStream && typeof ApiClient.chatStream === 'function') {
         // 流式模式：实时渲染思考链
         Platform.ui.showStoryLoading(false);
         Platform.ui.streamStartLive();

@@ -451,6 +451,34 @@ function bridgeStory(ui) {
     StoryStore.renderGame();
   });
 
+  // P54·第10条：可选「外部 AI 通道」—— 引擎把整轮提示词交过来，用户复制给任意 AI，
+  //   再把 AI 回的正文 / JSON 粘回来。复用 OverlayHost.PromptModal 的 multiline + copyText
+  //   （手机不新写弹窗组件）；返回 Promise<string|null>（取消 ⇒ null，引擎当「跳过这轮」）。
+  function formatExternalPrompt(messages) {
+    var out = '';
+    (messages || []).forEach(function (m) {
+      var role = (m && m.role) || 'user';
+      var who = role === 'system' ? '【系统】' : (role === 'assistant' ? '【GM】' : '【玩家】');
+      out += who + '\n' + String((m && m.content) || '') + '\n\n';
+    });
+    return out;
+  }
+  wrapRet('requestExternalReply', function (messages) {
+    return StoryStore.promptOpen(
+      '这一轮走外部 AI 通道：先把提示词复制给任意 AI，再把它回的正文 / JSON 粘到下面。',
+      '',
+      {
+        multiline: true,
+        rows: 8,
+        okText: '提交这条回复',
+        cancelText: '跳过这轮',
+        placeholder: '把 AI 回的正文 / JSON 粘到这里',
+        copyText: formatExternalPrompt(messages),
+        copyLabel: '提示词（点右边「复制」给任意 AI）'
+      }
+    );
+  });
+
   // P2（4-3b）
   wrapVoid('setBusy', function (busy) { StoryStore.setBusy(busy); });
   wrapVoid('showStoryLoading', function () { StoryStore.setLoading(true); });

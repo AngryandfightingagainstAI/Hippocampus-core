@@ -139,7 +139,7 @@
       // 返回值一律透传（Promise / 数值 / 布尔原样返回，confirmAsync 可 await）；
       // UI 未就绪（含 RN 未覆盖）时返回 false，供 dialog.alert 等需要判断
       // "是否投递成功"的调用方走兜底。
-      // 契约总数 = NAMES 20 + 单独委托 ui.openShop = 21。
+      // 契约总数 = NAMES 21 + 单独委托 ui.openShop = 22（P54·第10条新增 requestExternalReply）。
       var NAMES = [
         'toast', 'appendHint', 'fillIcons', 'confirmAsync',
         'showScreen', 'appendStory', 'appendDiceResult',
@@ -147,7 +147,10 @@
         'renderSidebarExpanded', 'appendProposalCard', 'updateTokenBadge',
         'showStoryError', '_currentRoundNum', 'showSettingsTab',
         'showHome', 'renderGame', 'renderChapterHead', 'clearStory',
-        'streamStartLive', 'streamAppendReasoning', 'streamFinishLive'
+        'streamStartLive', 'streamAppendReasoning', 'streamFinishLive',
+        // P54·第10条：外部 AI 通道的「复制提示词 → 粘贴回复」（桌面转发 UI.requestExternalReply；
+        // RN 由 rn_platform.js 覆盖；两边都没实装时引擎侧 typeof 守卫会退回直连）
+        'requestExternalReply'
       ];
       var ui = {};
       NAMES.forEach(function(name) {

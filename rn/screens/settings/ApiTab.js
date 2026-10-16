@@ -71,6 +71,28 @@ function ApiTab() {
     updateActive(patch);
   }
 
+  // P54·第10条：对话通道（直连 API / 外部 AI 手动复制提示词→粘贴回复）。
+  //   落盘在 Storage.getGlobal().storyChannel；引擎每轮现读（story.js callAI()）⇒ 下一轮即生效。
+  function setStoryChannel(v) {
+    try {
+      var g = globalThis.Storage.getGlobal();
+      g.storyChannel = (v === 'external') ? 'external' : 'direct';
+      globalThis.Storage.setGlobal(g);
+      bumpVer(function (n) { return n + 1; });
+      if (globalThis.StoryStore && globalThis.StoryStore.pushToast) {
+        globalThis.StoryStore.pushToast(
+          g.storyChannel === 'external' ? '已切到外部 AI 通道：每轮手动复制 → 粘贴' : '已切回直连 API',
+          { type: 'success' });
+      }
+    } catch (e4) {}
+  }
+  function currentChannel() {
+    try {
+      var g = globalThis.Storage.getGlobal();
+      return (g && g.storyChannel === 'external') ? 'external' : 'direct';
+    } catch (e5) { return 'direct'; }
+  }
+
   // ---- 列表操作（pickApi/addApi/addApiPreset/dupApi/delApi 语义）----
   function pick(id) {
     globalThis.ApiManager.setActive(id);
@@ -293,6 +315,21 @@ function ApiTab() {
             ],
             onChange: function (v) { setField('stream', v === 'on'); }
           }),
+          React.createElement(Controls.SetSelect, {
+            label: '对话通道',
+            value: currentChannel(),
+            options: [
+              { value: 'direct', label: '直连 API（默认）' },
+              { value: 'external', label: '外部 AI（手动复制 → 粘贴）' }
+            ],
+            onChange: setStoryChannel
+          }),
+          React.createElement(
+            View,
+            { style: { marginTop: 4, marginBottom: 8 } },
+            React.createElement(Text, { style: { fontSize: f.xs, color: c.muted, lineHeight: 18 } },
+              '直连：把提示词发给上面这个端点（省事，但要有 Key）。外部 AI：App 不联网，你先把提示词复制给任意 AI（网页版也行），再把它的回复粘回来（隐私不动，代价是每轮两步）。')
+          ),
           React.createElement(
             View,
             { style: { flexDirection: 'row', alignItems: 'center', gap: 12, marginTop: 12 } },
