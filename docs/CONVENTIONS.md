@@ -339,12 +339,12 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：11 套 / 175 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：12 套 / 180 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
-  `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条）。
+  `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条、`test_ui_proxy_cycle_unit.js` 5 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2636 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -506,6 +506,21 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   S6 是行为断言：沙箱注入 `require` 让 `vfs/secure_envelope.js` 缺席 ⇒ 信封被认出、
   `secureUnwrap` 回 `{ok:false, reason:'加密模块不可用'}`、明文仍放行；换成真模块 ⇒
   口令对解得开、口令错回「口令不对，或文件被改动过」（两种原因共用一句是有意的：不替攻击者分辨）。
+- `test_ui_proxy_cycle_unit.js` 的 C1–C5 锁住 **P60·UI 自动代理不得自递归**（真机上「外部 AI 通道」
+  一点发送就 `Maximum call stack size exceeded`，弹窗从未出现）：
+  搬运实现 `platform/platform_adapter.js:143-163` 的 ui 组是**裸全局自动代理**（`ui[name] = function () {
+  return globalThis.UI[name].apply(this, arguments); }`），而 `rn/rn_bootstrap.js:136` 又把 `globalThis.UI`
+  指向 `Platform.ui` 自己 ⇒ 任何**没被 RN 壳 `mergeUi` 覆盖**的名字，调用时都会无限自我调用而不是报错，
+  只有栈溢出。真凶是 `rn/rn_platform.js` 的 `UI_NAMES` 少登记了 `requestExternalReply`（21 个），
+  于是 `Platform.ui.requestExternalReply` 落到自动代理上。C1 是**机制性对账**：从 `platform_adapter.js`
+  的 `UI_NAMES` 精确抽出「会被代理的名字」集合，断言每个名字都在 `rn/rn_platform.js` 的 `UI_NAMES` 里
+  （新增搬运端点而忘记登记 RN 壳时立刻红，不用等下一次栈溢出）；C2 是行为断言：真加载 `rn/rn_platform.js`
+  后 `Platform.ui.requestExternalReply(messages)` 必须返回 bridge 的 promise，而不是自我调用；
+  C3 钉住提示词内容（`【系统】`/`【玩家】` 两段都在 `copyText` 里）；C4 造一个「搬运有、壳没登记」的假端点，
+  断言 `mergeUi` 的 PASSTHROUGH 兜底把它**切断为返回 false 并 warn 一次**，而不是让它自递归；
+  C5 是源码哨兵（`UI_NAMES` 含 `requestExternalReply`、头注计数与数组长度一致、PASSTHROUGH 白名单在、
+  自动代理注释仍在）。教训：这类「缺失即死循环」的缺陷不会被行为测试撞见（一调就崩进程），
+  必须靠「名单对账」这种静态断言提前拦住。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

@@ -10,13 +10,13 @@
 //                           "存档最后防线"语义挂到真实后台切换上）；
 //   image.compressFile    → 4-6 已实装（compressFileImpl，见下）；本行原为
 //                           「RN 未实装」占位注释，P6·S4-3 更正；
-//   ui.* 21 接口          → 4-2/4-3 起已逐键桥接（导航/叙事族壳，
-//                           见 bridgeNavigation / buildUiShell），原「战役 3
+//   ui.* 22 接口          → 4-2/4-3 起已逐键桥接（导航/叙事族壳；P60 补登记
+//                           requestExternalReply，此前漏登致真机自递归），原「战役 3
 //                           桥接层覆盖」为计划期注释，P6·S4-3 更正。
 //
 // 合并形态（install）：对搬运来的 Platform 对象"就地浅合并"——
 //   1) http/dialog/image/lifecycle 四组整体替换为 RN 实装；
-//   2) ui 组逐键合并：21 个 RN 壳无条件记日志/记调用，同时委托保留搬运实现
+//   2) ui 组逐键合并：22 个 RN 壳无条件记日志/记调用，同时委托保留搬运实现
 //      （如 ui.openShop 的 UI_Shop 转发）；base 返回 null/false 时壳返回 false，
 //      保持"未投递"语义；base 未来有真实有效返回则透传；
 //   3) 就地变更而非换对象：require 缓存（如 shop.js 加载期捕获）、
@@ -196,7 +196,13 @@ var UI_NAMES = [
   'renderSidebarExpanded', 'appendProposalCard', 'updateTokenBadge',
   'showStoryError', '_currentRoundNum', 'showSettingsTab',
   'showHome', 'renderGame', 'renderChapterHead', 'clearStory',
-  'openShop'
+  'openShop',
+  // P60：外部 AI 通道契约（P54·第10条新增）。原先只在 platform_adapter NAMES 里有、
+  //   这份名单漏登，mergeUi 便不覆盖它 ⇒ 保留 base 的自动代理（转发裸全局 UI[name]），
+  //   而 rn_bootstrap 把 globalThis.UI 指到 Platform.ui 本身 ⇒ 自递归，
+  //   真机点「发送」立刻 Maximum call stack size exceeded（native stack depth），
+  //   提示词弹窗一次都出不来。登记进壳名单独有覆盖、并再由 bridgeStory 换成真实现。
+  'requestExternalReply'
 ];
 
 var MAX_RECORDS = 300;
@@ -268,6 +274,29 @@ function mergeUi(baseUi, shell) {
   Object.keys(shell).forEach(function (key) {
     if (key === '__calls') { merged.__calls = shell.__calls; return; }
     merged[key] = shell[key];
+  });
+  // P60 兜底：base 上「壳没覆盖」的键一律不许原样留着。
+  //   原因：搬运实现里这些键全是自动代理 `ui[name] = … UI[name].apply(UI, …)`，
+  //   而 rn_bootstrap 把 globalThis.UI 指到 Platform.ui 本身 ⇒ 调用即自递归。
+  //   P60 事故就是 requestExternalReply 漏登本名单，真机点「发送」直接
+  //   Maximum call stack size exceeded (native stack depth)。
+  //   手写实现（openShop 走 UI_Shop、stream* 走 UI_Thinking）不在裸 UI 上，放行。
+  var PASSTHROUGH = {
+    openShop: 1, streamStartLive: 1, streamAppendReasoning: 1, streamFinishLive: 1
+  };
+  Object.keys(merged).forEach(function (key) {
+    if (key === '__calls' || shell.hasOwnProperty(key) || PASSTHROUGH[key]) return;
+    if (typeof merged[key] !== 'function') return;
+    merged[key] = function () {
+      if (!merged['__cutWarn_' + key]) {
+        merged['__cutWarn_' + key] = true;
+        try {
+          console.warn('[Platform.ui] ' + key + '：搬运实现是裸 UI 自动代理（调用会自递归），'
+            + 'RN 壳名单未登记 ⇒ 已切断为返回 false。补登 UI_NAMES 并加桥接实现可恢复。');
+        } catch (eWarn) { /* 记录失败不得影响返回 */ }
+      }
+      return false;
+    };
   });
   return merged;
 }
