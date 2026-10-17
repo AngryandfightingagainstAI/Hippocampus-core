@@ -29,6 +29,7 @@ const started = Date.now();
 let ok = 0;
 let fail = 0;
 const bad = [];
+const badDetail = [];
 
 files.forEach(function(f) {
   const abs = path.join(DIR, f);
@@ -47,9 +48,16 @@ files.forEach(function(f) {
     const why = m ? (p + ' 通过 / ' + q + ' 失败，exit=' + r.status)
                   : ('没有 SUMMARY（套件没跑完，可能崩溃），exit=' + r.status);
     console.log('FAIL ' + f + '（' + why + '）');
-    out.split(/\r?\n/).filter(function(l) { return l.indexOf('FAIL: ') === 0; }).forEach(function(l) {
-      console.log('     ' + l);
-    });
+    const lines = out.split(/\r?\n/);
+    const failsOfSuite = lines.filter(function(l) { return l.indexOf('FAIL: ') === 0; });
+    failsOfSuite.forEach(function(l) { console.log('     ' + l); });
+    // P57：annotation 只带套件名时，看详情仍要能免鉴权拿到 —— 把第一条断言失败原文
+    // 一并塞进 annotation（GitHub annotation 是单行，故截断），并把这套的输出尾巴
+    // 打进 step 日志（CI 里 tee 成 rn_unit_*.log 随 artifact 上传，仍无需 token）。
+    if (failsOfSuite.length) badDetail.push(f + ' → ' + failsOfSuite[0].slice(6, 160));
+    else badDetail.push(f + '（无 FAIL 行，疑似崩溃）');
+    console.log('     --- ' + f + ' 输出末尾 ---');
+    lines.slice(-12).forEach(function(l) { if (l.trim()) console.log('     ' + l); });
   }
 });
 
@@ -60,7 +68,8 @@ console.log('UNIT_END SUITES=' + files.length + ' UNIT_OK=' + ok + ' UNIT_FAIL='
 // 而 job 日志下载要鉴权（见 .github/workflows/smoke.yml 的 flake 取证注释）。
 // 本地跑只是多一行普通输出，不影响任何人。
 if (bad.length) {
-  console.log('::error title=单元测试失败::' + bad.join('、') + '（失败套件名；详见 job 日志或 rn_unit_*.log artifact）');
+  console.log('::error title=单元测试失败::' + badDetail.join(' ｜ ').slice(0, 700) +
+    '（失败套件与首条断言；详见 job 日志或 rn_unit_*.log artifact）');
 }
 // 退出码必须把「崩溃到没有 SUMMARY」也算失败：只累加 SUMMARY 里的失败数会让崩溃静默变绿。
 process.exit((fail || bad.length) ? 1 : 0);

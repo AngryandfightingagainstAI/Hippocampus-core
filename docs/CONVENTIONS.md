@@ -470,7 +470,9 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   V20 是本次排查 CI run #30（「单元测试」步骤变红、annotations 只给得到 exit code 1、job 日志要鉴权）
   时补的钉子：跑批器 `tools/run_unit_tests.js` 必须**把「崩溃到没有 SUMMARY」也算失败**
   （旧实现 `process.exit(fail ? 1 : 0)` 只累加 SUMMARY 里的失败数 ⇒ 套件崩了反而静默变绿），
-  失败时必须打印 `::error title=单元测试失败::<套件名>` annotation（公开仓 annotations API 免鉴权可读），
+  失败时必须打印 `::error title=单元测试失败::<套件名> → <首条断言原文>` annotation
+  （公开仓 annotations API 免鉴权可读；只给套件名时看详情仍要下 artifact，所以把首条 `FAIL:` 原文
+  截断后一并塞进去，失败套件的输出末尾 12 行也打进 step 日志，随 `rn_unit_*.log` 一起留档），
   且 `.github/workflows/smoke.yml` 的单测步骤要 `tee` 出 `rn_unit_*.log` 并作为 artifact 上传
   （`set -o pipefail` 保住退出码）。
   桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W16）逐条比
@@ -483,7 +485,8 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `vfs.js` 的只读探针与「探测件缺失即乐观」分支；W14 查桌面存档页（`engine/ui_cards.js`）
   空/非空**两支**都拼上存储不可用警示；W15 在桌面侧直接 `require` 真实 `vfs.js` + 兜底 adapter，
   断言读侧探针说「不可用」并给出成因 —— 手机侧有 V15/V18 的行为断言，桌面侧也不再只靠同源连坐。
-  W16 在桌面侧把 V20 的跑批器/CI 硬化也钉一遍（手机仓不可见时明确跳过，不假装通过）。
+  W16 在桌面侧把 V20 的跑批器/CI 硬化也钉一遍（含「annotation 带首条断言原文」与「失败套件输出末尾
+  进 step 日志」两条，手机仓不可见时明确跳过，不假装通过）。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

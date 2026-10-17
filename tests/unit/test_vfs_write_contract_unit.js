@@ -366,6 +366,8 @@ run('V20 跑批器：崩溃也算失败，且失败要给免鉴权可读的 anno
   contains(r, 'process.exit((fail || bad.length) ? 1 : 0)', '退出码要把「崩溃无 SUMMARY」也算失败');
   contains(r, '没有 SUMMARY（套件没跑完，可能崩溃）', '崩溃套件要说清为什么算失败');
   contains(r, '::error title=单元测试失败::', '失败时应给出可免鉴权读取的 annotation');
+  contains(r, 'badDetail', 'annotation 要带首条断言原文，不能只给套件名');
+  contains(r, '输出末尾', '失败套件的输出尾巴要打进 step 日志（CI 里随 artifact 上传）');
 
   const w = src('.github/workflows/smoke.yml');
   contains(w, 'rn_unit_', '单测输出应落盘成可上传的日志');
