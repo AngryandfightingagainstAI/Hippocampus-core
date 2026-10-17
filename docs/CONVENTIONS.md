@@ -336,12 +336,12 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：10 套 / 162 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：11 套 / 175 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
-  `test_vfs_write_contract_unit.js` 20 条）。
+  `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -475,7 +475,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   截断后一并塞进去，失败套件的输出末尾 12 行也打进 step 日志，随 `rn_unit_*.log` 一起留档），
   且 `.github/workflows/smoke.yml` 的单测步骤要 `tee` 出 `rn_unit_*.log` 并作为 artifact 上传
   （`set -o pipefail` 保住退出码）。
-  桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W16）逐条比
+  桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W17）逐条比
   两仓 `vfs/vfs.js`、`vfs/saves.js`、`engine/core/gamestate.js`、`engine/import/vault.js` 的形状，
   并断言 `vault.js` 两仓**逐字节相同** —— 行为断言全在手机仓，桌面只靠同源连坐，所以同源本身也钉住。
   W9/W9c 反过来禁掉无条件 `type: 'StorageFull',`（旧写法一律把失败记成配额满）；
@@ -487,6 +487,22 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   断言读侧探针说「不可用」并给出成因 —— 手机侧有 V15/V18 的行为断言，桌面侧也不再只靠同源连坐。
   W16 在桌面侧把 V20 的跑批器/CI 硬化也钉一遍（含「annotation 带首条断言原文」与「失败套件输出末尾
   进 step 日志」两条，手机仓不可见时明确跳过，不假装通过）。
+  W17（P58）钉「加密模块缺失不得把加密信封当明文解」：桌面 `engine/ui_cards.js` 的 `_unsealText`
+  在 `window.SecureEnvelope` 缺失时，只有**看起来不像信封**的文本才原样放行，否则返回
+  `{ ok:false, reason:'加密模块未加载（vfs/secure_envelope.js），解不开这份加密导出' }`
+  —— 旧写法无条件 `{ ok:true, text:s }`，会把「模块没加载」掩盖成「这是一份明文档」，
+  下游拿密文当明文解析，报出来的是「JSON 解析失败」，成因被彻底藏掉。
+- `test_json_locate_unit.js` 的 L1–L7 + S1–S6 锁住 **P58·导入失败别把真因藏掉**：
+  L1–L7 是行为断言（坏 JSON 必须 `{ok:false}` 且 `loc.pos` 不为 0、给出上下文/全文长度/可能原因，
+  截断与裸换行各有一句 hint，字符串内容里的中文弯引号**不许**被当成结构引号改掉），
+  S1–S4 是源码哨兵：三处粘贴入口（卡片导入、设置页存档导入、主题导入）都走
+  `JsonLocate.parseJsonLoose` 而不再各自 `JSON.parse`/自己替换弯引号，且失败文案统一由
+  `locDetail(loc)` 拼，`export_util.js` 的 `secureUnwrap` 在模块缺失时只放行非信封文本。
+  S5 钉「模块缺席时 `isEnvelopeText` 仍要认出信封」——否则屏幕在 `isEnvelopeText` 这一步
+  就把密文判成普通文本，永远走不到 `secureUnwrap`，S4 那条报错分支会变成不可达代码；
+  S6 是行为断言：沙箱注入 `require` 让 `vfs/secure_envelope.js` 缺席 ⇒ 信封被认出、
+  `secureUnwrap` 回 `{ok:false, reason:'加密模块不可用'}`、明文仍放行；换成真模块 ⇒
+  口令对解得开、口令错回「口令不对，或文件被改动过」（两种原因共用一句是有意的：不替攻击者分辨）。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

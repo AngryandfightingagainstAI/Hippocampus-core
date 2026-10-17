@@ -20,6 +20,10 @@ var Clipboard = RN.Clipboard;
 // P54·第17条 stage 2：信封加密件（纯 Node 可测；空口令一律明文 ⇒ 默认行为不变）
 var SecureEnvelope = require('../vfs/secure_envelope.js');
 
+// P58：信封的「长相」——加密模块不可用时用它区分「加密导出」与「明文 JSON」。
+// 只认 format 是首键这一种（encrypt() 的 JSON.stringify 顺序固定），不做宽松嗅探。
+var ENV_HEAD = /^\s*\{\s*"format"\s*:\s*"ai_tg_secure"/;
+
 // 卡带导出（桌面 exportCard：卡对象 JSON.parse(JSON.stringify(card)) 等价）
 function buildCardText(cardId) {
   try {
@@ -60,6 +64,7 @@ function buildSaveText(cardId, saveId) {
 // P54·第17条 stage 2：口令封装（薄一层 —— 口令由屏幕层的 OverlayHost.PromptModal 收）
 //   · secureWrap：空口令 ⇒ 明文原样回（encrypted:false）；有口令 ⇒ encrypt()
 //   · secureUnwrap：明文原样放行；信封 ⇒ decrypt()（口令不对只回 reason）
+//     模块缺失 ⇒ { ok:false, reason:'加密模块不可用' }（P58：不再静默当明文放行）
 //   · isEnvelopeText：屏幕层用它决定「要不要弹口令框」
 function secureWrap(text, passphrase, opts) {
   var s = String(text == null ? '' : text);
@@ -72,15 +77,29 @@ function secureWrap(text, passphrase, opts) {
 }
 function secureUnwrap(text, passphrase) {
   var s = String(text == null ? '' : text);
-  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') return { ok: true, text: s, encrypted: false };
+  // P58：模块缺失时不能当明文放行 —— 信封本身是一段合法 JSON，放行后下游只会报
+  //   「校验失败 / 这不是本引擎导出的存档」，把「加密模块没加载」这个真因藏掉。
+  //   也不能连明文导入一起拦下 ⇒ 只对「看起来是信封」的输入报错。
+  //   信封由 vfs/secure_envelope.js:468 的 encrypt() 直接 JSON.stringify 落盘，format 是首键。
+  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') {
+    if (!looksLikeEnvelope(s)) return { ok: true, text: s, encrypted: false };
+    return { ok: false, reason: '加密模块不可用' };
+  }
   if (!SecureEnvelope.isEnvelope(s)) return { ok: true, text: s, encrypted: false };
   var r = SecureEnvelope.decrypt(s, passphrase);
   if (!r.ok) return { ok: false, reason: r.reason };
   return { ok: true, text: r.text, encrypted: true };
 }
+// P58：信封「长相」嗅探 —— 只认 format 是首键那一种（encrypt() 的 JSON.stringify 顺序固定）。
+//   加密模块可用时由 SecureEnvelope.isEnvelope 做权威判断；不可用时靠它，屏幕才会进
+//   「要不要口令」那一支、进而听到「加密模块不可用」，而不是把密文当明文去解析。
+function looksLikeEnvelope(text) {
+  return ENV_HEAD.test(String(text == null ? '' : text).replace(/^\uFEFF/, ''));
+}
 function isEnvelopeText(text) {
-  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') return false;
-  return SecureEnvelope.isEnvelope(String(text == null ? '' : text));
+  var s = String(text == null ? '' : text);
+  if (!SecureEnvelope || typeof SecureEnvelope.isEnvelope !== 'function') return looksLikeEnvelope(s);
+  return SecureEnvelope.isEnvelope(s);
 }
 
 // 设备通道：Share.share → 失败降级 Clipboard（同 DataTab.shareOrCopy）

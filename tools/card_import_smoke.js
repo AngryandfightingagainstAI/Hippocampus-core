@@ -99,7 +99,10 @@ section('V-7 CardsScreen 接线（源码级）');
 var cs = fs.readFileSync(path.join(root, 'rn', 'screens', 'CardsScreen.js'), 'utf8');
 check('V-7a 屏幕走 parseCardJson（不再是裸 JSON.parse + 只贴开头 40 字）',
   cs.indexOf('parseCardJson') >= 0 && cs.indexOf('JSON.parse(text)') < 0);
-check('V-7b 失败文案带真实偏移与可能原因', cs.indexOf('loc.pos') >= 0 && cs.indexOf('loc.hint') >= 0);
+// P58：偏移文案统一收进 JsonLocate.locDetail，屏幕只负责拼接 ⇒ 两处分别钉
+var jlSrc = fs.readFileSync(path.join(root, 'rn', 'json_locate.js'), 'utf8');
+check('V-7b 失败文案带真实偏移与可能原因（屏幕调 locDetail，文案在 json_locate）',
+  cs.indexOf('JsonLocate.locDetail(') >= 0 && jlSrc.indexOf('loc.pos') >= 0 && jlSrc.indexOf('loc.hint') >= 0);
 check('V-7c 卡带行按钮容器允许换行（删除卡带不再被挤出屏）',
   /btnRow: \{[^}]*flexWrap/.test(cs), (cs.match(/btnRow: \{[^}]*\}/) || [''])[0]);
 

@@ -1,6 +1,12 @@
 // ============================================================
-// P35 · 卡带 JSON 解析/定位（A 类，纯 JS，零 React / 零 RN / 零 DOM）
-// RN 独有。消费方：rn/screens/CardsScreen.js 的「诊断并导入」。
+// P35 · 粘贴 JSON 解析/定位（A 类，纯 JS，零 React / 零 RN / 零 DOM）
+// RN 独有。消费方：
+//   · rn/screens/CardsScreen.js 的「诊断并导入」（卡带，P35 起）
+//   · rn/screens/settings/DataTab.js 的「导入单存档」（P58 起）
+//   · rn/screens/settings/ColorTab.js 的「粘贴导入」主题包（P58 起）
+// P58 之前存档与主题两条路各自手写清洗，还是 P35 已判定为错的那版「整段换弯引号」，
+// 于是同一份导出粘回来会被自己的清洗弄成坏 JSON（P58 的复现就在 tests/unit/
+// test_json_locate_unit.js）。现在三条路只认下面 parseJsonLoose 一份口径。
 //
 // 为什么要有它（真机两次踩坑）：
 //   1. H2-R4 的清洗把**所有**弯引号 “ ” 一律换成 " —— 但卡带的字符串**内容**里本来就会
@@ -79,22 +85,45 @@ function locateJsonError(text) {
           : '结构不完整：常见于粘贴被截断（末尾不是 }）');
 }
 
-// 卡带 JSON 的解析入口：{ ok:true, card, usedFallback, text } | { ok:false, message, loc, text }
-function parseCardJson(raw) {
+// 定位结果的展示文案：三处粘贴入口（卡带 / 存档 / 主题）共用同一句话，
+//   免得同一个坏 JSON 在三个页面里报出三种详略。
+function locDetail(loc) {
+  if (!loc) return '';
+  return '（第 ' + loc.pos + ' 字符附近，全文 ' + loc.length + ' 字：…' + loc.around + '…）'
+    + '\n可能原因：' + loc.hint
+    + '\n末尾：…' + loc.tail + '…';
+}
+
+// 通用粘贴 JSON 解析口径（P58：卡带 / 存档 / 主题三条路共用一份）：
+//   先原样解析（只去 BOM / 零宽），失败才把弯引号当「结构引号」兜底，再失败给定位。
+//   为什么不能先换弯引号：见文件头第 1 条 —— 字符串**内容**里的 “ ” 是合法内容，
+//   一律换成 " 会把字符串提前闭合，把一份好 JSON 改成坏 JSON（P58 复现：
+//   自己导出的存档里只要有一句中文引号，粘回来就报「JSON 解析失败」）。
+// { ok:true, value, usedFallback, text } | { ok:false, message, loc, text }
+function parseJsonLoose(raw) {
   var base = stripPasteNoise(raw);
   if (!String(base).trim()) return { ok: false, message: '内容为空', loc: null, text: base };
   var first = tryParse(base);
-  if (first.ok) return { ok: true, card: first.card, usedFallback: false, text: base };
+  if (first.ok) return { ok: true, value: first.card, usedFallback: false, text: base };
   var conv = toAsciiQuotes(base);
   if (conv !== base) {
     var second = tryParse(conv);
-    if (second.ok) return { ok: true, card: second.card, usedFallback: true, text: conv };
+    if (second.ok) return { ok: true, value: second.card, usedFallback: true, text: conv };
   }
   return { ok: false, message: first.message, loc: locateJsonError(base), text: base };
 }
 
+// 卡带 JSON 的解析入口：{ ok:true, card, usedFallback, text } | { ok:false, message, loc, text }
+function parseCardJson(raw) {
+  var r = parseJsonLoose(raw);
+  if (!r.ok) return r;
+  return { ok: true, card: r.value, usedFallback: r.usedFallback, text: r.text };
+}
+
 module.exports = {
   parseCardJson: parseCardJson,
+  parseJsonLoose: parseJsonLoose,
+  locDetail: locDetail,
   locateJsonError: locateJsonError,
   stripPasteNoise: stripPasteNoise
 };

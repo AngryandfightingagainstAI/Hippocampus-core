@@ -206,13 +206,8 @@ function CardsScreen() {
     }
     var parsed = JsonLocate.parseCardJson(raw);
     if (!parsed.ok) {
-      var loc = parsed.loc;
-      var detail = loc
-        ? '（第 ' + loc.pos + ' 字符附近，全文 ' + loc.length + ' 字：…' + loc.around + '…）'
-          + '\n可能原因：' + loc.hint
-          + '\n末尾：…' + loc.tail + '…'
-        : '';
-      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + parsed.message + detail });
+      // P58：定位文案统一由 json_locate.js 的 locDetail 出，存档/主题两条路也用它
+      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + parsed.message + JsonLocate.locDetail(parsed.loc) });
       return;
     }
     var card = parsed.card;

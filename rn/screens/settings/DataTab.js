@@ -37,6 +37,7 @@ var StorageAdapter = require('../../../vfs/storage_adapter.js');
 var NavStore = require('../../nav_store.js');
 var StoryStore = require('../../story_store.js');
 var ExportUtil = require('../../export_util.js');
+var JsonLocate = require('../../json_locate.js');
 
 function DataTab() {
   var themeApi = useTheme();
@@ -132,24 +133,22 @@ function DataTab() {
       if (!unsealed.ok) { setImportMsg({ type: 'error', text: unsealed.reason }); return; }
       raw = unsealed.text;
     }
-    // 粘贴清洗（同 CardsScreen:119-124）
-    var text = raw
-      .replace(/^\uFEFF/, '')
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2018\u2019]/g, "'");
-    var data;
-    try { data = JSON.parse(text); }
-    catch (e) {
-      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + e.message });
+    // P58：解析口径统一走 json_locate.js 的 parseJsonLoose —— 先原样解析（只去 BOM / 零宽），
+    //   失败才把弯引号当结构引号兜底。旧实现在这里整段做 \u201C\u201D → " 替换，
+    //   而存档的 chat 文本里本来就会有「他说“出发”」这种中文引号：替换后字符串被提前闭合，
+    //   自己导出的存档粘回来就报「JSON 解析失败」（P58 复现见 tests/unit/test_json_locate_unit.js）。
+    var parsed = JsonLocate.parseJsonLoose(raw);
+    if (!parsed.ok) {
+      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + parsed.message + JsonLocate.locDetail(parsed.loc) });
       return;
     }
-    var r = Model.importSaveFromJson(data);
+    var savedNote = parsed.usedFallback ? '（结构引号是中文弯引号，已自动还原）' : '';
+    var r = Model.importSaveFromJson(parsed.value);
     if (!r.ok) {
       setImportMsg({ type: 'error', text: r.reason });
       return;
     }
-    setImportMsg({ type: 'success', text: '存档已导入（' + r.written + ' 个文件）' });
+    setImportMsg({ type: 'success', text: '存档已导入（' + r.written + ' 个文件）' + savedNote });
     setImportText('');
   }
 

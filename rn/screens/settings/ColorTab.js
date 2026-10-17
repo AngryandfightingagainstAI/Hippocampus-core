@@ -33,6 +33,7 @@ var SetChips = Controls.SetChips;
 
 var Theme = require('../../../engine/theme.js');
 var StoryStore = require('../../story_store.js');
+var JsonLocate = require('../../json_locate.js');
 
 // ------------------------------------------------------------
 // 颜色转换工具（零依赖）
@@ -475,16 +476,20 @@ function ColorTab() {
   function doImportTheme() {
     var raw = String(importText || '').trim();
     if (!raw) { setImportMsg({ type: 'warn', text: '内容为空' }); return; }
-    var text = raw
-      .replace(/^\uFEFF/, '')
-      .replace(/[\u200B-\u200D\uFEFF]/g, '')
-      .replace(/[\u201C\u201D]/g, '"')
-      .replace(/[\u2018\u2019]/g, "'");
+    // P58：口径同卡带/存档导入 —— 先原样解析，失败才把弯引号当结构引号兜底。
+    //   旧实现先整段 \u201C\u201D → " 替换：主题名里写中文引号（「夜读」的“护眼”版）时
+    //   会把字符串提前闭合，导出的主题包粘回来反而报「JSON 解析失败」。
+    var parsed = JsonLocate.parseJsonLoose(raw);
+    if (!parsed.ok) {
+      setImportMsg({ type: 'error', text: 'JSON 解析失败：' + parsed.message + JsonLocate.locDetail(parsed.loc) });
+      return;
+    }
     try {
-      var r = Theme.importTheme(text);
+      var r = Theme.importTheme(parsed.value);
       if (!r.ok) { setImportMsg({ type: 'error', text: '导入失败：' + r.reason }); return; }
       bumpThemeRev();
-      setImportMsg({ type: 'success', text: '已应用主题「' + r.name + '」' });
+      var themeNote = parsed.usedFallback ? '（结构引号是中文弯引号，已自动还原）' : '';
+      setImportMsg({ type: 'success', text: '已应用主题「' + r.name + '」' + themeNote });
       setImportText('');
     } catch (e) {
       setImportMsg({ type: 'error', text: '导入异常：' + e.message });
