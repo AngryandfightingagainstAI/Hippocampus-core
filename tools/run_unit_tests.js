@@ -2,6 +2,9 @@
 // 单元测试跑批器（P54·第15条）
 // 扫描 tests/unit/*_unit.js（下划线开头的公共脚手架不算套件），逐个用子进程跑，
 // 汇总套件数/断言数/耗时，任一失败则退出码 1。
+// P57 硬化：① 崩溃到「没有 SUMMARY」的套件也算失败（旧实现只累加 SUMMARY 里的失败数，
+//   套件崩了反而静默变绿）；② 失败时打印 ::error:: annotation 带失败套件名 —— 公开仓的
+//   annotations API 无需鉴权即可读，job 日志下载要鉴权（见 .github/workflows/smoke.yml）。
 // 与 tools/run_all_smokes.js 的关系：互不包含 —— run_all_smokes 只匹配 /_smoke\.js$/，
 // 本跑批器只匹配 /_unit\.js$/，所以补单测不会改动 37 套 / 2502 条断言的 smoke 基线。
 // 用法：node tools/run_unit_tests.js
@@ -40,7 +43,10 @@ files.forEach(function(f) {
     console.log('OK   ' + f + '（' + p + ' 条）');
   } else {
     bad.push(f);
-    console.log('FAIL ' + f + '（' + p + ' 通过 / ' + q + ' 失败，exit=' + r.status + '）');
+    // 没有 SUMMARY 说明套件根本没跑完（崩溃 / 超时被杀），这时 q 是 0
+    const why = m ? (p + ' 通过 / ' + q + ' 失败，exit=' + r.status)
+                  : ('没有 SUMMARY（套件没跑完，可能崩溃），exit=' + r.status);
+    console.log('FAIL ' + f + '（' + why + '）');
     out.split(/\r?\n/).filter(function(l) { return l.indexOf('FAIL: ') === 0; }).forEach(function(l) {
       console.log('     ' + l);
     });
@@ -50,4 +56,11 @@ files.forEach(function(f) {
 console.log('');
 console.log('UNIT_END SUITES=' + files.length + ' UNIT_OK=' + ok + ' UNIT_FAIL=' + fail +
   ' BAD_SUITES=' + bad.length + ' DURATION=' + Math.round((Date.now() - started) / 1000) + 's');
-process.exit(fail ? 1 : 0);
+// P57：失败时把失败套件名写进 GitHub annotation —— annotations API 无需鉴权即可读，
+// 而 job 日志下载要鉴权（见 .github/workflows/smoke.yml 的 flake 取证注释）。
+// 本地跑只是多一行普通输出，不影响任何人。
+if (bad.length) {
+  console.log('::error title=单元测试失败::' + bad.join('、') + '（失败套件名；详见 job 日志或 rn_unit_*.log artifact）');
+}
+// 退出码必须把「崩溃到没有 SUMMARY」也算失败：只累加 SUMMARY 里的失败数会让崩溃静默变绿。
+process.exit((fail || bad.length) ? 1 : 0);

@@ -7,6 +7,7 @@
 // 本套件加载的是**真实** vfs/vfs.js、vfs/saves.js、engine/core/gamestate.js，
 // 只把 StorageAdapter 换成可控假件（能一键切成「写就抛错」），所以夹的是真行为，
 // 不是源码字符串（源码哨兵只作最后一道钉子）。
+// V20 是顺带的钉子：跑批器自己也不许把失败吞成绿（P57 排查 CI run #30 时补的硬化）。
 //
 // 跑法：node tests/unit/test_vfs_write_contract_unit.js
 //      或 node tools/run_unit_tests.js（整目录）
@@ -354,6 +355,22 @@ run('V19 源码哨兵：读侧不可用必须被说出口（探针 + 存档页�
   contains(a, 'function _openSqliteDb(opSqliteApi) {', '打开步骤应抽成可测函数');
   contains(a, 'op-sqlite 打开失败：', '打开失败要有专属成因');
   contains(a, 'impl._openSqliteDb = _openSqliteDb;', '打开缝应挂在导出对象上');
+});
+
+// ---------- V20 失败必须有声：跑批器不许把「崩溃」和「失败」吞成绿 ----------
+// 由来：CI run #30 的「单元测试」步骤变红，而 annotations API 只给得到「exit code 1」、
+// job 日志要鉴权下载 ⇒ 手里没有任何失败套件名，排查只能靠猜。跑批器旧实现
+// `process.exit(fail ? 1 : 0)` 只累加 SUMMARY 里的失败数，套件崩溃（无 SUMMARY）反而绿。
+run('V20 跑批器：崩溃也算失败，且失败要给免鉴权可读的 annotation', function () {
+  const r = src('tools/run_unit_tests.js');
+  contains(r, 'process.exit((fail || bad.length) ? 1 : 0)', '退出码要把「崩溃无 SUMMARY」也算失败');
+  contains(r, '没有 SUMMARY（套件没跑完，可能崩溃）', '崩溃套件要说清为什么算失败');
+  contains(r, '::error title=单元测试失败::', '失败时应给出可免鉴权读取的 annotation');
+
+  const w = src('.github/workflows/smoke.yml');
+  contains(w, 'rn_unit_', '单测输出应落盘成可上传的日志');
+  contains(w, 'tee ', '单测步骤应把输出同时留一份');
+  contains(w, 'set -o pipefail', 'tee 之后不能用管道的退出码顶掉跑批器退出码');
 });
 
 finish();

@@ -336,12 +336,12 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：10 套 / 161 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：10 套 / 162 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
-  `test_vfs_write_contract_unit.js` 19 条）。
+  `test_vfs_write_contract_unit.js` 20 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -439,7 +439,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   ⇒ L1–L7 的行为断言同时覆盖桌面；Q2 同上词法哨兵；Q3/Q4/Q5 锁桌面三个接入点
   （设置页控件与写入口、`ui_core.js` 契约入口委托、`ui_prompt.js` 实装 + NAMES 登记）；
   Q6 锁 `storyChannel` **不在 `defaultGlobal`** ⇒ 老档免迁移，靠引擎侧 fail-open 兜底。
-- `test_vfs_write_contract_unit.js` 的 V1–V19 锁住 **P55/P56/P57·写入契约、失败归因与存储不可用告知**（存储满时「没存上」能不能被知道、**说的是不是真原因**、以及「读不到」会不会被误当成「你没有存档」）：
+- `test_vfs_write_contract_unit.js` 的 V1–V20 锁住 **P55/P56/P57·写入契约、失败归因与存储不可用告知**（存储满时「没存上」能不能被知道、**说的是不是真原因**、以及「读不到」会不会被误当成「你没有存档」）：
   真实 `vfs/vfs.js` + `vfs/saves.js` + `engine/core/gamestate.js` 装进 vm 沙箱，配一个可控
   `StorageAdapter`（`fail` 开关让 `setItem` 抛 `QuotaExceededError`），全组零 Electron、零 DOM。
   V1/V2 写成功时 `writeFile` 与 `writeJSON` **都必须返回 true**（旧实现 `writeJSON` 丢弃 `writeFile`
@@ -467,7 +467,13 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   探针自己抛错 ⇒ 按可用且不外抛。V19 是源码哨兵：`vfs.js` 两个探针 + 乐观分支、存档页
   （手机 `rn/screens/SavesScreen.js`）必须问一句 `VFS.storageAvailable()` 且把「本地存储不可用」
   说出来、adapter 三支都挂 `unavailableReason`、`_openSqliteDb` 抽成可测函数并在导出对象上暴露。
-  桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W15）逐条比
+  V20 是本次排查 CI run #30（「单元测试」步骤变红、annotations 只给得到 exit code 1、job 日志要鉴权）
+  时补的钉子：跑批器 `tools/run_unit_tests.js` 必须**把「崩溃到没有 SUMMARY」也算失败**
+  （旧实现 `process.exit(fail ? 1 : 0)` 只累加 SUMMARY 里的失败数 ⇒ 套件崩了反而静默变绿），
+  失败时必须打印 `::error title=单元测试失败::<套件名>` annotation（公开仓 annotations API 免鉴权可读），
+  且 `.github/workflows/smoke.yml` 的单测步骤要 `tee` 出 `rn_unit_*.log` 并作为 artifact 上传
+  （`set -o pipefail` 保住退出码）。
+  桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W16）逐条比
   两仓 `vfs/vfs.js`、`vfs/saves.js`、`engine/core/gamestate.js`、`engine/import/vault.js` 的形状，
   并断言 `vault.js` 两仓**逐字节相同** —— 行为断言全在手机仓，桌面只靠同源连坐，所以同源本身也钉住。
   W9/W9c 反过来禁掉无条件 `type: 'StorageFull',`（旧写法一律把失败记成配额满）；
@@ -477,6 +483,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `vfs.js` 的只读探针与「探测件缺失即乐观」分支；W14 查桌面存档页（`engine/ui_cards.js`）
   空/非空**两支**都拼上存储不可用警示；W15 在桌面侧直接 `require` 真实 `vfs.js` + 兜底 adapter，
   断言读侧探针说「不可用」并给出成因 —— 手机侧有 V15/V18 的行为断言，桌面侧也不再只靠同源连坐。
+  W16 在桌面侧把 V20 的跑批器/CI 硬化也钉一遍（手机仓不可见时明确跳过，不假装通过）。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、
