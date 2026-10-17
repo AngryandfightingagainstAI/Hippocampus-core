@@ -64,6 +64,19 @@ function SavesScreen() {
     try { return Saves.listAll(); } catch (e) { return []; }
   }, [rev]);
 
+  // P57：存储不可用时 VFS 的读侧是静默的（Saves.listAll 只能返回 []），必须自己说明，
+  // 否则玩家会把「op-sqlite 挂了」当成「我没有存档」。探针缺失（老宿主 / 冒烟假件）按可用处理。
+  var storageDown = false;
+  var downReason = '';
+  try {
+    if (typeof VFS !== 'undefined' && VFS && typeof VFS.storageAvailable === 'function') {
+      storageDown = !VFS.storageAvailable();
+    }
+    if (storageDown && typeof VFS !== 'undefined' && VFS && typeof VFS.storageUnavailableReason === 'function') {
+      downReason = String(VFS.storageUnavailableReason() || '');
+    }
+  } catch (e) { storageDown = false; }
+
   function refresh() { bump(function (v) { return v + 1; }); }
 
   function showToast(text, type) {
@@ -154,6 +167,8 @@ function SavesScreen() {
       scroll: { flex: 1 },
       body: { paddingHorizontal: 16, paddingTop: 14, paddingBottom: insets.bottom + 24 },
       empty: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.7), paddingVertical: 20 },
+      // P57：存储不可用警示（成因由 VFS.storageUnavailableReason 给）
+      warn: { fontSize: f.sm, color: c.warning, lineHeight: Math.round(f.sm * 1.7), paddingVertical: 10 },
       cardGroup: { marginBottom: 16 },
       cardTitle: { fontFamily: fonts.serif, fontSize: f.md, color: c.ink, fontWeight: '600', marginBottom: 8 },
       saveRow: {
@@ -213,6 +228,9 @@ function SavesScreen() {
         </View>
       </View>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body}>
+        {storageDown ? (
+          <Text style={styles.warn}>{'⚠ 本地存储不可用（' + (downReason || '原因未知') + '）：读不到存档，也写不进新进度。请重启 App；重启后仍无效时不要继续玩，本局不会落盘。'}</Text>
+        ) : null}
         {!all.length ? (
           <Text style={styles.empty}>{EmptyTexts.NO_SAVES}</Text>
         ) : (

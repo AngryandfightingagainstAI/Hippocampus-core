@@ -74,6 +74,26 @@
     // 调用方无从判断写盘成功（engine/import/vault.js 的 === true 判断曾因此恒假）。
     writeJSON: function(path, obj) { return this.writeFile(path, JSON.stringify(obj)); },
 
+    // P57：只读探针 —— 存储是否可用 + 不可用的成因。读侧（readFile/readJSON/listAll）在存储
+    // 不可用时全程静默返 null/[]，上层据此才能把「没有存档」与「存储不可用」分开说。
+    // 探测件缺失（老宿主 / 冒烟里的假 VFS）按「可用」处理，保持既有行为。
+    storageAvailable: function() {
+      try {
+        if (typeof StorageAdapter === 'undefined' || !StorageAdapter) return true;
+        if (typeof StorageAdapter.isAvailable !== 'function') return true;
+        return !!StorageAdapter.isAvailable();
+      } catch (e) { return true; }
+    },
+    storageUnavailableReason: function() {
+      try {
+        if (typeof StorageAdapter !== 'undefined' && StorageAdapter &&
+            typeof StorageAdapter.unavailableReason === 'function') {
+          return String(StorageAdapter.unavailableReason() || '');
+        }
+      } catch (e) {}
+      return '';
+    },
+
     exists: function(path) { return StorageAdapter.getItem(PREFIX + normalizePath(path)) !== null; },
 
     deleteFile: function(path) {

@@ -295,4 +295,65 @@ run('V16 源码哨兵：guard 归因分流齐备 + adapter 三支都挂 isAvaila
   contains(a, 'isAvailable: function() { return true; },', '可用支应报可用');
 });
 
+run('V17 真实 storage_adapter：不可用要给出成因，打开步骤可被单测驱动', function () {
+  const SA = require(path.join(H.ROOT, 'vfs', 'storage_adapter.js'));
+  eq(typeof SA.unavailableReason, 'function', '应有 unavailableReason 探针');
+  eq(SA.isAvailable(), false, 'Node 环境不可用');
+  const reason = String(SA.unavailableReason());
+  ok(reason.length > 5, '成因不能是空串，actual=' + JSON.stringify(reason));
+  contains(reason, 'op-sqlite', '成因应指明是 op-sqlite 这一层');
+
+  // 打开缝：坏模块 ⇒ 原始错误必须抛给调用点（调用点 catch 后降级，不再炸整条 require 链）
+  eq(typeof SA._openSqliteDb, 'function', '应暴露打开缝，供单测驱动失败分支');
+  let thrown = null;
+  try { SA._openSqliteDb({ open: function () { throw new Error('db boom'); } }); } catch (e) { thrown = e; }
+  ok(thrown && /db boom/.test(thrown.message), '打开失败应原样抛出（便于归因），actual=' + (thrown && thrown.message));
+
+  // 正常路径：打开成功返回 db 且执行建表
+  let created = false;
+  const db = SA._openSqliteDb({ open: function () { return { executeSync: function () { created = true; } }; } });
+  ok(db && created, '正常路径应返回 db 并执行建表');
+});
+
+run('V18 真实 vfs.js：storageAvailable / storageUnavailableReason 三种情形', function () {
+  // (a) 探测件缺失（老宿主 / 冒烟里的假 VFS）⇒ 按可用处理，既有行为不变
+  const sbA = makeSandbox({ StorageAdapter: makeStorage() });
+  load(sbA, 'vfs/vfs.js');
+  eq(sbA.window.VFS.storageAvailable(), true, '没有 isAvailable 的适配器 ⇒ 按可用（乐观）');
+  eq(sbA.window.VFS.storageUnavailableReason(), '', '可用时成因是空串');
+
+  // (b) 适配器说不可用 ⇒ 透出 false + 成因
+  const saB = makeStorage();
+  saB.isAvailable = function () { return false; };
+  saB.unavailableReason = function () { return '假存储不可用'; };
+  const sbB = makeSandbox({ StorageAdapter: saB });
+  load(sbB, 'vfs/vfs.js');
+  eq(sbB.window.VFS.storageAvailable(), false, '适配器说不可用 ⇒ false');
+  eq(sbB.window.VFS.storageUnavailableReason(), '假存储不可用', '成因应透出');
+
+  // (c) 探针自己抛错 ⇒ 按可用处理（不能让探针把界面带崩）
+  const saC = makeStorage();
+  saC.isAvailable = function () { throw new Error('probe boom'); };
+  const sbC = makeSandbox({ StorageAdapter: saC });
+  load(sbC, 'vfs/vfs.js');
+  eq(sbC.window.VFS.storageAvailable(), true, '探针抛错 ⇒ 按可用且不外抛');
+});
+
+run('V19 源码哨兵：读侧不可用必须被说出口（探针 + 存档页警示）', function () {
+  const v = src('vfs/vfs.js');
+  contains(v, 'storageAvailable: function() {', 'vfs.js 应有 storageAvailable');
+  contains(v, 'storageUnavailableReason: function() {', 'vfs.js 应有成因探针');
+  contains(v, "typeof StorageAdapter === 'undefined' || !StorageAdapter", '探测件缺失应走乐观分支');
+
+  const s = src('rn/screens/SavesScreen.js');
+  contains(s, 'VFS.storageAvailable()', '存档页应问一句存储是否可用');
+  contains(s, '本地存储不可用', '存档页应把不可用说出来');
+
+  const a = src('vfs/storage_adapter.js');
+  eq((a.match(/unavailableReason: function\(\)/g) || []).length, 3, 'adapter 三支都要有 unavailableReason');
+  contains(a, 'function _openSqliteDb(opSqliteApi) {', '打开步骤应抽成可测函数');
+  contains(a, 'op-sqlite 打开失败：', '打开失败要有专属成因');
+  contains(a, 'impl._openSqliteDb = _openSqliteDb;', '打开缝应挂在导出对象上');
+});
+
 finish();
