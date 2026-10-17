@@ -23,7 +23,7 @@ function ok(name, cond, detail) {
 
 // ---------- 期望的工具账 ----------
 var BUILTIN = ['modify_hud', 'modify_sidebar', 'modify_entry', 'modify_relation', 'add_item', 'remove_item',
-  'query_player', 'query_npc', 'query_faction', 'query_map', 'set_location', 'list_destinations', 'query_worldsetting', 'roll_dice', 'roll_check',
+  'query_player', 'query_portrait', 'query_npc', 'query_faction', 'query_map', 'set_location', 'list_destinations', 'query_worldsetting', 'roll_dice', 'roll_check',
   'roll_opposed', 'web_search', 'query_source'];
 
 // 模块 -> 该模块注册的工具（顺序 = 文件内出现顺序）

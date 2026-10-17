@@ -5,7 +5,7 @@
 // 范围（用户裁决 5）：
 //   做：日志系统 / 结局系统 / 节点系统 / 产出物系统 / AI 强硬度 /
 //       思考过程 / 提议校验 / NPC 推演 / 外观（主题网格+字号档+字体）
-//   缓：我的主题 7 槽位 + 主题包导入导出（Theme API 可用，后续批）
+//   已落地（原缓办）：我的主题 7 槽位 + 主题包导入导出（ColorTab 承接，smoke 双覆盖）
 //   背景卡（4-6c 实装）：本地选图（image-picker → 2MB 预检 →
 //     compressFile 1280/0.8/0.55/512KB → dataURL 落库，裁决 3：RN 无
 //     FileReader，偏离 Electron 原图直存）/ 外链 URL 行内输入（裁决 5）
@@ -84,7 +84,7 @@ function GeneralTab() {
 
   function save() {
     Model.saveGeneralState(gs);
-    try { Platform.ui.toast('已保存', { type: 'success' }); } catch (e) {}
+    Platform.ui.toast('已保存', { type: 'success' });
   }
 
   // ---- 背景（4-6c）----
@@ -101,7 +101,7 @@ function GeneralTab() {
   var bgOpacity = (typeof bg.opacity === 'number') ? bg.opacity : 1;
 
   function bgToast(msg, type) {
-    try { Platform.ui.toast(msg, { type: type }); } catch (e) {}
+    Platform.ui.toast(msg, { type: type });
   }
 
   function pickImage() {
@@ -168,7 +168,7 @@ function GeneralTab() {
   var sansOptions = [];
   var serifOptions = [];
   try {
-    themeOptions = (typeof Theme !== 'undefined' ? Theme.listBuiltins() : []).map(function (t) {
+    themeOptions = Theme.listBuiltins().map(function (t) {
       return { value: t.id, label: t.name };
     });
     fontScaleOptions = (Theme.FONT_SCALES || []).map(function (fs) {
@@ -180,15 +180,15 @@ function GeneralTab() {
     serifOptions = ((Theme.FONT_OPTIONS || {}).serif || []).map(function (o) {
       return { value: o.id, label: o.name };
     });
-  } catch (e) {}
+  } catch (e) { console.warn('[GeneralTab] 外观选项加载失败：', e); }
 
   var curScale = (themeApi.theme && themeApi.theme.fontScale != null) ? themeApi.theme.fontScale : 1;
   var curSans = '';
   var curSerif = '';
   try {
-    curSans = typeof Theme !== 'undefined' ? Theme.getFontId('sans') : '';
-    curSerif = typeof Theme !== 'undefined' ? Theme.getFontId('serif') : '';
-  } catch (e2) {}
+    curSans = Theme.getFontId('sans');
+    curSerif = Theme.getFontId('serif');
+  } catch (e2) { console.warn('[GeneralTab] 字体读取失败：', e2); }
 
   // 校验/推演模型下拉（ApiManager bootstrap 已挂载）
   var profileOptions = [{ value: null, label: '跟随主模型' }];
@@ -197,7 +197,7 @@ function GeneralTab() {
     (all.profiles || []).forEach(function (p) {
       profileOptions.push({ value: p.id, label: (p.name || p.id) + ' · ' + (p.model || '') });
     });
-  } catch (e3) {}
+  } catch (e3) { console.warn('[GeneralTab] 校验/推演模型清单加载失败：', e3); }
 
   // P1-B：配色子页（替代桌面弹窗形态）
   if (showColorPage) {

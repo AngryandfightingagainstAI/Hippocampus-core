@@ -7,8 +7,8 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：38 套 RN smoke 共 2585 条断言全绿；桌面版另有 14 项预检 + 53 套回归
-- **版本**：1.3.0（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10300，已真机装机复核）
+- **测试**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 60 套回归
+- **版本**：1.3.1（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10301）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
 
@@ -179,6 +179,10 @@ cd android
 android/app/build/outputs/apk/release/app-release.apk
 ```
 
+> **签名口径（自 1.3.1 起）**：release 型用 `android/keystore/keystore.properties` 指向的正式 keystore 签名，
+> 该凭据文件与 keystore 均不入仓。若凭据缺失（新克隆 / CI），构建会**回退 debug 签名**并在构建日志打 `WARN` ——
+> 回退包仅供本地调试，**禁止上传 Release**（debug 证书是公开的，任何人都能伪造「同签名」更新包）。
+
 `assets/index.android.bundle` 是 Hermes 字节码（Metro 打包产物），所以直接对 APK 搜中文会搜不到——属正常现象。
 
 > **产物只含一套 ABI**：`android/gradle.properties` 的 `reactNativeArchitectures` 决定包里带哪几套原生库，
@@ -201,7 +205,7 @@ node tools/settings_smoke.js
 node tools/longline_token_smoke.js
 ```
 
-当前基线：**38 套 / 2585 ok / 0 failed**（两仓同在的本机环境）。
+当前基线：**40 套 / 2636 ok / 0 failed**（两仓同在的本机环境）。
 
 CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：
 CI 里看不到桌面仓，于是跨仓同源断言自动降级为 SKIP —— 最早实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**
@@ -213,6 +217,10 @@ P54·第17条 再 +1 套（`secure_envelope_smoke.js`）并分两阶段长大：
 （口径：造出真正只有手机仓的环境跑完整 38 套（把桌面仓 `package.json` 临时改名，等价于 `HIPOCAMPUS_PC` 指向不存在的目录）；此前按「逐套相加」推算的 2555 偏 7 条，
 以实测为准 —— 原因是各套降级粒度不同，相加减会重复计入跨仓断言）。
 降级只影响「另一仓是否可见」这类断言，不影响产品行为。
+
+> 上两段是 38 套时期的实测记录。**40 套**（P57/P58 后 +`cache_prefix_smoke.js`、+`dice_history_smoke.js`）同口径实测：
+> 两仓同在 **2636 ok / 0 failed / 0 skipped**，单仓 **2615 ok / 0 failed / `TOTAL_SKIP=20`**（2026-10-17，
+> `HIPPOCAMPUS_PC` 指向不存在目录；总断言差 21 而 skip 记 20，是各套降级粒度不同导致的既有现象，以实测为准）。
 
 > 跑法：`node tools/run_all_smokes.js`（跑批器自己定位仓根）。单套 `node tools/xxx_smoke.js` 也可从任意目录跑 —— P54 从 `%TEMP%` 直跑 16 套与整套跑批，断言数与在仓库根下跑**逐字相同**。
 
@@ -293,7 +301,7 @@ HippocampusRN/
 - **信息层仍是概率性的**（25 分钟冷却 + 25%），所以「连着好些回合没有短信」是正常表现；只有**第一条**有触达保证。
 - **农历节日不做**（每年日期不同，引擎暂不支持）。
 - **导入文游资料**在手机版：文本类可以粘贴，也可以点「从文件导入…」走系统文件选择器（卡带 JSON 与资料文件都已接）；docx / odt / epub / PDF / ZIP 这类压缩包格式建议在桌面版导入后再导出卡带。
-- **创角流程**、**结局触发**、**元层提议**已有自动化覆盖（`tools/create_flow_smoke.js` 115 条、`tools/endings_gate_smoke.js` 27 条、`tools/proposal_audit_smoke.js` 19 条），但真机人工验证仍是主要手段。
+- **创角流程**、**结局触发**、**元层提议**已有自动化覆盖（`tools/create_flow_smoke.js` 120 条、`tools/endings_gate_smoke.js` 27 条、`tools/proposal_audit_smoke.js` 19 条），但真机人工验证仍是主要手段。
 - 设置页「未保存就切 tab」目前只拦**涉及世界书的切换**（从世界书离开、或切进世界书时弹确认）；其他页之间切换仍不拦，因为那些页是即时生效的。
 
 ---

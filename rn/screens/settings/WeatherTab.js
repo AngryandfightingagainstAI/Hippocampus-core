@@ -47,26 +47,26 @@ function WeatherTab() {
   function refreshNow() {
     globalThis.Weather.refreshNow().then(function (r) {
       if (r && r.ok) {
-        try { Platform.ui.toast('已刷新：' + r.type + '（' + r.city + '）', { type: 'success' }); } catch (e3) {}
+        Platform.ui.toast('已刷新：' + r.type + '（' + r.city + '）', { type: 'success' });
       } else {
-        try { Platform.ui.toast('刷新失败：' + (r && r.reason), { type: 'error' }); } catch (e4) {}
+        Platform.ui.toast('刷新失败：' + (r && r.reason), { type: 'error' });
       }
       setCfg(globalThis.Weather.getConfig());
     }).catch(function (e5) {
-      try { Platform.ui.toast('刷新异常：' + e5.message, { type: 'error' }); } catch (e6) {}
+      Platform.ui.toast('刷新异常：' + e5.message, { type: 'error' });
     });
   }
 
   function refreshIp() {
     globalThis.Weather.refreshIpCache().then(function (r) {
       if (r && r.ok) {
-        try { Platform.ui.toast('已重新定位：' + r.city, { type: 'success' }); } catch (e7) {}
+        Platform.ui.toast('已重新定位：' + r.city, { type: 'success' });
       } else {
-        try { Platform.ui.toast('定位失败：' + (r && r.reason), { type: 'error' }); } catch (e8) {}
+        Platform.ui.toast('定位失败：' + (r && r.reason), { type: 'error' });
       }
       setCfg(globalThis.Weather.getConfig());
     }).catch(function (e9) {
-      try { Platform.ui.toast('定位异常：' + e9.message, { type: 'error' }); } catch (e10) {}
+      Platform.ui.toast('定位异常：' + e9.message, { type: 'error' });
     });
   }
 

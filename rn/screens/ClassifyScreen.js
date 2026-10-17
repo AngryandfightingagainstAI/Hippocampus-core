@@ -32,6 +32,8 @@ var SafeArea = require('react-native-safe-area-context');
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
 var UiClassify = require('../ui_classify_rn.js');
+// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 var WHERE_LABEL = {
   'hud': '顶栏',
@@ -197,6 +199,7 @@ function ClassifyScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
+      <BackgroundLayer />
       <View style={styles.headerRow}>
         <Text style={styles.back} onPress={finish}>{'← 返回'}</Text>
         <Text style={styles.title}>{'分类审核'}</Text>

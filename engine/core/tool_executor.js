@@ -19,6 +19,28 @@
     add_item: { run: function(a) { return ToolExecutor._addItem(a.category, a.name, a.desc); } },
     remove_item: { run: function(a) { return ToolExecutor._removeItem(a.name); } },
     query_player: { run: function() { return { ok: true, type: 'query', queryType: 'player', data: GameState.playerData }; } },
+    // 阶段二：query_portrait —— 只读查询玩家已确认的人设总述与特质。
+    //   数据契约（portrait.js:166/:180-189、ui_portrait.js:294/:302）：aiVersion=1
+    //   = AI 生成或玩家手写并经玩家确认；aiVersion=0 = 跳过生成时的 fallback
+    //   （summary 为占位文本，会经 Portrait.save 落盘），不得当作已确认人设；
+    //   旧存档无 portrait 同样按未确认处理。_openingPrompt 不返回（防泄漏，
+    //   与 query_player 剔除口径一致）。立绘查询是 query_avatar，语义不重叠。
+    query_portrait: { run: function() {
+      const pd = GameState.playerData || {};
+      const pt = pd.portrait;
+      if (!pt || !pt.aiVersion || !pt.summary) {
+        return { ok: true, type: 'query', queryType: 'portrait', data: {
+          confirmed: false,
+          note: '玩家尚未确认人设总述（未生成、已跳过或数据缺失）。玩家原始填写请调 query_player。'
+        } };
+      }
+      return { ok: true, type: 'query', queryType: 'portrait', data: {
+        confirmed: true,
+        summary: pt.summary,
+        traits: Array.isArray(pt.traits) ? pt.traits : [],
+        aiVersion: pt.aiVersion
+      } };
+    } },
     query_npc: { run: function(a) {
       const wb = GameState.currentCard.worldbook || {};
       const n = (wb.npcs || []).find(x => x.id === a.id || x.name === a.id);
@@ -63,7 +85,7 @@
         StatusCard.setField('location', node.name || a.locationId);
       }
       if (GameState.playerData) GameState.playerData.locationId = a.locationId;
-      try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch(e) {}
+      Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded();
       return { ok: true, type: 'location', locationId: a.locationId, label: '移动到 ' + (node.name || a.locationId) };
     }},
     list_destinations: { run: function(a) {
@@ -413,7 +435,7 @@
       data = Object.assign({}, data);
       if (Object.prototype.hasOwnProperty.call(data, 'portrait')) delete data.portrait;
       if (Object.prototype.hasOwnProperty.call(data, '_openingPrompt')) delete data._openingPrompt;
-      data._hint = '人设总述与特质详情请调 query_avatar';
+      data._hint = '人设总述与特质详情请调 query_portrait';
     }
     let json;
     try { json = JSON.stringify(data); } catch (e) { return '（数据无法序列化）'; }

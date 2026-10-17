@@ -171,7 +171,7 @@ function close() {
 // renderTopbar + renderSidebarExpanded（RN 投导航信号 + 叙事重渲染）
 // + 面板视图重算（库存/持有量变化）
 function afterChange(shopId) {
-  try { if (NavStore) NavStore.notify('topbar'); } catch (e) {}
+  if (NavStore) NavStore.notify('topbar');
   try { StoryStore.renderGame(); } catch (e) {}
   replaceState({ view: computeView(shopId) });
 }

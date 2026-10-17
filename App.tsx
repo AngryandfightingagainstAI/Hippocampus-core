@@ -60,7 +60,7 @@ const uiOk = UI_CHECKS.filter((c) => c[1]).length;
 const platformAllOk =
   boot.platformTag === '2-5' && groupOk === GROUP_CHECKS.length && uiOk === UI_NAMES.length;
 
-// 4-2：story/settings 尚未建屏，占位页（tokens 着色，不造假功能）
+// 未知路由兜底占位页（仅 Root 末尾『未知页面』分支使用；tokens 着色，不造假功能）
 function PlaceholderScreen({ label, hint }: { label: string; hint: string }) {
   const { tokens: tk } = useThemeModule.useTheme();
   const nav = NavigationModule.useNavigation();
@@ -82,7 +82,7 @@ function PlaceholderScreen({ label, hint }: { label: string; hint: string }) {
 }
 
 // 4-3：路由根。home=HomeScreen；story=StoryScreen（4-3a P0+P1）；
-// settings=占位；__boot=原 44 模块自检页。OverlayHost 为根层浮层
+// settings=SettingsScreen（4-5 实装）；__boot=原 44 模块自检页。OverlayHost 为根层浮层
 // （confirmAsync 等），任意路由下壳弹窗都有真实渲染链路。
 function Root() {
   const nav = NavigationModule.useNavigation();

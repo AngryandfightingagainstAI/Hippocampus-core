@@ -395,9 +395,9 @@ function runB3() {
   };
   var r = { ok: true, type: 'query', queryType: 'player', data: GS.playerData };
   var out = TE._formatQueryData(r);
-  check('B3a query_player 回显不含 portrait', out.indexOf('portrait') < 0);
+  check('B3a query_player 回显不含 portrait 数据键（键级检查：hint 指路 query_portrait 是合法工具名，旧的裸子串检查会误伤）', out.indexOf('"portrait"') < 0);
   check('B3b query_player 回显不含 _openingPrompt', out.indexOf('_openingPrompt') < 0);
-  check('B3c 人设详情指路 query_avatar', out.indexOf('query_avatar') >= 0);
+  check('B3c 人设详情指路 query_portrait（阶段二授权变更：人设查询由 query_portrait 承担，query_avatar 专属立绘）', out.indexOf('query_portrait') >= 0);
   var parsed = null, threw = false;
   try { parsed = JSON.parse(out); } catch (e) { threw = true; }
   check('B3d 回显恒为合法 JSON', !threw && parsed !== null);

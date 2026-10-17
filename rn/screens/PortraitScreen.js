@@ -37,6 +37,8 @@ var SafeArea = require('react-native-safe-area-context');
 
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
+// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 function PortraitScreen() {
   var themeApi = useTheme();
@@ -93,7 +95,7 @@ function PortraitScreen() {
 
   function failToast(msg) {
     setErr(msg);
-    try { Platform.ui.toast(msg, { type: 'error' }); } catch (e) { /* */ }
+    Platform.ui.toast(msg, { type: 'error' });
   }
 
   function appendMsg(role, content) {
@@ -308,6 +310,7 @@ function PortraitScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
+      <BackgroundLayer />
       <View style={styles.headerRow}>
         <Text style={styles.back} onPress={onCancel}>{'← 返回'}</Text>
         <Text style={styles.title}>{'人设'}</Text>

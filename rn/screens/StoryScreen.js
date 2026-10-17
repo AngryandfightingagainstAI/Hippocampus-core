@@ -117,7 +117,7 @@ function StoryScreen() {
       if (hasHistory) {
         StoryRuntime.replayHistory();
       } else {
-        try { StoryLoop.start(); } catch (e) {}
+        try { StoryLoop.start(); } catch (e) { setNotice('开局失败：' + (e && e.message ? e.message : String(e))); }
       }
       return;
     }
@@ -170,7 +170,10 @@ function StoryScreen() {
     if (busy) return;
     var v = String(text == null ? '' : text).trim();
     if (!v) return;
-    try { StoryLoop.sendAction(v); } catch (e) {}
+    try { StoryLoop.sendAction(v); } catch (e) {
+      setNotice('发送失败：' + (e && e.message ? e.message : String(e)));
+      return;
+    }
     setInput('');
   }
 
@@ -193,7 +196,7 @@ function StoryScreen() {
   }
 
   // 异常卡三动作（ui_core L747-751）
-  function errRetry() { try { StoryLoop.retryLast(); } catch (e) {} }
+  function errRetry() { try { StoryLoop.retryLast(); } catch (e) { setNotice('重试失败：' + (e && e.message ? e.message : String(e))); } }
   function errGoSettings() { nav.navigate('settings'); }
   function errBack() { StoryRuntime.exitGame(); }
 

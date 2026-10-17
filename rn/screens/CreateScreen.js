@@ -43,6 +43,8 @@ var CF = require('../create_flow_model.js');
 var StoryStore = require('../story_store.js');
 // P10·A7：空态文案单一来源（逐字照桌面 ui_cards.js:38）
 var EmptyTexts = require('../empty_texts.js');
+// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 // 无 steps 卡带的默认两步：确认姓名 → 完成
 var DEFAULT_STEPS = [
@@ -307,16 +309,16 @@ function CreateScreen() {
       UI_Portrait.start(GameState.playerData, function (result) {
         var portrait = (result && result.portrait) ? result.portrait : result;
         GameState.playerData.portrait = portrait;
-        try { Portrait.save(portrait); } catch (e) { /* */ }
-        try { GameState.invalidateCache(); } catch (e) { /* */ }
-        try { GameState.persist(); } catch (e) { /* */ }
-        try { if (typeof Snapshots !== 'undefined') Snapshots.push('init'); } catch (e) { /* */ }
+        try { Portrait.save(portrait); } catch (e) { Platform.ui.toast('人设保存失败：' + (e && e.message ? e.message : String(e)), { type: 'warn' }); }
+        try { GameState.invalidateCache(); } catch (e) { Platform.ui.toast('缓存刷新失败：' + (e && e.message ? e.message : String(e)), { type: 'warn' }); }
+        try { GameState.persist(); } catch (e) { Platform.ui.toast('存档落盘失败：' + (e && e.message ? e.message : String(e)), { type: 'warn' }); }
+        if (typeof Snapshots !== 'undefined') Snapshots.push('init');
         // H3-R2：换档先清掉上一档残留叙事流再进叙事页（StoryScreen 挂载效应见 :71-86）
-        try { Platform.ui.clearStory(); } catch (e) {}
-        try { Platform.ui.renderGame(); } catch (e) {}
+        Platform.ui.clearStory();
+        Platform.ui.renderGame();
         nav.navigate('story');
         if (!GameState.chatHistory.length && typeof StoryLoop !== 'undefined') {
-          try { StoryLoop.start(); } catch (e) {}
+          StoryLoop.start();
         }
       });
     } catch (e) {
@@ -758,6 +760,7 @@ function CreateScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
+      <BackgroundLayer />
       <View style={styles.headerRow}>
         <Text style={styles.back} onPress={function () { nav.goBack(); }}>{'← 返回'}</Text>
         <Text style={styles.title}>{'新建存档'}</Text>

@@ -37,6 +37,8 @@ var ExportUtil = require('../export_util.js');
 var StoryStore = require('../story_store.js');
 // P10·A7：空态文案单一来源（逐字照桌面 ui_cards.js:70）
 var EmptyTexts = require('../empty_texts.js');
+// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 function SavesScreen() {
   var themeApi = useTheme();
@@ -217,6 +219,7 @@ function SavesScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
+      <BackgroundLayer />
       <View style={styles.headerRow}>
         <Text style={styles.back} onPress={function () { nav.goBack(); }}>{'← 返回'}</Text>
         <Text style={styles.title}>{'存 档'}</Text>

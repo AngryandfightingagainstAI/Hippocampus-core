@@ -38,7 +38,7 @@ function GmTab() {
 
   function save() {
     Model.saveGmState(gm);
-    try { Platform.ui.toast('已保存', { type: 'success' }); } catch (e) {}
+    Platform.ui.toast('已保存', { type: 'success' });
   }
 
   // 引擎层规则只读（GM_DEFAULTS 挂在 globalThis，PromptBuilder bootstrap 已载）

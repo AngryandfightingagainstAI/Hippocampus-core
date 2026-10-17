@@ -87,7 +87,7 @@ function SearchTab() {
   }
 
   function updateActive(patch) {
-    try { WSM().update(cur.id, patch); } catch (e3) {}
+    try { WSM().update(cur.id, patch); } catch (e3) { toast('保存搜索配置失败', 'warn'); }
   }
   function setField(key, v) {
     var patch = {};
@@ -98,7 +98,7 @@ function SearchTab() {
 
   // ---- 总开关（setEnabled + 重渲染语义同 showSettingsTab('search')）----
   function toggleEnabled(b) {
-    try { WSM().setEnabled(b); } catch (e4) {}
+    try { WSM().setEnabled(b); } catch (e4) { toast('切换联网搜索失败', 'warn'); }
     bumpVer(function (v) { return v + 1; });
   }
 

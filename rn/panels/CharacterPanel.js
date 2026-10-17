@@ -88,7 +88,7 @@ function CharacterPanel(props) {
         style={styles.reviewBtn}
         activeOpacity={0.6}
         onPress={function () {
-          try { Platform.ui.showScreen('portrait'); } catch (e) { /* showScreen 壳异常不得卡面板 */ }
+          Platform.ui.showScreen('portrait');
         }}
       >
         <Text style={styles.reviewBtnText}>{'重审人设'}</Text>

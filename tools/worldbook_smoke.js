@@ -597,10 +597,13 @@ function runQ() {
     // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 10413 / AABB3146…）
     ['engine/core/gamestate.js', 10799, '3FC5184404E781718B9B149A1BCA20B0'],
     // P54·P1 重记：推演协议条件注入（同 num_editor I7）
-    ['engine/core/prompt_builder.js', 52285, '7246723C904BA39C1A258D283007908E'],
+    // 净化批 EX5 重记（2026-10-17，用户批准）：删外层防御 try/catch ⇒ 52222 B / 686F416572C0E0A862CEB8E8FC2368FD
+    // query_portrait 阶段二重记（2026-10-17，用户批准）：_qExtLine 追加 query_portrait() 协议行（+19 B）⇒ 现盘值
+    ['engine/core/prompt_builder.js', 52241, '3BF47F14AC100C2A51FFBD8C9791146F'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
-    ['engine/info_feed.js', 49989, '6010CBD7FE4B1DCCA28E428DD634F280']
+    // 净化批 EX5 重记（2026-10-17，用户批准）：:839 删外层 try 保单防线 if ⇒ 现盘值
+    ['engine/info_feed.js', 49967, '4CC16B02A004DA9740354984058D93F2']
   ];
   LOCK.forEach(function (b) {
     var p = path.join(root, b[0]);

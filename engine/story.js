@@ -9,6 +9,7 @@ var StoryLoop = {
   busy: false, currentOptions: [],
   _regenContext: null,
   _lastPlayerLocation: '',
+  _windowAnchor: null,
 
   async start() {
     var card = GameState.currentCard;
@@ -542,11 +543,36 @@ var StoryLoop = {
       if (!m || m.role !== 'user') return false;
       return !String(m.content || '').startsWith('【系统 ·');
     };
-    let userCount = 0, cutIndex = 0;
-    for (let i = rest.length - 1; i >= 0; i--) {
-      if (isRealUserMsg(rest[i])) { userCount++; if (userCount >= rounds) { cutIndex = i; break; } }
+    // ★ Prompt Cache 前缀稳定（2026-10-17 批）：滑动窗口 → 锚定滞回窗口。
+    //   旧语义「每轮保持最近 N 轮」⇒ cutIndex 随轮次每轮后移，历史段在相邻两次
+    //   请求里没有公共前缀，OpenAI 兼容系（DeepSeek / OpenAI / Kimi 等，本项目
+    //   全部预设统一走 /chat/completions 的自动前缀缓存）只能命中 system 头。
+    //   新语义（有状态锚点 _windowAnchor）：窗口起点一经确定就固定 —— 后续轮次
+    //   只在尾部追加，相邻请求的公共前缀覆盖全部携带历史；从锚点起真实轮数
+    //   超过 2N 才把锚点跳到「最近 N 轮」（裁法与旧版逐字一致），之后重新生长。
+    //   ⇒ 前缀失配只发生在锚点跳动的轮（每 N+1 轮一次），不再是每轮。
+    //   锚点为 null（进程首次请求 / 换档 / 压缩把锚点清出）时按旧语义冷启动：
+    //   真实轮数 > N 即裁回 N 轮，与旧版首请行为一致（K1 契约口径）。
+    //   maybeCompress 的保留窗口与裁剪窗口同口径（都留最近 N 轮）：裁剪后锚点
+    //   恰好落在保留区内，跨压缩的请求前缀不变（日志压缩不吃缓存）。
+    //   代价：窗口峰值 N~2N 轮，绝对量由 windowRounds 设置控制。
+    let anchorIdx = 0;
+    if (this._windowAnchor) {
+      const ai = rest.indexOf(this._windowAnchor);
+      if (ai >= 0) anchorIdx = ai;
+      else this._windowAnchor = null;   // 已被压缩/换档清出 ⇒ 冷启动重置
     }
-    return [system].concat(rest.slice(cutIndex)).map(function(m) {
+    let userCount = 0;
+    for (let i = rest.length - 1; i >= anchorIdx; i--) if (isRealUserMsg(rest[i])) userCount++;
+    const limit = this._windowAnchor ? rounds * 2 : rounds;
+    if (userCount > limit) {
+      let c = 0;
+      for (let i = rest.length - 1; i >= anchorIdx; i--) {
+        if (isRealUserMsg(rest[i])) { c++; if (c >= rounds) { anchorIdx = i; break; } }
+      }
+    }
+    this._windowAnchor = rest[anchorIdx] || null;
+    return [system].concat(rest.slice(anchorIdx)).map(function(m) {
       return { role: m.role, content: m.content };
     });
   },

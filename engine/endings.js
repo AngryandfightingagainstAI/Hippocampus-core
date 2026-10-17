@@ -316,7 +316,7 @@
       var ws = wb.worldSetting || {};
       var pd = GameState.playerData || {};
       var name = '（主角）';
-      try { if (typeof Alias !== 'undefined') name = Alias.get(pd, 'name') || name; } catch (e) {}
+      if (typeof Alias !== 'undefined') name = Alias.get(pd, 'name') || name;
 
       // 最近日志摘要
       var summaries = '';

@@ -20,7 +20,7 @@
       return window.fetch(url, options);
     },
 
-    // 流式 fetch：返回原始 Response 对象，调用方通过 response.body.getReader() 读取 SSE
+    // 流式请求：与 http 相同参数，返回原始 Response（调用方用 body.getReader() 读 SSE）
     // 用法：const resp = await Platform.httpStream(url, { method, headers, body });
     //        const reader = resp.body.getReader();
     // RN 侧实现为 fetch（RN 0.73+ 支持 TextDecoder streaming）
@@ -38,7 +38,7 @@
         if (typeof window !== 'undefined') window.alert(msg);
       },
       // 同步确认，语义等价于原生 confirm（返回 boolean）
-      // Web 侧现在只有 story.js 用（M5 才收），先定义接口供将来替换
+      // 现存唯一消费方：ui_theme.js deleteThemeSlot 清槽确认（story.js 已不走此路径）
       confirm: function(msg) {
         return window.confirm(msg);
       }
@@ -133,7 +133,7 @@
       // 发现 story.js L659 漏盘后按同范式补齐，关账报告已标注；
       // renderChapterHead 为 2026-09-25 契约漏登补登——story.js L565 已按收口
       // 范式调用但名单漏登，致开局渲染抛 Platform.ui.renderChapterHead is not
-      // a function；契约静态校验见桌面仓 tests/unit/test_platform_ui_contract.js；
+      // a function；契约静态校验见 tests/unit/test_platform_ui_contract.js；
       // showGame 为 2026-09-27 删除——2-1 登记的空头契约，全仓零定义零调用
       // （实际导航走 showScreen('screen-game') + renderGame），契约测试 C5 抓出）：
       // 返回值一律透传（Promise / 数值 / 布尔原样返回，confirmAsync 可 await）；
@@ -166,32 +166,20 @@
         if (typeof UI_Shop !== 'undefined' && UI_Shop.open) return UI_Shop.open(shopId);
         return null;
       };
-      // 流式思考链：RN 侧实现（管理 live thinking 状态，供 StoryScreen 订阅）
-      var _liveThinking = { active: false, reasoning: '', meta: null, listeners: [] };
+      // 流式思考链：转发 UI_Thinking（挂在 UI_Thinking 而非 UI）。
+      // 三名字已同时登记在 NAMES（契约对账用）；本手写版在 ui 组构建后
+      // 覆盖 NAMES 自动代理，自动代理为契约副产品。
       ui.streamStartLive = function() {
-        _liveThinking.active = true;
-        _liveThinking.reasoning = '';
-        _liveThinking.meta = null;
-        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
-        return true;
+        if (typeof UI_Thinking !== 'undefined' && typeof UI_Thinking.startLive === 'function') return UI_Thinking.startLive.apply(UI_Thinking, arguments);
+        return false;
       };
       ui.streamAppendReasoning = function(chunk) {
-        if (!_liveThinking.active) return false;
-        _liveThinking.reasoning += chunk;
-        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
-        return true;
+        if (typeof UI_Thinking !== 'undefined' && typeof UI_Thinking.appendReasoning === 'function') return UI_Thinking.appendReasoning.apply(UI_Thinking, arguments);
+        return false;
       };
       ui.streamFinishLive = function(meta) {
-        _liveThinking.active = false;
-        _liveThinking.meta = meta;
-        _liveThinking.listeners.forEach(function(fn) { try { fn(_liveThinking); } catch(e) {} });
-        return true;
-      };
-      ui.streamSubscribe = function(fn) {
-        if (typeof fn === 'function') _liveThinking.listeners.push(fn);
-      };
-      ui.streamUnsubscribe = function(fn) {
-        _liveThinking.listeners = _liveThinking.listeners.filter(function(l) { return l !== fn; });
+        if (typeof UI_Thinking !== 'undefined' && typeof UI_Thinking.finishLive === 'function') return UI_Thinking.finishLive.apply(UI_Thinking, arguments);
+        return false;
       };
       return ui;
     })()

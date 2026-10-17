@@ -36,7 +36,7 @@ function DiceTab() {
 
   function save() {
     Model.saveDiceConfig(cfg);
-    try { Platform.ui.toast('已保存', { type: 'success' }); } catch (e) {}
+    Platform.ui.toast('已保存', { type: 'success' });
   }
 
   function reset() {

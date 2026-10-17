@@ -83,7 +83,7 @@ function HomeScreen() {
     if (!model.lastSave) return;
     StoryRuntime.continueLast().then(function (res) {
       if (!res.ok && !res.routed) {
-        try { Platform.dialog.alert(StoryRuntime.CONTINUE_REASONS[res.reason] || '续玩失败'); } catch (e) {}
+        Platform.dialog.alert(StoryRuntime.CONTINUE_REASONS[res.reason] || '续玩失败');
       }
     });
   }
@@ -94,8 +94,7 @@ function HomeScreen() {
     var inGame = false;
     try { inGame = !!(GameState.currentCardId && GameState.currentSaveId); } catch (e) { inGame = false; }
     if (inGame) { nav.navigate('story'); return; }
-    try { Platform.ui.toast('还没有正在进行的存档', { type: 'warn' }); }
-    catch (e) { try { Platform.dialog.alert('还没有正在进行的存档'); } catch (e2) {} }
+    Platform.ui.toast('还没有正在进行的存档', { type: 'warn' });
   }
 
   function openPicker() { setPickerOpen(true); }
@@ -208,7 +207,7 @@ function HomeScreen() {
   function openSaveRow(m) {
     StoryRuntime.openSave(m.cardId, m.saveId).then(function (res) {
       if (res && !res.ok && !res.routed) {
-        try { Platform.dialog.alert(StoryRuntime.CONTINUE_REASONS[res.reason] || '打开存档失败'); } catch (e) {}
+        Platform.dialog.alert(StoryRuntime.CONTINUE_REASONS[res.reason] || '打开存档失败');
       }
     });
   }

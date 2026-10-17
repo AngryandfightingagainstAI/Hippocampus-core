@@ -5,8 +5,9 @@
 // 有 image 时渲染绝对定位铺满、resizeMode="cover"、opacity: background.opacity、
 //   pointerEvents="none" 的 Image（包一层 View 确保 pointerEvents 生效）。
 // 无 image 时不渲染任何东西（返回 null）。
-// 挂载点：HomeScreen root 容器内 + StoryScreen root 容器内（贴最底层，
+// 挂载点：HomeScreen / StoryScreen / SettingsScreen root 容器内（贴最底层，
 //   内容之上，主题底色仍在——root 的 backgroundColor: c.bg 不动）。
+//   P57-A：SettingsScreen 为本轮新增挂载点（用户澄清：设置页未渲染图片背景）。
 // 纪律：颜色/字号只取自 useTheme() tokens；不引任何新依赖。
 // ============================================================
 

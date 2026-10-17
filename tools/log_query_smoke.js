@@ -605,9 +605,12 @@ function runG() {
     ['engine/core/gamestate.js', '3FC5184404E781718B9B149A1BCA20B0'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
-    ['engine/info_feed.js', '6010CBD7FE4B1DCCA28E428DD634F280'],
+    // 净化批 EX5 重记（2026-10-17，用户批准）：:839 删外层 try 保单防线 if ⇒ 现盘值
+    ['engine/info_feed.js', '4CC16B02A004DA9740354984058D93F2'],
     // P54·P1 再重记：推演协议条件注入 ⇒ 52285 B / 7246723C904BA39C1A258D283007908E
-    ['engine/core/prompt_builder.js', '7246723C904BA39C1A258D283007908E']
+    // 净化批 EX5 重记（2026-10-17，用户批准）：删外层防御 try/catch ⇒ 686F416572C0E0A862CEB8E8FC2368FD
+    // query_portrait 阶段二重记（2026-10-17，用户批准）：_qExtLine 追加 query_portrait() 协议行（+19 B）⇒ 现盘值
+    ['engine/core/prompt_builder.js', '3BF47F14AC100C2A51FFBD8C9791146F']
   ];
   bases.forEach(function (b) {
     eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5(path.join(root, b[0])), b[1]);

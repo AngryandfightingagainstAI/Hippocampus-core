@@ -108,7 +108,7 @@ function ErrorLogPanel(props) {
       Clipboard.setString(entryText(e));
       Platform.ui.toast('已复制', { type: 'success' });
     } catch (err) {
-      try { Platform.ui.toast('复制失败', { type: 'error' }); } catch (e2) { /* */ }
+      Platform.ui.toast('复制失败', { type: 'error' });
     }
   }
 
@@ -118,9 +118,9 @@ function ErrorLogPanel(props) {
     var report = PanelData.errorLogReport();
     ExportUtil.shareOrCopy(report, '诊断报告').then(function (res) {
       if (res && res.dismissed) return;
-      try { Platform.ui.toast('已复制', { type: 'success' }); } catch (e) { /* */ }
+      Platform.ui.toast('已复制', { type: 'success' });
     }).catch(function () {
-      try { Platform.ui.toast('复制失败', { type: 'error' }); } catch (e) { /* */ }
+      Platform.ui.toast('复制失败', { type: 'error' });
     });
   }
 

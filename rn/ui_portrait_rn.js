@@ -166,17 +166,17 @@ function applyPortrait(portrait) {
     if (typeof GameState !== 'undefined' && GameState && GameState.playerData) {
       GameState.playerData.portrait = portrait;
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 人设写回失败：', e); }
   try {
     if (typeof GameState !== 'undefined' && GameState && typeof GameState.invalidateCache === 'function') {
       GameState.invalidateCache();
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 缓存刷新失败：', e); }
   try {
     if (typeof GameState !== 'undefined' && GameState && typeof GameState.persist === 'function') {
       GameState.persist();
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 存档落盘失败：', e); }
 }
 
 function confirm(portrait, openingPrompt) {
@@ -198,17 +198,17 @@ function applyOpening(opening) {
       if (v) GameState.playerData._openingPrompt = v;
       else delete GameState.playerData._openingPrompt;
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 开场白落档失败：', e); }
   try {
     if (typeof GameState !== 'undefined' && GameState && typeof GameState.invalidateCache === 'function') {
       GameState.invalidateCache();
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 缓存刷新失败：', e); }
   try {
     if (typeof GameState !== 'undefined' && GameState && typeof GameState.persist === 'function') {
       GameState.persist();
     }
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] 存档落盘失败：', e); }
 }
 
 function skip(openingPrompt) {
@@ -220,7 +220,7 @@ function skip(openingPrompt) {
       traits: [], lockedAt: new Date().toISOString(), aiVersion: 0
     };
   }
-  try { Portrait.save(fb); } catch (e) { /* */ }
+  try { Portrait.save(fb); } catch (e) { console.warn('[ui_portrait_rn] 人设兜底保存失败：', e); }
   applyPortrait(fb);
   applyOpening(openingPrompt); // P10·A5：跳过也带上玩家填的开场白（桌面 skip:234-239 同）
   complete({ portrait: fb, openingPrompt: openingPrompt == null ? '' : String(openingPrompt) });
@@ -239,7 +239,7 @@ function getPlayerData() {
   if (_playerData) return _playerData;
   try {
     if (typeof GameState !== 'undefined' && GameState.playerData) return GameState.playerData;
-  } catch (e) { /* */ }
+  } catch (e) { console.warn('[ui_portrait_rn] playerData 读取失败：', e); }
   return {};
 }
 

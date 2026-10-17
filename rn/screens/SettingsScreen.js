@@ -4,8 +4,9 @@
 // Platform.ui 调用（UI 内聚），本页零桥接壳、纯 RN 直驱数据层。
 //
 // 布局（用户裁决 1）：Electron ≤760px 移动响应式 grounding =
-//   横滑编号 chips + 内容区独立滚（index.html L276-286）；两栏
-//   留作后续大屏适配。顶部返回 → nav.navigate('home')。
+// 横滑编号 chips + 内容区独立滚（index.html L276-286）；两栏
+//   留作后续大屏适配。顶部返回 → nav.goBack()（P56-R2：栈式返回，
+//   从剧情页进设置回剧情页；栈空兜底 home，不再写死回主页）。
 //
 // tab 分发（数据层全部 RN 仓就绪，grounding 见各 tab 文件头）：
 //   api       4-5b 实装（ApiManager/ApiClient 直驱）
@@ -28,6 +29,8 @@ var SafeArea = require('react-native-safe-area-context');
 
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
+// P57-A：全局背景渲染层（用户澄清：设置页未渲染图片背景；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 var Model = require('../settings_model.js');
 // P13·S2：切 tab 脏守卫用（WB.DirtyGuard.checkAny，定义在 engine/wb_common.js）
 var WB = require('../../engine/wb_common.js');
@@ -133,12 +136,13 @@ function SettingsScreen() {
     View,
     { style: styles.root },
     React.createElement(StatusBar, { barStyle: 'dark-content' }),
+    React.createElement(BackgroundLayer, null),
     React.createElement(
       View,
       { style: styles.topbar },
       React.createElement(
         TouchableOpacity,
-        { onPress: function () { nav.navigate('home'); } },
+        { onPress: function () { if (!nav.goBack()) nav.navigate('home'); } },
         React.createElement(Text, { style: styles.backBtn }, '← 返回')
       ),
       React.createElement(Text, { style: styles.topTitle }, '设 置'),

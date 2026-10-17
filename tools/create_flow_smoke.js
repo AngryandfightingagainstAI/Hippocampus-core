@@ -377,5 +377,24 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
     src.indexOf('wb.timeline && wb.timeline.official') >= 0 && src.indexOf('n && n.born') >= 0);
 })();
 
+// ================= G. C3 显示名回写契约（源码断言，2026-10-18）=================
+// 背景：C3 原始定义随桌面信箱覆盖丢失；本组锁 RN 侧「创角完成必须把玩家名回写
+//   存档 meta」的源码形态（rn/screens/CreateScreen.js finish）：
+//   buildPlayerData（内含 Alias.normalize）→ Alias.get('name') → Saves.setPlayerName。
+//   桌面侧行为测试见 tests/unit/test_c3_player_name.js（真跑 CreateFlow.finish）。
+(function () {
+  var src = readSrc('rn/screens/CreateScreen.js') || '';
+  check('G1 finish 内 buildPlayerData 落 playerData',
+    src.indexOf('GameState.playerData = CF.buildPlayerData(data)') >= 0);
+  check('G2 finish 内 Alias.get 取名',
+    src.indexOf("Alias.get(GameState.playerData, 'name')") >= 0);
+  check('G3 finish 内 setPlayerName 回写（cardId, saveId, String(pname)）',
+    src.indexOf('Saves.setPlayerName(cardId, saveId, String(pname))') >= 0);
+  check('G4 回写门禁：pname 与 currentSaveId 双条件',
+    src.indexOf('if (pname && GameState.currentSaveId)') >= 0);
+  check('G5 buildPlayerData 内含 Alias.normalize（create_flow_model）',
+    (readSrc('rn/create_flow_model.js') || '').indexOf('Alias.normalize(pd)') >= 0);
+})();
+
 console.log('CREATE_FLOW_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
 if (fail > 0) process.exit(1);

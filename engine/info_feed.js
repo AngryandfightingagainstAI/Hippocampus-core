@@ -836,7 +836,7 @@
       try {
         if (typeof ErrorLog !== 'undefined' && ErrorLog.audit) ErrorLog.audit('info_feed', kind, detail);
       } catch (e) {}
-      try { if (console.warn) console.warn('[InfoFeed] ' + kind + '：' + detail); } catch (e2) {}
+      if (console.warn) console.warn('[InfoFeed] ' + kind + '：' + detail);
     },
 
     // 空闲期 AI 主动发起；失败静默（只记 ErrorLog），无 key / 网络错 / JSON 坏一律直接 return

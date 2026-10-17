@@ -48,6 +48,8 @@ var FilePicker = require('../file_picker.js');
 var EmptyTexts = require('../empty_texts.js');
 // P42（用户 m09047）：粘贴框自己长高、默认收起（不再写死 140 高，也不吃掉拖动）
 var AutoInput = require('../components/AutoInput.js').AutoInput;
+// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
+var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 function CardsScreen() {
   var themeApi = useTheme();
@@ -129,19 +131,25 @@ function CardsScreen() {
       if (!ok) {
         // P9·S9：逐字照桌面 ui_cards.js:190 取消后的 info toast
         if (saves.length) {
-          try { Platform.ui.toast('已取消。想保留存档的话，目前请先导出卡带备份，再删除。', { type: 'info' }); } catch (e) {}
+          Platform.ui.toast('已取消。想保留存档的话，目前请先导出卡带备份，再删除。', { type: 'info' });
         }
         return;
       }
-      // 逐存档删除
+      // 逐存档删除（failed 计数：任一环节失败不得谎报「已删除」）
+      var failed = 0;
       saves.forEach(function (s) {
-        try { Saves.delete(id, s.saveId); } catch (e) {}
+        try { Saves.delete(id, s.saveId); } catch (e) { failed++; }
       });
       // 删卡带文件
-      try { VFS.deleteFile('/cards/' + id + '.json'); } catch (e) {}
+      try { VFS.deleteFile('/cards/' + id + '.json'); } catch (e) { failed++; }
       // 如删的是当前主页卡，清记忆让 getHomeCardId 回落（与桌面 renderCardPicker 重算同语义）
       if (id === curHomeId) {
-        try { Model.setHomeCardId(''); } catch (e) {}
+        try { Model.setHomeCardId(''); } catch (e) { failed++; }
+      }
+      if (failed > 0) {
+        setImportMsg({ type: 'error', text: '删除卡带失败：' + name + '（' + failed + ' 项未完成，请重试）' });
+        refresh();
+        return;
       }
       setImportMsg({ type: 'success', text: '已删除卡带：' + name });
       refresh();
@@ -472,6 +480,7 @@ function CardsScreen() {
   return (
     <View style={styles.root}>
       <StatusBar barStyle="dark-content" />
+      <BackgroundLayer />
       <View style={styles.headerRow}>
         <Text style={styles.back} onPress={function () { nav.goBack(); }}>{'← 返回'}</Text>
         <Text style={styles.title}>{'卡 带 库'}</Text>

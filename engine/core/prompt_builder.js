@@ -255,7 +255,7 @@ var PromptBuilder = {
     // P10·B2②：原「查询扩展」行重复声明了 query_nodes/query_endings/query_events/
     //   query_tasks/query_achievements/query_weather 六个工具（上面各功能行已声明），
     //   按「同一工具只在一处声明」收敛——这里只留无别处声明的 4 个扩展查询。
-    var _qExtLine = '查询扩展：query_dice_history({recent?, label?, round?}) / query_avatar({npcId?}) / query_proposals()';
+    var _qExtLine = '查询扩展：query_dice_history({recent?, label?, round?}) / query_avatar({npcId?}) / query_portrait() / query_proposals()';
     if (_deductionOn()) _qExtLine += ' / query_deductions()';
     lines.push(_qExtLine);
     lines.push('元层提议：玩家说“应该加/应该改/不该再”时，调 propose_change 把变更落成提议（叙事里的口头答应不算）。');
@@ -517,25 +517,23 @@ var PromptBuilder = {
     // ★ 角色声音提醒：每轮提醒 AI 这个角色该怎么说话
     // P10·B2④：第三部分已全量列出 portrait.traits（Portrait.formatForPrompt 产出
     //   「关键特质：· t」），此处只列「第三部分没出现的」traits，消除同一特质两遍。
-    try {
-      var portrait = pd.portrait;
-      if (portrait && portrait.traits && portrait.traits.length) {
-        var shownTraits = '';
-        try {
-          if (portrait.summary && typeof Portrait !== 'undefined' && Portrait.formatForPrompt) {
-            shownTraits = String(Portrait.formatForPrompt(portrait) || '');
-          }
-        } catch (e1) { shownTraits = ''; }
-        var voiceTraits = portrait.traits.filter(function(t) {
-          if (shownTraits && shownTraits.indexOf('· ' + String(t)) >= 0) return false;
-          return /说话|语气|口吻|风格|性格|态度|习惯|反应|方式/.test(String(t));
-        });
-        if (voiceTraits.length) {
-          lines.push('>>> 角色声音提醒（保持前后一致，用自己的腔调）：');
-          voiceTraits.slice(0, 4).forEach(function(t) { lines.push('   · ' + t); });
+    var portrait = pd.portrait;
+    if (portrait && portrait.traits && portrait.traits.length) {
+      var shownTraits = '';
+      try {
+        if (portrait.summary && typeof Portrait !== 'undefined' && Portrait.formatForPrompt) {
+          shownTraits = String(Portrait.formatForPrompt(portrait) || '');
         }
+      } catch (e1) { shownTraits = ''; }
+      var voiceTraits = portrait.traits.filter(function(t) {
+        if (shownTraits && shownTraits.indexOf('· ' + String(t)) >= 0) return false;
+        return /说话|语气|口吻|风格|性格|态度|习惯|反应|方式/.test(String(t));
+      });
+      if (voiceTraits.length) {
+        lines.push('>>> 角色声音提醒（保持前后一致，用自己的腔调）：');
+        voiceTraits.slice(0, 4).forEach(function(t) { lines.push('   · ' + t); });
       }
-    } catch (e) {}
+    }
     lines.push('>>> 玩家：' + (idx.length ? idx.join(' · ') : '（未填）'));
     // ★ 场景描述：玩家所在地点的固定特征
     try {

@@ -70,11 +70,11 @@
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（P53）：**逐字节相同 38 个**、**仅行尾不同 23 个**、**真差异 18 个**，
+最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 39 个**、**仅行尾不同 23 个**、**真差异 17 个**，
 合计 79 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（38 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（39 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -104,6 +104,7 @@ engine/portrait.js
 engine/proposals.js
 engine/story.js
 engine/words.js
+platform/platform_adapter.js
 tools/background_smoke.js
 tools/claim_fact_smoke.js
 tools/endings_gate_smoke.js
@@ -148,7 +149,7 @@ vfs/logger.js
 vfs/secure_envelope.js
 ```
 
-**真差异**（18 个；按各自仓的语义改，逻辑对齐靠测试而不是靠字节）：
+**真差异**（17 个；按各自仓的语义改，逻辑对齐靠测试而不是靠字节）：
 
 ```text
 # 真差异
@@ -164,7 +165,6 @@ engine/npc_deduction_ai.js
 engine/realtime.js
 engine/weather.js
 engine/web_search.js
-platform/platform_adapter.js
 tools/longline_token_smoke.js
 tools/npc_boundary_smoke.js
 vfs/saves.js
@@ -202,15 +202,15 @@ vfs/vfs_guard.js
 
 ### 2.3 ⚠ 同名但**不同源**（最容易误判）
 
-- 唯一准确的清单是上面那张【真差异】表（18 个），它是**现算**出来的，别凭记忆。
+- 唯一准确的清单是上面那张【真差异】表（17 个），它是**现算**出来的，别凭记忆。
 - `tools/longline_token_smoke.js`、`tools/npc_boundary_smoke.js`：两仓**同名、内容不同**，
   各自写各自的夹具，**不要互相同步**。
 - `tools/p10_smoke.js`、`tools/story_smoke.js`、`tools/home_smoke.js` 等：**RN 仓独有**；
   桌面仓的对应覆盖在 `tests/unit/`、`tests/e2e/` 下，**文件名不同**，不存在同源关系。
 - `engine/core/prompt_builder.js`、`engine/core/storage.js`、`engine/api_manager.js`、`engine/web_search.js`、
-  `platform/platform_adapter.js`、`vfs/vfs.js`、`vfs/saves.js` 等 18 个：两仓**都有但内容不同**（平台差异，
+  `vfs/vfs.js`、`vfs/saves.js` 等 17 个：两仓**都有但内容不同**（平台差异，
   例如桌面 `storage.js` 多一行「平台依赖：localStorage，RN 侧换 SecureStore」声明）。
-- 反过来，这些曾被误判成「内容不同」，P53 现算确认是**逐字节相同**：`engine/story.js`、`engine/core/api_client.js`、`engine/core/tool_executor.js`。
+- 反过来，这些曾被误判成「内容不同」，现算确认是**逐字节相同**：`engine/story.js`、`engine/core/api_client.js`、`engine/core/tool_executor.js`、`platform/platform_adapter.js`（末者原在真差异桶，2026-10-17 净化批 EX2/EX5 两侧改同一刀后 Copy-Item 二进制同步，转同源）。
 - 这些曾被误判成「内容不同」，P53 现算确认属于**仅行尾不同**：`engine/theme.js`、`engine/endings.js`、`engine/events.js`、`engine/proposal_validator.js`。
 
 ================================================================
@@ -233,13 +233,14 @@ vfs/vfs_guard.js
 【四、跑测口径】
 ================================================================
 
-### 4.1 RN 侧（38 套）
+### 4.1 RN 侧（40 套）
 
 **cwd 随意（P54 实测订正）**：所有 smoke 都用 `__dirname` 锚定仓根（`tools\*.js` 里
 `process.cwd()` 真实调用 **0 处**），babel 也显式传了 `configFile`，所以从任何目录跑结果都一样。
 实测：从 `%TEMP%` 直跑 16 套（含 5 套头部注释仍写「cwd 必须是仓根」的 `claim_fact` / `import` /
 `p10` / `log_query` / `npc_boundary`）断言数与仓根**逐字相同**；从 `%TEMP%` 直跑整个跑批器同样是
-`RN_ALL_END SUITES=38 TOTAL_OK=2585 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`（P54·第17条 stage 2 复测时 cwd =
+`RN_ALL_END SUITES=38 TOTAL_OK=2585 TOTAL_FAIL=0 TOTAL_SKIP=0 BAD_SUITES=0`（38 套时期的实测；
+P54·第17条 stage 2 复测时 cwd =
 工作目录 `D:\AI文游\神秘小引擎测试版`，同样逐字相同）。
 在仓库根下跑仍是最省事的习惯，但不再是硬约束。
 （注：约 19 个 `tools\*.js` 的头部注释还留着「cwd = RN 仓根」的旧口径，属过时注释，本次未逐条订正。）
@@ -256,13 +257,15 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | 套件 | 断言 |
 |---|---|
 | `background_smoke.js` | 37 |
+| `cache_prefix_smoke.js` | 27 |
 | `cache_usage_smoke.js` | 12 |
 | `card_compat_smoke.js` | 24 |
 | `card_import_smoke.js` | 25 |
 | `cards_smoke.js` | 35 |
 | `claim_fact_smoke.js` | 44 |
-| `create_flow_smoke.js` | 115 |
+| `create_flow_smoke.js` | 120 |
 | `create_smoke.js` | 23 |
+| `dice_history_smoke.js` | 19 |
 | `endings_gate_smoke.js` | 27 |
 | `file_picker_smoke.js` | 51 |
 | `h6_panels_smoke.js` | 137 |
@@ -294,20 +297,20 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `web_search_smoke.js` | 51 |
 | `worldbook_smoke.js` | 180 |
 
-**当前基线：38 套 / 2585 ok / 0 failed。**
+**当前基线：40 套 / 2636 ok / 0 failed。**
 
 ### 4.2 桌面侧
 
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（53 套）
+node tools\run_batch.js                   # 前置门 + 全量（60 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
 ```
 
-**当前基线：53 套全绿（约 340 s；`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
+**当前基线：59 套全绿（`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
 
 ### 4.3 环境坑（都真踩过）
 
@@ -343,7 +346,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
   `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
-  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2636 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报

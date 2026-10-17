@@ -61,7 +61,7 @@ function ApiTab() {
   }
 
   function updateActive(patch) {
-    try { globalThis.ApiManager.update(cur.id, patch); } catch (e3) {}
+    try { globalThis.ApiManager.update(cur.id, patch); } catch (e3) { globalThis.StoryStore.pushToast('保存 API 配置失败', { type: 'warn' }); }
   }
 
   function setField(key, v) {
@@ -84,7 +84,7 @@ function ApiTab() {
           g.storyChannel === 'external' ? '已切到外部 AI 通道：每轮手动复制 → 粘贴' : '已切回直连 API',
           { type: 'success' });
       }
-    } catch (e4) {}
+    } catch (e4) { globalThis.StoryStore.pushToast('切换对话通道失败', { type: 'warn' }); }
   }
   function currentChannel() {
     try {

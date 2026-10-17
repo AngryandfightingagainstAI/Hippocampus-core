@@ -55,7 +55,7 @@ function markAccepted(id, forced, label) {
   var hint = '（已' + (forced ? '强制' : '') + '接受提议' + (label ? '：' + label : '') + '）';
   Platform.ui.appendHint(hint);
   try { GameState.persist(); } catch (e) { console.warn('[acceptChange] persist 失败：', e); }
-  try { if (NavStore) NavStore.notify('topbar'); } catch (e) {}
+  if (NavStore) NavStore.notify('topbar');
   StoryStore.renderGame();
 }
 

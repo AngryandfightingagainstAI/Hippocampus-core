@@ -437,6 +437,23 @@
 
     var card = jsonCheck.obj;
 
+    // G2-B（2026-10-17）：诊断链补跑确定性归一 —— 此前只有 CardValidator.validate
+    //   路径跑 normalizeCard，而 fromDiagnose 导入跳过 validate，「顶层 npcs」卡带
+    //   诊断后直接入库、worldbook.npcs 仍为空（展示与导入对象不同源）。现在诊断
+    //   阶段即归一：moved 是结构迁移（非错误修复），作单独 check 呈现并计入
+    //   warnings；不动 ok（G7 口径不变）；返回的 card 即归一后对象，renderTerminal
+    //   传给 _doImportWithText 的与诊断展示为同一份。
+    var normMoved = CardValidator.normalizeCard(card) || [];
+    var normCheck = {
+      id: 'normalize', label: '结构整理',
+      status: normMoved.length ? 'fixed' : 'pass',
+      detail: normMoved.length
+        ? '已自动整理（结构迁移，非错误修复）：' + normMoved.join('；')
+        : '无需整理'
+    };
+    checks.push(normCheck);
+    if (normMoved.length) warnings.push('已自动整理：' + normMoved.join('；'));
+
     var reqCheck = checkRequiredFields(card);
     checks.push(reqCheck);
     if (reqCheck.status === 'fail') {
@@ -491,8 +508,13 @@
       if (!dispSeg.valid) warnings.push('身份段 display：' + dispSeg.diag + '（不影响导入，主页回退默认身份）');
     }
 
+    // G7 修复（2026-10-17）：ok 必须与「必须修复」级一致 —— checkPanels 失败
+    //   （缺 num=2/3/4/5 或 panels 非数组）原本只进 fails 清单却不动 ok，
+    //   「带病导入」按钮按 ok 放行、fromDiagnose 又跳过 CardValidator，
+    //   导致缺必需面板的卡带入库。现在 ok 纳入 panelCheck；普通 warnings
+    //   （引用断裂/空面板/世界边界等）不受影响，仍可带警告导入。
     return {
-      ok: jsonCheck.status !== 'fail' && reqCheck.status !== 'fail',
+      ok: jsonCheck.status !== 'fail' && reqCheck.status !== 'fail' && panelCheck.status !== 'fail',
       checks: checks,
       card: card,
       fixedText: jsonCheck.fixedText,
