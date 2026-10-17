@@ -137,17 +137,21 @@ function SavesScreen() {
     var r = ExportUtil.buildSaveText(cardId, saveId);
     if (!r.ok) { showToast(r.reason, 'warn'); return; }
     // P54·第17条 stage 2：可选口令 —— 留空 = 明文导出（默认行为不变）；取消 = 放弃导出
-    StoryStore.promptOpen('给这次导出的存档加个口令？（留空 = 明文导出）', '', {
+    StoryStore.promptOpen('给这次导出的存档加个口令？（留空 = 明文导出；加密要跑一会儿，下面会显示进度）', '', {
       password: true, okText: '导出', placeholder: '口令（可留空）'
     }).then(function (pass) {
       if (pass === null) { showToast('已取消导出', 'warn'); return; }
-      var w = ExportUtil.secureWrap(r.text, pass);
-      if (!w.ok) { showToast(w.reason, 'error'); return; }
-      return ExportUtil.shareOrCopy(w.text, '导出存档').then(function (s) {
-        if (s.shared) showToast('已发送：' + r.filename, 'success');
-        else if (s.copied) showToast('导出内容已复制到剪贴板（' + r.filename + '）', 'info');
-        else if (s.dismissed) showToast('已取消导出', 'warn');
-        else showToast('导出失败', 'error');
+      // P61：口令封装改异步分块（Hermes 上 PBKDF2 100000 轮 ≈ 8.4 s，同步会把界面冻死），
+      //   进度就显示在「导出」按钮下面那行提示里，让人知道它在干活。
+      var onProgress = ExportUtil.toastProgressReporter(StoryStore, '正在加密存档');
+      return ExportUtil.secureWrapAsync(r.text, pass, { onProgress: onProgress }).then(function (w) {
+        if (!w.ok) { showToast(w.reason, 'error'); return undefined; }
+        return ExportUtil.shareOrCopy(w.text, '导出存档').then(function (s) {
+          if (s.shared) showToast('已发送：' + r.filename, 'success');
+          else if (s.copied) showToast('导出内容已复制到剪贴板（' + r.filename + '）', 'info');
+          else if (s.dismissed) showToast('已取消导出', 'warn');
+          else showToast('导出失败', 'error');
+        });
       });
     }).catch(function (e) {
       showToast('导出失败：' + (e && e.message || e), 'error');

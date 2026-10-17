@@ -339,12 +339,13 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：12 套 / 180 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：13 套 / 188 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
-  `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条、`test_ui_proxy_cycle_unit.js` 5 条）。
+  `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条、`test_ui_proxy_cycle_unit.js` 5 条、
+  `test_kdf_async_unit.js` 8 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2636 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -521,6 +522,30 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   C5 是源码哨兵（`UI_NAMES` 含 `requestExternalReply`、头注计数与数组长度一致、PASSTHROUGH 白名单在、
   自动代理注释仍在）。教训：这类「缺失即死循环」的缺陷不会被行为测试撞见（一调就崩进程），
   必须靠「名单对账」这种静态断言提前拦住。
+- `test_kdf_async_unit.js` 的 A1–A8 锁住 **P61·长口令 KDF 不许冻住界面**（真机 1.3.1 实测：
+  带口令导出从点「导出」到系统分享面板 **8403 / 8426 ms** 两次，空口令明文导出 **73 ms**；
+  桌面 V8 同实现 iter=100000 只要 689 ms ⇒ Hermes 上慢约 12 倍，这 8 s 里 JS 线程被同步占满，
+  连「正在加密」都刷不出来）：`vfs/secure_envelope.js` 现在有 `pbkdf2State/pbkdf2Step/pbkdf2Async`
+  （分块 + 自适应 chunk + 每块让出一帧）与 `encryptAsync/decryptAsync/wrapAsync/unwrapAsync`；
+  A1 断言**同步与异步派生值逐字节相同**（分块绝不改算法，含中文口令 / 空口令空盐边界），
+  A2 在固定 salt/nonce 下 `encrypt` 与 `encryptAsync` 产出**同一段信封文本**且互相解得开
+  （所以已经发出去的加密存档不会因为换实现而解不开）；A3 进度回调单调、末次 `done === total`
+  （`total = ceil(dkLen/32) × iter`，屏幕上的百分比就靠它）；A4 错口令 / 空口令的 reason 原文案不变；
+  A5 空口令仍是明文语义；A6 `rn/export_util.js` 的 `secureWrapAsync/secureUnwrapAsync` 语义是
+  「有异步 API 就走异步、只有同步 API 的老模块（含单测桩）回落同步」；A7 `progressReporter` 的
+  节流口径（同百分比不刷、默认 10% 步长、打满必刷）；A8 源码哨兵：三个屏幕不再出现同步
+  `ExportUtil.secureWrap(` / `secureUnwrap(` 调用，导出表里三个新名字都在。
+  屏幕层接法：`var onProgress = ExportUtil.progressReporter(function (t) { setMsg({ type: "info", text: t }); }, "正在加密");`
+  再 `secureWrapAsync(text, pass, { onProgress: onProgress })` —— 进度走各屏已有的单行提示，不进 toast 队列。
+  真机复测（同一台 vivo V2118A / 同一份存档导出）：**改前同步 = 8403 / 8426 ms 且整屏冻死**；
+  改后异步 = **9889 / 10085 ms**，全程可见 `正在加密存档 22% → 33% → …`（截图取证），
+  多出来的 ~1.7 s 是「纯计算 8.4 s + 分片让出 + 进度重绘」的代价。第一版切片按 500 轮切、
+  每片只算 21 ms ⇒ 200 次让出、真机拖到 **14 643 ms**；改成「按实测每轮耗时反推切片大小、
+  目标每片 ≈ 90 ms」后回到 10 s 上下（`opts.targetMs` 可调）。
+  进度显示形式也踩过一次：先写在各屏的行内提示里 ⇒ 存档屏有 11 条存档、提示被挤到可视区外，
+  真机上「什么都看不见」（截图确认）。现在统一 `ExportUtil.toastProgressReporter(StoryStore, label)`：
+  同一条 toast 换文案（dismiss + push），浮在最上层，不进队列、不堆积。
+  桌面（Electron / V8）同实现 iter=100000 只要 689 ms ⇒ 桌面保持同步调用，不改（省一次 Promise 往返）。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、

@@ -102,6 +102,71 @@ function isEnvelopeText(text) {
   return SecureEnvelope.isEnvelope(s);
 }
 
+// P61：异步口令封装 —— Hermes 上 PBKDF2 100000 轮实测 ≈ 8.4 s（空口令 73 ms），
+//   同步版会把 JS 线程整个锁死，连「正在加密」都刷不出来（真机 1.3.1 实测）。
+//   这里走 vfs/secure_envelope.js 的 *Async（分块 KDF，每块让出一帧），
+//   进度用 progressReporter 节流成百分比文案交给屏幕层就地显示。
+//   · 只有同步 API 的老模块 / 单测桩 ⇒ 自动回落同步实现，语义不变。
+//   · opts：{ iter, salt, nonce, chunk, onProgress }（onProgress(done, total)）
+var PROGRESS_STEP = 10;   // 百分比步长：最多刷 10 次，够看见进展又不闪
+function progressReporter(emit, label, stepPct) {
+  var last = -1;
+  var step = stepPct > 0 ? stepPct : PROGRESS_STEP;
+  return function (done, total) {
+    var pct = total > 0 ? Math.min(100, Math.floor(done * 100 / total)) : 100;
+    if (pct === last) return;
+    if (pct < 100 && last >= 0 && pct - last < step) return;
+    last = pct;
+    if (typeof emit !== 'function') return;
+    try { emit((label || '处理中') + ' ' + pct + '%'); } catch (e) { /* 提示失败不影响加解密 */ }
+  };
+}
+// P61：进度用「同一条 toast 换文案」显示 —— 导出/导入都发生在长列表屏，
+//   行内提示会被滚出可视区（真机实测：加密那 10 秒屏幕上看不到任何字）。
+//   store = StoryStore（pushToast / dismissToast），只换文案不排队。
+function toastProgressReporter(store, label) {
+  var lastId = null;
+  return progressReporter(function (text) {
+    if (!store || typeof store.pushToast !== 'function') return;
+    try {
+      if (lastId != null && typeof store.dismissToast === 'function') store.dismissToast(lastId);
+      lastId = store.pushToast(text, { type: 'info', duration: 8000 });
+    } catch (e) { /* 进度提示失败不影响加解密 */ }
+  }, label);
+}
+function secureWrapAsync(text, passphrase, opts) {
+  var s = String(text == null ? '' : text);
+  var pass = String(passphrase == null ? '' : passphrase);
+  if (!pass) return Promise.resolve({ ok: true, text: s, encrypted: false });
+  if (!SecureEnvelope || typeof SecureEnvelope.wrapAsync !== 'function') {
+    return Promise.resolve(secureWrap(s, pass, opts));
+  }
+  var o = opts || {};
+  return SecureEnvelope.wrapAsync(s, pass, {
+    iter: o.iter, salt: o.salt, nonce: o.nonce,
+    kdf: { chunk: o.chunk, onProgress: o.onProgress }
+  }).then(function (r) {
+    if (!r.ok) return { ok: false, reason: r.reason };
+    return { ok: true, text: r.text, encrypted: r.encrypted !== false };
+  });
+}
+function secureUnwrapAsync(text, passphrase, opts) {
+  var s = String(text == null ? '' : text);
+  if (!SecureEnvelope || typeof SecureEnvelope.unwrapAsync !== 'function') {
+    return Promise.resolve(secureUnwrap(s, passphrase));
+  }
+  if (typeof SecureEnvelope.isEnvelope !== 'function') {
+    if (!looksLikeEnvelope(s)) return Promise.resolve({ ok: true, text: s, encrypted: false });
+    return Promise.resolve({ ok: false, reason: '加密模块不可用' });
+  }
+  if (!SecureEnvelope.isEnvelope(s)) return Promise.resolve({ ok: true, text: s, encrypted: false });
+  var o = opts || {};
+  return SecureEnvelope.unwrapAsync(s, passphrase, { kdf: { chunk: o.chunk, onProgress: o.onProgress } })
+    .then(function (r) {
+      if (!r.ok) return { ok: false, reason: r.reason };
+      return { ok: true, text: r.text, encrypted: !!r.encrypted };
+    });
+}
 // 设备通道：Share.share → 失败降级 Clipboard（同 DataTab.shareOrCopy）
 // resolve：{ shared:true } | { copied:true } | { dismissed:true }
 function shareOrCopy(text, title) {
@@ -123,5 +188,10 @@ module.exports = {
   // P54·第17条 stage 2：口令封装 / 信封判别
   secureWrap: secureWrap,
   secureUnwrap: secureUnwrap,
-  isEnvelopeText: isEnvelopeText
+  isEnvelopeText: isEnvelopeText,
+  // P61：分块异步版（长口令提示 / 不冻 UI）+ 进度节流器
+  secureWrapAsync: secureWrapAsync,
+  secureUnwrapAsync: secureUnwrapAsync,
+  progressReporter: progressReporter,
+  toastProgressReporter: toastProgressReporter
 };

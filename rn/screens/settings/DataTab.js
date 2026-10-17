@@ -129,7 +129,9 @@ function DataTab() {
         password: true, okText: '解密', placeholder: '口令'
       });
       if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }
-      var unsealed = ExportUtil.secureUnwrap(raw, pass);
+      // P61：解密走异步分块（Hermes 上 100000 轮 ≈ 8.4 s），进度就地显示在提示行
+      var onProgress = ExportUtil.toastProgressReporter(StoryStore, '正在解密存档');
+      var unsealed = await ExportUtil.secureUnwrapAsync(raw, pass, { onProgress: onProgress });
       if (!unsealed.ok) { setImportMsg({ type: 'error', text: unsealed.reason }); return; }
       raw = unsealed.text;
     }
@@ -267,6 +269,7 @@ function DataTab() {
       },
       msgOk: { fontSize: f.sm, color: c.success, marginTop: 4 },
       msgWarn: { fontSize: f.sm, color: c.warning, marginTop: 4 },
+      msgInfo: { fontSize: f.sm, color: c.muted, marginTop: 4 },
       msgErr: { fontSize: f.sm, color: c.danger, marginTop: 4 },
       auditBox: {
         backgroundColor: c.panel,
@@ -308,7 +311,8 @@ function DataTab() {
       importMsg
         ? React.createElement(Text, {
             style: importMsg.type === 'success' ? styles.msgOk
-              : (importMsg.type === 'warn' ? styles.msgWarn : styles.msgErr)
+              : (importMsg.type === 'warn' ? styles.msgWarn
+                : (importMsg.type === 'info' ? (styles.msgInfo || styles.msgWarn) : styles.msgErr))
           }, importMsg.text)
         : null
     ),

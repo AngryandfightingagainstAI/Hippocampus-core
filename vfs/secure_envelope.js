@@ -52,6 +52,9 @@
   var KDF = 'pbkdf2-sha256';
   var CIPHER = 'chacha20';
   var MAC = 'hmac-sha256';
+  // P61：KDF 迭代轮数不变（安全性不动），只把「怎么跑这 100000 轮」改成可分块 ——
+  //   同步入口 pbkdf2/encrypt/decrypt 逐字节行为与旧实现相同；异步入口 pbkdf2Async/
+  //   encryptAsync/decryptAsync 每块让出事件循环，界面能刷进度（真机实测 8.4s 全程冻结）。
   var DEFAULT_ITER = 100000;
   var MAX_ITER = 2000000;
   var SALT_LEN = 16;
@@ -324,35 +327,125 @@
     return _prfOut;
   }
 
-  function pbkdf2(pass, salt, iter, dkLen) {
+  // ---- P61：分块 KDF ----
+  //   背景：Hermes 下 100000 轮 PBKDF2 实测 ≈ 8.4 s（桌面 V8 ≈ 0.69 s，慢 ≈ 12 倍），
+  //   同步调用会把 JS 线程整段按住、界面全冻、没有任何提示。这里把 PRF 循环做成可步进的
+  //   状态机：同步实现（pbkdf2）输出与旧实现逐字节相同，异步实现（pbkdf2Async）每块之间
+  //   让出事件循环，并把单块耗时自适应控制在 ~20-60 ms，界面能继续画帧。
+  function pbkdf2State(pass, salt, iter, dkLen) {
     var hLen = 32;
     var blocks = Math.ceil(dkLen / hLen);
-    var out = new Uint8Array(blocks * hLen);
-    var states = hmacPadStates(pass);
-    var si = new Uint8Array(salt.length + 4);
-    var u = new Uint8Array(32);
-    var t = new Uint8Array(32);
-    for (var b = 1; b <= blocks; b++) {
-      si.set(salt, 0);
-      si[salt.length] = (b >>> 24) & 0xff;
-      si[salt.length + 1] = (b >>> 16) & 0xff;
-      si[salt.length + 2] = (b >>> 8) & 0xff;
-      si[salt.length + 3] = b & 0xff;
-      // U1：输入是 salt || INT(i)，长度不定 ⇒ 走通用路径（每块只一次，含外层）
-      var Hi = states.ip.slice();
-      shaSuffix(Hi, si, 64);
-      var inner = writeHBE(new Uint8Array(32), Hi, 0);
-      var Ho = states.op.slice();
-      shaSuffix(Ho, inner, 64);
-      writeHBE(u, Ho, 0);
-      t.set(u);
-      for (var i = 1; i < iter; i++) {
-        var o = prf32(states, u);
-        for (var j = 0; j < 32; j++) { u[j] = o[j]; t[j] ^= o[j]; }
+    var st = {
+      hLen: hLen, iter: iter, blocks: blocks, dkLen: dkLen,
+      b: 1, i: 1, done: 0,
+      states: hmacPadStates(pass),
+      si: new Uint8Array(salt.length + 4),
+      u: new Uint8Array(32),
+      t: new Uint8Array(32),
+      out: new Uint8Array(blocks * hLen),
+      saltLen: salt.length,
+      salt: salt
+    };
+    pbkdf2StartBlock(st);
+    return st;
+  }
+
+  function pbkdf2StartBlock(st) {
+    st.si.set(st.salt, 0);
+    st.si[st.saltLen] = (st.b >>> 24) & 0xff;
+    st.si[st.saltLen + 1] = (st.b >>> 16) & 0xff;
+    st.si[st.saltLen + 2] = (st.b >>> 8) & 0xff;
+    st.si[st.saltLen + 3] = st.b & 0xff;
+    // U1：输入是 salt || INT(i)，长度不定 ⇒ 走通用路径（每块只一次，含外层）
+    var Hi = st.states.ip.slice();
+    shaSuffix(Hi, st.si, 64);
+    var inner = writeHBE(new Uint8Array(32), Hi, 0);
+    var Ho = st.states.op.slice();
+    shaSuffix(Ho, inner, 64);
+    writeHBE(st.u, Ho, 0);
+    st.t.set(st.u);
+    st.i = 1;
+    st.done = (st.b - 1) * st.iter + 1;
+  }
+
+  // 推进至多 budget 轮 PRF；返回「是否已全部完成」
+  function pbkdf2Step(st, budget) {
+    var n = 0;
+    while (st.b <= st.blocks && n < budget) {
+      if (st.i < st.iter) {
+        var o = prf32(st.states, st.u);
+        for (var j = 0; j < 32; j++) { st.u[j] = o[j]; st.t[j] ^= o[j]; }
+        st.i++;
+        st.done++;
+        n++;
+      } else {
+        st.out.set(st.t, (st.b - 1) * st.hLen);
+        st.b++;
+        if (st.b <= st.blocks) pbkdf2StartBlock(st);
       }
-      out.set(t, (b - 1) * hLen);
     }
-    return out.subarray(0, dkLen);
+    return st.b > st.blocks;
+  }
+
+  function pbkdf2Finish(st) {
+    return st.out.subarray(0, st.dkLen);
+  }
+
+  function pbkdf2(pass, salt, iter, dkLen) {
+    var st = pbkdf2State(pass, salt, iter, dkLen);
+    while (!pbkdf2Step(st, 1 << 28)) { /* 同步口径：一次跑完，不主动让出 */ }
+    return pbkdf2Finish(st);
+  }
+
+  // 让出事件循环必须用宏任务：微任务不会把控制权还给原生，进度照样刷不出来。
+  function deferTick(fn) {
+    if (typeof setTimeout === 'function') { setTimeout(fn, 0); return; }
+    if (typeof setImmediate === 'function') { setImmediate(fn); return; }
+    Promise.resolve().then(fn);
+  }
+
+  // 异步 PBKDF2：把 KDF 切片跑，每片结束用宏任务让出一帧，屏幕才有机会刷「正在加密 x%」。
+  //   opts.chunk    初始切片（默认 800 轮；下面按实测耗时自适应）
+  //   opts.targetMs 每片的目标计算耗时（默认 90ms）—— 太小则让出次数过多（真机上每次让出
+  //                 约 30~50ms 原生调度开销，切 500 轮要切 200 次，8.4s 的活拖成 14.6s）；
+  //                 太大则掉帧明显。90ms 是「看得见进度、又不把时间浪费在调度上」的折中。
+  //   opts.onProgress(done, total) 进度回调（至少 120ms 一次，末次必打）
+  function pbkdf2Async(pass, salt, iter, dkLen, opts) {
+    var o = opts || {};
+    var st = pbkdf2State(pass, salt, iter, dkLen);
+    var total = st.blocks * st.iter;
+    var chunk = Math.max(50, o.chunk || 800);
+    var targetMs = Math.max(20, o.targetMs || 90);
+    var onProgress = typeof o.onProgress === 'function' ? o.onProgress : null;
+    function nowMs() { return (typeof Date !== 'undefined' && typeof Date.now === 'function') ? Date.now() : 0; }
+    return new Promise(function (resolve, reject) {
+      var lastEmit = 0;
+      var perIterMs = 0;   // 平滑后的「每轮耗时」，用来算下一片该切多大
+      function tick() {
+        var t0 = nowMs();
+        var finished;
+        try { finished = pbkdf2Step(st, chunk); }
+        catch (e) { reject(e); return; }
+        var t1 = nowMs();
+        var ms = t1 - t0;
+        if (ms > 0 && chunk > 0) {
+          var sample = ms / chunk;
+          perIterMs = perIterMs > 0 ? (perIterMs * 0.6 + sample * 0.4) : sample;
+          var want = perIterMs > 0 ? Math.round(targetMs / perIterMs) : chunk;
+          if (want < 50) want = 50;
+          if (want > 20000) want = 20000;
+          chunk = want;
+        }
+        if (onProgress && (finished || t1 - lastEmit >= 120)) {
+          lastEmit = t1;
+          try { onProgress(Math.min(st.done, total), total); }
+          catch (eCb) { /* 进度回调抛错不得中断 KDF */ }
+        }
+        if (finished) { resolve(pbkdf2Finish(st)); return; }
+        deferTick(tick);
+      }
+      deferTick(tick);
+    });
   }
 
   // ---------------- ChaCha20（RFC 8439；12 字节 nonce，32 位计数器） ----------------
@@ -440,6 +533,12 @@
     return { enc: dk.subarray(0, 32), mac: dk.subarray(32, 64) };
   }
 
+  function deriveKeysAsync(passphrase, salt, iter, opts) {
+    return pbkdf2Async(utf8Encode(passphrase), salt, iter, 64, opts).then(function (dk) {
+      return { enc: dk.subarray(0, 32), mac: dk.subarray(32, 64) };
+    });
+  }
+
   function timingSafeEqual(a, b) {
     if (a.length !== b.length) return false;
     var diff = 0;
@@ -459,7 +558,11 @@
     if (!(iter >= 1 && iter <= MAX_ITER)) return { ok: false, reason: '迭代轮数越界' };
     var salt = o.salt || randomBytes(SALT_LEN);
     var nonce = o.nonce || randomBytes(NONCE_LEN);
-    var keys = deriveKeys(pass, salt, iter);
+    return encryptTail(plain, iter, salt, nonce, deriveKeys(pass, salt, iter));
+  }
+
+  // 加密尾段（同步/异步共用，保证两条路产出的信封逐字节一致）
+  function encryptTail(plain, iter, salt, nonce, keys) {
     var ct = chacha20Xor(keys.enc, nonce, utf8Encode(plain));
     var saltB64 = b64encode(salt);
     var nonceB64 = b64encode(nonce);
@@ -478,6 +581,23 @@
       tag: b64encode(tag)
     };
     return { ok: true, text: JSON.stringify(env), env: env };
+  }
+
+  // P61：异步加密 —— 校验口径与 encrypt() 完全一致，只有 KDF 变成分块让出。
+  //   opts.kdf = { chunk, onProgress } 透传给 pbkdf2Async。
+  function encryptAsync(text, passphrase, opts) {
+    var o = opts || {};
+    var plain = String(text == null ? '' : text);
+    var pass = String(passphrase == null ? '' : passphrase);
+    if (!plain) return Promise.resolve({ ok: false, reason: '内容为空，无法加密' });
+    if (!pass) return Promise.resolve({ ok: false, reason: '口令为空，无法加密' });
+    var iter = o.iter || DEFAULT_ITER;
+    if (!(iter >= 1 && iter <= MAX_ITER)) return Promise.resolve({ ok: false, reason: '迭代轮数越界' });
+    var salt = o.salt || randomBytes(SALT_LEN);
+    var nonce = o.nonce || randomBytes(NONCE_LEN);
+    return deriveKeysAsync(pass, salt, iter, o.kdf).then(function (keys) {
+      return encryptTail(plain, iter, salt, nonce, keys);
+    });
   }
 
   function concatBytes(a, b) {
@@ -531,7 +651,11 @@
     if (!p.ok) return { ok: false, reason: p.reason, tampered: false };
     var pass = String(passphrase == null ? '' : passphrase);
     if (!pass) return { ok: false, reason: '口令为空', tampered: false };
-    var keys = deriveKeys(pass, p.salt, p.iter);
+    return decryptTail(p, deriveKeys(pass, p.salt, p.iter));
+  }
+
+  // 解密尾段（同步/异步共用）
+  function decryptTail(p, keys) {
     var header = utf8Encode(canonicalHeader(p.iter, p.env.salt, p.env.nonce));
     var expect = hmacSha256(keys.mac, concatBytes(header, p.ct));
     if (!timingSafeEqual(expect, p.tag)) {
@@ -539,6 +663,18 @@
     }
     var plain = utf8Decode(chacha20Xor(keys.enc, p.nonce, p.ct));
     return { ok: true, text: plain };
+  }
+
+  // P61：异步解密 —— 与 decrypt() 同文案（错口令/被改动仍共用一句，不替攻击者分辨）
+  function decryptAsync(input, passphrase, opts) {
+    var o = opts || {};
+    var p = parseEnvelope(input);
+    if (!p.ok) return Promise.resolve({ ok: false, reason: p.reason, tampered: false });
+    var pass = String(passphrase == null ? '' : passphrase);
+    if (!pass) return Promise.resolve({ ok: false, reason: '口令为空', tampered: false });
+    return deriveKeysAsync(pass, p.salt, p.iter, o.kdf).then(function (keys) {
+      return decryptTail(p, keys);
+    });
   }
 
 
@@ -562,6 +698,26 @@
     return { ok: true, text: r.text, encrypted: true };
   }
 
+  // P61：异步薄封装（口令语义与同步版一致：空口令 ⇒ 明文放行）
+  function wrapAsync(text, passphrase, opts) {
+    var s = String(text == null ? '' : text);
+    var pass = String(passphrase == null ? '' : passphrase);
+    if (!pass) return Promise.resolve({ ok: true, text: s, encrypted: false });
+    return encryptAsync(s, pass, opts).then(function (r) {
+      if (!r.ok) return { ok: false, reason: r.reason };
+      return { ok: true, text: r.text, encrypted: true };
+    });
+  }
+
+  function unwrapAsync(text, passphrase, opts) {
+    var s = String(text == null ? '' : text);
+    if (!isEnvelope(s)) return Promise.resolve({ ok: true, text: s, encrypted: false });
+    return decryptAsync(s, passphrase, opts).then(function (r) {
+      if (!r.ok) return { ok: false, reason: r.reason };
+      return { ok: true, text: r.text, encrypted: true };
+    });
+  }
+
 
   var SecureEnvelope = {
     FORMAT: FORMAT,
@@ -573,12 +729,22 @@
     parseEnvelope: parseEnvelope,
     wrap: wrap,
     unwrap: unwrap,
+    // P61：分块 KDF 与异步信封（Hermes 上 100000 轮 ≈ 8.4 s，同步会把界面冻住）
+    pbkdf2Async: pbkdf2Async,
+    encryptAsync: encryptAsync,
+    decryptAsync: decryptAsync,
+    wrapAsync: wrapAsync,
+    unwrapAsync: unwrapAsync,
     // 内部件给单测 / 冒烟对拍用（不做兼容承诺）
     _internals: {
       sha256: sha256,
       hmacSha256: hmacSha256,
       hmacPadStates: hmacPadStates,
       pbkdf2: pbkdf2,
+      pbkdf2Async: pbkdf2Async,
+      pbkdf2State: pbkdf2State,
+      pbkdf2Step: pbkdf2Step,
+      pbkdf2Finish: pbkdf2Finish,
       chacha20Block: chachaBlock,
       chacha20Xor: chacha20Xor,
       b64encode: b64encode,

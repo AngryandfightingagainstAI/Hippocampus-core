@@ -274,12 +274,16 @@ check('S-1 export_util 引入信封件并导出 secureWrap / secureUnwrap / isEn
   RNF.util.indexOf('isEnvelopeText: isEnvelopeText') >= 0);
 check('S-2 空口令在 secureWrap 里直接回明文（不调 encrypt）',
   RNF.util.indexOf('if (!pass) return { ok: true, text: s, encrypted: false };') >= 0);
-check('S-3 存档 / 卡带导出都先弹口令（password: true）再封装',
-  RNF.saves.indexOf('ExportUtil.secureWrap(') >= 0 && RNF.saves.indexOf('password: true') >= 0 &&
-  RNF.cards.indexOf('ExportUtil.secureWrap(') >= 0 && RNF.cards.indexOf('password: true') >= 0);
-check('S-4 粘贴导入（存档 / 卡带）都先判信封再解封',
-  RNF.data.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.data.indexOf('ExportUtil.secureUnwrap(raw, pass)') >= 0 &&
-  RNF.cards.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.cards.indexOf('ExportUtil.secureUnwrap(raw, pass)') >= 0);
+// P61：封装改走异步分块版（Hermes 上 PBKDF2 100000 轮 ≈ 8.4 s，同步会冻住界面），
+//   所以哨兵钉 secureWrapAsync —— 谁把它改回同步 secureWrap 这里就红（并带上进度回显）。
+check('S-3 存档 / 卡带导出都先弹口令（password: true）再异步封装并回显进度',
+  RNF.saves.indexOf('ExportUtil.secureWrapAsync(') >= 0 && RNF.saves.indexOf('password: true') >= 0 &&
+  RNF.saves.indexOf('ExportUtil.toastProgressReporter') >= 0 &&
+  RNF.cards.indexOf('ExportUtil.secureWrapAsync(') >= 0 && RNF.cards.indexOf('password: true') >= 0 &&
+  RNF.cards.indexOf('ExportUtil.toastProgressReporter') >= 0);
+check('S-4 粘贴导入（存档 / 卡带）都先判信封再异步解封',
+  RNF.data.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.data.indexOf('ExportUtil.secureUnwrapAsync(raw, pass') >= 0 &&
+  RNF.cards.indexOf('ExportUtil.isEnvelopeText(raw)') >= 0 && RNF.cards.indexOf('ExportUtil.secureUnwrapAsync(raw, pass') >= 0);
 check('S-5 取消口令框 ⇒ 放弃导出 / 导入（不是静默走明文）',
   RNF.saves.indexOf("if (pass === null) { showToast('已取消导出', 'warn'); return; }") >= 0 &&
   RNF.data.indexOf("if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }") >= 0);

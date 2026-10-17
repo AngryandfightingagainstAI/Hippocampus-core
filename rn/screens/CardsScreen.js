@@ -162,17 +162,20 @@ function CardsScreen() {
     var r = ExportUtil.buildCardText(id);
     if (!r.ok) { setImportMsg({ type: 'error', text: r.reason }); return; }
     // P54·第17条 stage 2：可选口令 —— 留空 = 明文导出（默认行为不变）；取消 = 放弃导出
-    StoryStore.promptOpen('给这次导出的卡带加个口令？（留空 = 明文导出）', '', {
+    StoryStore.promptOpen('给这次导出的卡带加个口令？（留空 = 明文导出；加密要跑一会儿，下面会显示进度）', '', {
       password: true, okText: '导出', placeholder: '口令（可留空）'
     }).then(function (pass) {
       if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导出' }); return; }
-      var w = ExportUtil.secureWrap(r.text, pass);
-      if (!w.ok) { setImportMsg({ type: 'error', text: w.reason }); return; }
-      return ExportUtil.shareOrCopy(w.text, '导出卡带').then(function (s) {
-        if (s.shared) setImportMsg({ type: 'success', text: '已发送：' + r.filename });
-        else if (s.copied) setImportMsg({ type: 'warn', text: '卡带 JSON 已复制到剪贴板（' + r.filename + '）' });
-        else if (s.dismissed) setImportMsg({ type: 'warn', text: '已取消导出' });
-        else setImportMsg({ type: 'error', text: '导出失败' });
+      // P61：同 SavesScreen —— 口令封装走异步分块，进度显示在本屏提示行（不刷 toast）
+      var onProgress = ExportUtil.toastProgressReporter(StoryStore, '正在加密卡带');
+      return ExportUtil.secureWrapAsync(r.text, pass, { onProgress: onProgress }).then(function (w) {
+        if (!w.ok) { setImportMsg({ type: 'error', text: w.reason }); return undefined; }
+        return ExportUtil.shareOrCopy(w.text, '导出卡带').then(function (s) {
+          if (s.shared) setImportMsg({ type: 'success', text: '已发送：' + r.filename });
+          else if (s.copied) setImportMsg({ type: 'warn', text: '卡带 JSON 已复制到剪贴板（' + r.filename + '）' });
+          else if (s.dismissed) setImportMsg({ type: 'warn', text: '已取消导出' });
+          else setImportMsg({ type: 'error', text: '导出失败' });
+        });
       });
     }).catch(function (e) {
       setImportMsg({ type: 'error', text: '导出失败：' + (e && e.message) });
@@ -208,7 +211,9 @@ function CardsScreen() {
         password: true, okText: '解密', placeholder: '口令'
       });
       if (pass === null) { setImportMsg({ type: 'warn', text: '已取消导入' }); return; }
-      var unsealed = ExportUtil.secureUnwrap(raw, pass);
+      // P61：解密同样走异步分块，进度就地显示（否则这几秒界面完全没反应）
+      var onProgress = ExportUtil.toastProgressReporter(StoryStore, '正在解密');
+      var unsealed = await ExportUtil.secureUnwrapAsync(raw, pass, { onProgress: onProgress });
       if (!unsealed.ok) { setImportMsg({ type: 'error', text: unsealed.reason }); return; }
       raw = unsealed.text;
     }
@@ -553,7 +558,7 @@ function CardsScreen() {
           <Text style={styles.primaryBtnText}>{'诊断并导入'}</Text>
         </TouchableOpacity>
         {importMsg ? (
-          <Text style={importMsg.type === 'success' ? styles.msgOk : (importMsg.type === 'warn' ? styles.msgWarn : styles.msgErr)}>
+          <Text style={importMsg.type === 'success' ? styles.msgOk : (importMsg.type === 'warn' ? styles.msgWarn : (importMsg.type === 'info' ? styles.msgInfo : styles.msgErr))}>
             {importMsg.text}
           </Text>
         ) : null}
