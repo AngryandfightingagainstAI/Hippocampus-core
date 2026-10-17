@@ -224,4 +224,75 @@ run('V13 存储只对目录索引写失败 ⇒ mkdir/writeFile 不抛，数据�
   eq(VFS.readFile('/a/b/c.json'), '{}', '数据文件应已写入');
 });
 
+// ---------- V14~V16 P56：失败归因分流 + 存储可用性探针 ----------
+function bootGuard() {
+  const recs = [];
+  const hints = [];
+  const sb = makeSandbox({
+    ErrorLog: {
+      record: function (r) { recs.push(r); return true; },
+      audit: function () { return true; }, action: function () {}, error: function () {}, log: function () {}
+    },
+    Platform: { ui: { appendHint: function (h) { hints.push(String(h)); } } }
+  });
+  load(sb, 'vfs/vfs_guard.js');
+  return { sb: sb, recs: recs, hints: hints, fatal: sb.window._vfsOnFatal };
+}
+
+run('V14 真实 vfs_guard：失败按成因分流 —— 只有配额满才说「空间已满」', function () {
+  // 配额满：保留旧文案与旧 type（诊断口径兼容）
+  let g = bootGuard();
+  g.fatal('/saves/c1/s1/chat.json', { name: 'QuotaExceededError', message: 'QuotaExceededError: quota exceeded' });
+  eq(g.recs.length, 1, '应记一条 error_log');
+  eq(g.recs[0].type, 'StorageFull', '配额满 ⇒ type 仍是 StorageFull');
+  ok(g.hints[0].indexOf('存储空间已满') >= 0, '配额满 ⇒ 提示清空间');
+
+  // op-sqlite 未就绪：让玩家去清空间解决不了问题
+  g = bootGuard();
+  g.fatal('/saves/c1/s1/chat.json', { name: 'StorageUnavailableError', message: 'StorageAdapter: op-sqlite unavailable' });
+  eq(g.recs[0].type, 'StorageUnavailable', '库不可用 ⇒ type StorageUnavailable');
+  ok(g.hints[0].indexOf('本地存储不可用') >= 0, '库不可用 ⇒ 提示重启/导出');
+  notOk(g.hints[0].indexOf('存储空间已满') >= 0, '库不可用 ⇒ 不该说空间已满');
+
+  // 其它（磁盘/数据库/序列化）：带出原因，不猜
+  g = bootGuard();
+  g.fatal('/saves/c1/s1/chat.json', { name: 'Error', message: 'disk I/O error' });
+  eq(g.recs[0].type, 'StorageWriteFailed', '其它 ⇒ type StorageWriteFailed');
+  ok(g.hints[0].indexOf('disk I/O error') >= 0, '其它 ⇒ 文案带原因');
+  notOk(g.hints[0].indexOf('存储空间已满') >= 0, '其它 ⇒ 不该说空间已满');
+
+  // 没有错误对象也不能崩
+  g = bootGuard();
+  noThrow(function () { g.fatal('/saves/c1/s1/chat.json', null); }, 'err 为 null 不该抛');
+  eq(g.recs[0].type, 'StorageWriteFailed', '未知原因 ⇒ StorageWriteFailed');
+  ok(g.hints[0].indexOf('未知') >= 0, '未知原因 ⇒ 文案标明未知');
+});
+
+run('V15 真实 storage_adapter：isAvailable 说真话，读静默/写抛的语义没被动', function () {
+  const SA = require(path.join(H.ROOT, 'vfs', 'storage_adapter.js'));
+  eq(typeof SA.isAvailable, 'function', '应有只读探针 isAvailable');
+  eq(SA.isAvailable(), false, 'Node 环境既无 localStorage 也无可用 op-sqlite ⇒ 不可用');
+  eq(SA.getItem('vfs:whatever'), null, '读仍静默返 null（刻意设计，本轮未改）');
+  eq(SA.length, 0, 'length 仍为 0');
+  let thrown = null;
+  try { SA.setItem('vfs:whatever', 'x'); } catch (e) { thrown = e; }
+  ok(thrown && thrown.name === 'StorageUnavailableError', '写仍抛 StorageUnavailableError（未改）');
+});
+
+run('V16 源码哨兵：guard 归因分流齐备 + adapter 三支都挂 isAvailable', function () {
+  const g = src('vfs/vfs_guard.js');
+  contains(g, 'function classifyFailure(err) {', 'guard 应有归因函数');
+  contains(g, "'StorageFull'", 'quota 仍用 StorageFull');
+  contains(g, "'StorageUnavailable'", '应有「库不可用」归类');
+  contains(g, "'StorageWriteFailed'", '应有「其它错误」归类');
+  contains(g, '本地存储不可用', '应有库不可用文案');
+  contains(g, '存储空间已满', '配额文案应保留');
+  notOk(/type:\s*'StorageFull',/.test(g), '不该再有无条件 type: StorageFull');
+
+  const a = src('vfs/storage_adapter.js');
+  eq((a.match(/isAvailable: function\(\)/g) || []).length, 3, 'adapter 三支都要有 isAvailable');
+  contains(a, 'isAvailable: function() { return false; },', '兜底支应报不可用');
+  contains(a, 'isAvailable: function() { return true; },', '可用支应报可用');
+});
+
 finish();

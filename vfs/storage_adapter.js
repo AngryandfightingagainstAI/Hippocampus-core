@@ -35,6 +35,8 @@
       getItem: function(key) {
         return window.localStorage.getItem(key);
       },
+      // P56：只读探针 —— 供上层区分「读不到」与「存储压根不可用」（读语义未改）
+      isAvailable: function() { return true; },
       setItem: function(key, value) {
         // 注意：配额满时会抛 QuotaExceededError。VFS.writeFile 靠 catch 触发兜底链，语义必须保留。
         window.localStorage.setItem(key, value);
@@ -105,6 +107,8 @@
           var v = r.rows[0].v;
           return (v === undefined || v === null) ? null : String(v);
         },
+        // P56：只读探针（op-sqlite 已打开 ⇒ 可用）
+        isAvailable: function() { return true; },
         setItem: function(key, value) {
           var v = String(value);
           var existed = keys.indexOf(key) >= 0;
@@ -142,6 +146,9 @@
       // op-sqlite 不可用：写操作抛 StorageUnavailableError，读操作静默
       impl = {
         getItem: function() { return null; },
+        // P56：探针 —— 这一支就是「读静默返 null/0、写抛 StorageUnavailableError」的兜底实现，
+        // 上层据此才能把「空存档列表」解释成「存储不可用」而不是「你没有存档」。
+        isAvailable: function() { return false; },
         setItem: function() { throwUnavailable(); },
         removeItem: function() { throwUnavailable(); },
         key: function() { return null; },

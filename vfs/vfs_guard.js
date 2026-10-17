@@ -46,13 +46,29 @@
     return false;
   };
 
+  // P56：失败归因 —— 不是所有写入失败都是「空间已满」。
+  // 手机端 op-sqlite 未就绪时写操作抛 StorageUnavailableError（重试也白搭），
+  // 磁盘/数据库/序列化错误两者都不是。把成因说错会让玩家去清空间（没用），
+  // 也会污染 ErrorLog 的 type 统计（诊断时把 DB 错误当配额问题查）。
+  function classifyFailure(err) {
+    var name = (err && err.name) ? String(err.name) : '';
+    var msg = (err && err.message) ? String(err.message) : '';
+    var s = (name + ' ' + msg).toLowerCase();
+    if (s.indexOf('quota') >= 0 || s.indexOf('storage full') >= 0 || s.indexOf('no space') >= 0) return 'quota';
+    if (s.indexOf('unavailable') >= 0 || s.indexOf('not available') >= 0) return 'unavailable';
+    return 'other';
+  }
+
   // 彻底失败：记 error_log + 明确告知玩家（不伪装成 API 错误）
   var _vfsOnFatal = function(path, err) {
     console.error('[VFS] 存储写入彻底失败：', path, err);
+    var kind = classifyFailure(err);
+    var reason = (err && err.message) ? err.message : '未知';
     try {
       if (typeof ErrorLog !== 'undefined' && ErrorLog.record) {
         ErrorLog.record({
-          type: 'StorageFull',
+          type: kind === 'quota' ? 'StorageFull'
+              : (kind === 'unavailable' ? 'StorageUnavailable' : 'StorageWriteFailed'),
           message: '存储写入失败：' + path + ' — ' + (err && err.message ? err.message : '未知')
         });
       }
@@ -60,7 +76,14 @@
 
     try {
       // D-3：Platform.ui 契约由平台适配层保证；保留 try/catch（UI 提示失败不应致命）
-      Platform.ui.appendHint('⚠ 存储空间已满，本轮无法保存。请到"设置 → 数据"导出备份后清理。');
+      // P56：按归因给不同处置建议 —— 让玩家去清空间解决不了「数据库没就绪」。
+      if (kind === 'quota') {
+        Platform.ui.appendHint('⚠ 存储空间已满，本轮无法保存。请到"设置 → 数据"导出备份后清理。');
+      } else if (kind === 'unavailable') {
+        Platform.ui.appendHint('⚠ 本地存储不可用（数据库未就绪），本轮无法保存。请重启 App；仍不行请到"设置 → 数据"导出备份。');
+      } else {
+        Platform.ui.appendHint('⚠ 存档写入失败，本轮无法保存。原因：' + reason + '。请到"设置 → 数据"导出备份。');
+      }
     } catch (e) {}
   };
 
@@ -69,6 +92,6 @@
     window._vfsOnFatal = _vfsOnFatal;
   }
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { _vfsOnWriteFail: _vfsOnWriteFail, _vfsOnFatal: _vfsOnFatal };
+    module.exports = { _vfsOnWriteFail: _vfsOnWriteFail, _vfsOnFatal: _vfsOnFatal, classifyFailure: classifyFailure };
   }
 })();

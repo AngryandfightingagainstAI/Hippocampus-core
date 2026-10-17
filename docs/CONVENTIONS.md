@@ -336,12 +336,12 @@ node tools\run_unit_tests.js              # 跑批（扫描 tests/unit/*_unit.js
 node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 ```
 
-- **当前基线：10 套 / 155 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
+- **当前基线：10 套 / 158 条断言全绿**（`test_proposal_validator_unit.js` 17 条、
   `test_info_feed_unit.js` 33 条、`test_tool_executor_unit.js` 18 条、
   `test_outputs_unit.js` 30 条、`test_json_extract_unit.js` 14 条、
   `test_story_compress_unit.js` 8 条、`test_story_channel_unit.js` 8 条、
   `test_prompt_deduction_unit.js` 5 条、`test_snapshot_cut_unit.js` 9 条、
-  `test_vfs_write_contract_unit.js` 13 条）。
+  `test_vfs_write_contract_unit.js` 16 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
   `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「38 套 / 2585 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
@@ -439,7 +439,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   ⇒ L1–L7 的行为断言同时覆盖桌面；Q2 同上词法哨兵；Q3/Q4/Q5 锁桌面三个接入点
   （设置页控件与写入口、`ui_core.js` 契约入口委托、`ui_prompt.js` 实装 + NAMES 登记）；
   Q6 锁 `storyChannel` **不在 `defaultGlobal`** ⇒ 老档免迁移，靠引擎侧 fail-open 兜底。
-- `test_vfs_write_contract_unit.js` 的 V1–V13 锁住 **P55·写入契约**（存储满时「没存上」能不能被知道）：
+- `test_vfs_write_contract_unit.js` 的 V1–V16 锁住 **P55/P56·写入契约与失败归因**（存储满时「没存上」能不能被知道、以及**说的是不是真原因**）：
   真实 `vfs/vfs.js` + `vfs/saves.js` + `engine/core/gamestate.js` 装进 vm 沙箱，配一个可控
   `StorageAdapter`（`fail` 开关让 `setItem` 抛 `QuotaExceededError`），全组零 Electron、零 DOM。
   V1/V2 写成功时 `writeFile` 与 `writeJSON` **都必须返回 true**（旧实现 `writeJSON` 丢弃 `writeFile`
@@ -451,9 +451,19 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   全成功 `true`、任一写点失败 `false`、无存档 `true`；V12 是源码哨兵（`writeJSON` 必须
   `return this.writeFile(`、`saveDirs` 带兜底、写方法体内 `!== false`、`saveChat` 三处
   `=== false` 累计、`persist` 三处判断）；V13 只让 `vfs_dirs` 索引键写失败 ⇒ `mkdir`/`writeFile`
-  不抛且数据文件照写。桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W8）逐条比
+  不抛且数据文件照写。V14–V16（P56）继续钉「失败要说对成因」：把真实 `vfs/vfs_guard.js` 装进沙箱，
+  `QuotaExceededError` ⇒ `ErrorLog` type 仍是 `StorageFull` + 旧文案「存储空间已满」；`StorageUnavailableError`
+  ⇒ `StorageUnavailable` + 「本地存储不可用（数据库未就绪）」且**不再出现**「空间已满」；其它错误 ⇒
+  `StorageWriteFailed` 且文案带出 `err.message`；`err` 为 `null` 也不抛。V15 直接 `require` 真实
+  `vfs/storage_adapter.js`：`isAvailable()` 在 Node 兜底环境返 `false`，而 `getItem` 仍静默返 `null`、
+  `setItem` 仍抛 `StorageUnavailableError` —— 把「新增探针」与「读静默/写抛的既有语义没被动」同时钉住。
+  V16 是源码哨兵（`classifyFailure`、三种 type、两条文案、adapter 三支都挂 `isAvailable`）。
+  桌面侧同源守卫 `tests/unit/test_p55_vfs_write_contract.js`（W1–W11）逐条比
   两仓 `vfs/vfs.js`、`vfs/saves.js`、`engine/core/gamestate.js`、`engine/import/vault.js` 的形状，
   并断言 `vault.js` 两仓**逐字节相同** —— 行为断言全在手机仓，桌面只靠同源连坐，所以同源本身也钉住。
+  W9/W9c 反过来禁掉无条件 `type: 'StorageFull',`（旧写法一律把失败记成配额满）；
+  W10 断言 `vfs/storage_adapter.js` 两仓**逐字节相同** —— 该文件头注释写着「只允许 Electron → RN
+  单向同步、禁止在 RN 仓分叉修改」，在这之前没有任何守卫看着这条铁律。
 - `test_prompt_deduction_unit.js` 的 D1–D5 锁住 P54·P1（工具协议条件注入 + 推演并发闸）：
   D1 用「推演关闭」的全局配置（`Storage.getGlobal().npcDeduction.enabled = false`，也就是新装机的
   默认值）建 `PromptBuilder.buildStatic()`，断言静态段里**没有** `request_deduction`、
