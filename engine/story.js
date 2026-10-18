@@ -976,6 +976,7 @@ var CreateFlow = {
         if (step.renderMode === 'quiz') html += '<div class="cf-quiz-wrap"><div class="cf-quiz-hint">— 请凭直觉选择 —</div>' + this.renderMultiSelectQuiz(step) + '</div>';
         else html += this.renderMultiSelect(step);
         break;
+      case 'quiz': html += this.renderQuizSet(step); break;
       case 'summary': html += this.renderSummary(); break;
       default: html += '<p>（未知步骤类型：' + escapeHtml(step.type) + '）</p>';
     }
@@ -1243,6 +1244,67 @@ var CreateFlow = {
     }).join('');
     return html;
   },
+  // P67 开局问卷：答案存 this.data['__picks_' + quizId]（不落进 playerData），判卷由
+  //   engine/creation_quiz.js 做——选项直指结论、平票取先声明者，纯确定性。
+  quizDefs(step) {
+    if (this._quizCache && this._quizCacheStep === step) return this._quizCache;
+    const defs = (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz.normalize(step.quizzes) : [];
+    this._quizCache = defs;
+    this._quizCacheStep = step;
+    return defs;
+  },
+  quizPicks(quizId) {
+    const v = this.data['__picks_' + quizId];
+    return Array.isArray(v) ? v : [];
+  },
+  pickQuizOption(quizId, qi, outcome) {
+    const arr = this.quizPicks(quizId).slice();
+    while (arr.length < qi) arr.push('');
+    arr[qi] = outcome;
+    this.data['__picks_' + quizId] = arr;
+    this._saveDraft();
+    this.render();
+  },
+  quizResults(step) {
+    if (typeof CreationQuiz === 'undefined' || !CreationQuiz) return [];
+    const defs = this.quizDefs(step);
+    const picks = {};
+    defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); });
+    return CreationQuiz.scoreAll(defs, picks);
+  },
+  renderQuizSet(step) {
+    const defs = this.quizDefs(step);
+    if (!defs.length) return '<p class="muted">（这份问卷没有可用题目：检查卡带 steps[].quizzes 的 outcomes / questions）</p>';
+    const results = this.quizResults(step);
+    const byId = {};
+    results.forEach(r => { byId[r.quizId] = r; });
+    let html = '';
+    defs.forEach(q => {
+      const picks = this.quizPicks(q.id);
+      const res = byId[q.id];
+      html += '<div class="cf-quiz-set">';
+      html += '<div class="cf-quiz-set-title">' + escapeHtml(q.title) + '</div>';
+      if (q.prompt) html += '<div class="cf-quiz-set-prompt">' + escapeHtml(q.prompt) + '</div>';
+      q.questions.forEach((item, qi) => {
+        html += '<div class="cf-quiz-q"><div class="cf-quiz-qtext">' + (qi + 1) + '. ' + escapeHtml(item.q) + '</div><div class="cf-quiz-opts">';
+        item.opts.forEach(o => {
+          const sel = picks[qi] === o.outcome ? ' selected' : '';
+          html += '<button class="cf-option cf-quiz-opt' + sel + '" onclick="CreateFlow.pickQuizOption(\'' + escapeAttr(q.id) + '\',' + qi + ',\'' + escapeAttr(o.outcome) + '\')">' +
+            '<div class="opt-name">' + escapeHtml(o.text) + '</div></button>';
+        });
+        html += '</div></div>';
+      });
+      if (res && res.answered === res.total) {
+        html += '<div class="cf-quiz-result"><span class="k">' + escapeHtml(res.resultName) + '：</span>' +
+          '<span class="v">' + escapeHtml(res.name) + '</span>' +
+          (res.desc ? '<div class="cf-quiz-result-desc">' + escapeHtml(res.desc) + '</div>' : '') + '</div>';
+      } else if (res) {
+        html += '<div class="cf-quiz-result muted">（还差 ' + (res.total - res.answered) + ' 题）</div>';
+      }
+      html += '</div>';
+    });
+    return html;
+  },
   renderSummary() {
     const lm = {}, om = {};
     (this.card.attributes || []).forEach(a => { lm['attr_' + a.key] = a.name || a.key; lm[a.key] = a.name || a.key; });
@@ -1257,14 +1319,23 @@ var CreateFlow = {
         (step.options || []).forEach(o => { om[key + '.' + o.id] = o.name || o.label || o.id; });
       }
     });
-    const entries = Object.keys(this.data).map(k => {
+    const quizLines = [];
+    ((this.card && this.card.steps) || []).forEach(st => {
+      if (!st || st.type !== 'quiz') return;
+      this.quizResults(st).forEach(r => {
+        if (r.answered !== r.total) return;
+        quizLines.push('<div class="cf-summary-item"><span class="k">' + escapeHtml(r.resultName) + '</span><span class="v">' + escapeHtml(r.name) + '</span></div>');
+      });
+    });
+    const entries = Object.keys(this.data).filter(k => k.indexOf('__') !== 0).map(k => {
       let v = this.data[k];
       const l = lm[k] || k;
       if (Array.isArray(v)) v = v.map(x => om[k + '.' + x] || x).join('、');
       else if (typeof v === 'string' && om[k + '.' + v]) v = om[k + '.' + v];
       return '<div class="cf-summary-item"><span class="k">' + escapeHtml(l) + '</span><span class="v">' + escapeHtml(String(v)) + '</span></div>';
     }).join('');
-    return entries || '<p class="muted">（没有填写任何内容）</p>';
+    const all = quizLines.join('') + entries;
+    return all || '<p class="muted">（没有填写任何内容）</p>';
   },
   setField(k, v) { this.data[k] = v; this._saveDraft(); },
   toggleMulti(k, id, min, max) {
@@ -1299,6 +1370,14 @@ var CreateFlow = {
           if (!await Platform.ui.confirmAsync('属性点还没用完（已分配 ' + a + ' / ' + pool.total + '），确定继续？')) return false;
         }
       }
+    } else if (step.type === 'quiz') {
+      const defs = this.quizDefs(step);
+      let miss = 0;
+      defs.forEach(q => {
+        const picks = this.quizPicks(q.id);
+        q.questions.forEach((item, qi) => { if (!picks[qi]) miss++; });
+      });
+      if (miss) { Platform.ui.toast('还有 ' + miss + ' 道题没选', { type: 'warn' }); return false; }
     } else if (step.type === 'select') {
       const k = step.key || step.id;
       if (!this.data[k]) { Platform.ui.toast('请选择一个选项', { type: 'warn' }); return false; }
@@ -1324,8 +1403,27 @@ var CreateFlow = {
 
   finish() {
     GameState.playerData = JSON.parse(JSON.stringify(this.data));
+    // 问卷答案只是过程数据，不进存档
+    Object.keys(GameState.playerData).forEach(k => { if (k.indexOf('__picks_') === 0) delete GameState.playerData[k]; });
     if (!GameState.playerData.inventory) GameState.playerData.inventory = { bar: [], common: [], story: [], rare: [] };
     if (typeof Alias !== 'undefined') Alias.normalize(GameState.playerData);
+    // P67：问卷结论写进角色（quiz_<id> / __quiz / __quizFacts），并按 grants 叠加开局属性
+    try {
+      if (typeof CreationQuiz !== 'undefined' && CreationQuiz && this.card) {
+        const qStep = (this.card.steps || []).filter(s => s && s.type === 'quiz')[0];
+        if (qStep) {
+          const defs = CreationQuiz.normalize(qStep.quizzes);
+          const picks = {};
+          defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); });
+          const results = CreationQuiz.scoreAll(defs, picks);
+          if (results.length) {
+            const bonus = CreationQuiz.apply(GameState.playerData, results);
+            CreationQuiz.applyGrants(GameState.playerData, bonus, this.card.attributes);
+            GameState.playerData.__quizFacts = CreationQuiz.facts(results);
+          }
+        }
+      }
+    } catch (e) {}
 
     let pname = Alias.get(GameState.playerData, 'name');
     if (pname && GameState.currentSaveId) Saves.setPlayerName(GameState.currentCardId, GameState.currentSaveId, String(pname));

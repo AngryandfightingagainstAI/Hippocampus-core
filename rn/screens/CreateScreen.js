@@ -61,6 +61,7 @@ function msgOf(res) {
     case 'POOL_UNDER': return '属性点还没用完（已分配 ' + res.a + ' / ' + res.total + '），确定继续？';
     case 'SELECT_REQUIRED': return '请选择一个选项';
     case 'MULTI_MIN': return '至少选 ' + res.min + ' 项';
+    case 'QUIZ_MISS': return '还有 ' + res.miss + ' 道题没选';
     case 'MULTI_MAX': return '最多选 ' + res.max + ' 项';
     default: return '';
   }
@@ -209,6 +210,13 @@ function CreateScreen() {
     setField(stepObj.key || stepObj.id, oid);
     CF.saveDraft(cardId, saveId, stepIdx, Object.assign({}, data, keyPatch(stepObj, oid)), steps.length);
   }
+  // P67 问卷：答案存 data['__picks_' + quizId]，判卷在 engine/creation_quiz.js
+  function onPickQuiz(stepObj, quizId, qi, outcome) {
+    var next = Object.assign({}, data);
+    CF.setQuizPick(next, quizId, qi, outcome);
+    setData(next);
+    CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+  }
   function keyPatch(stepObj, oid) {
     var p = {};
     p[stepObj.key || stepObj.id] = oid;
@@ -297,7 +305,7 @@ function CreateScreen() {
     setCreating(true);
     setErr('');
     try {
-      GameState.playerData = CF.buildPlayerData(data);
+      GameState.playerData = CF.buildPlayerData(data, card);
       var pname = (typeof Alias !== 'undefined' && Alias.get) ? Alias.get(GameState.playerData, 'name') : GameState.playerData.name;
       if (pname && GameState.currentSaveId) Saves.setPlayerName(cardId, saveId, String(pname));
       GameState._gameTime = GameState._buildInitialGameTime(GameState.currentCard, GameState.playerData);
@@ -369,6 +377,16 @@ function CreateScreen() {
       optionNameSelected: { color: c.seal, fontWeight: '600' },
       optionDesc: { fontSize: f.xs, color: c.muted, marginTop: 4, lineHeight: Math.round(f.xs * 1.6) },
       quizHint: { fontSize: f.sm, color: c.muted, textAlign: 'center', letterSpacing: 2, marginBottom: 12 },
+  // P67 开局问卷：一套问卷一块，题与选项纵向排，结论在块底
+  quizSet: { marginBottom: 22 },
+  quizSetTitle: { fontSize: f.md, color: c.text, letterSpacing: 1, marginBottom: 6 },
+  quizSetPrompt: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.6), marginBottom: 12 },
+  quizQ: { marginBottom: 14 },
+  quizQText: { fontSize: f.sm, color: c.text, lineHeight: Math.round(f.sm * 1.7), marginBottom: 8 },
+  quizResult: { borderLeftWidth: 3, borderLeftColor: c.primary, backgroundColor: c.cardBg, paddingVertical: 10, paddingHorizontal: 12, marginTop: 6 },
+  quizResultLine: { fontSize: f.sm, color: c.text },
+  quizResultKey: { color: c.muted },
+  quizResultDesc: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.6), marginTop: 4 },
       multiHint: { fontSize: f.xs, color: c.muted, marginBottom: 10 },
       summaryBox: {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.md,
@@ -702,6 +720,62 @@ function CreateScreen() {
     );
   }
 
+  // P67 开局问卷（分院 / 灯杖 / 守灯兽 这一类）：多套问卷纵向排，
+  //   每题点选即存（onPickQuiz），选满即在该套底部显示引擎判出的结论。
+  function renderQuizSet(s) {
+    var defs = CF.quizDefs(s);
+    if (!defs.length) {
+      return <Text style={styles.unknown}>{'（这份问卷没有可用题目：检查卡带 steps[].quizzes）'}</Text>;
+    }
+    var results = CF.quizResults(s, data);
+    var byId = {};
+    results.forEach(function (r) { byId[r.quizId] = r; });
+    return (
+      <View>
+        {s.guide ? <Text style={styles.guide}>{s.guide}</Text> : null}
+        {defs.map(function (q) {
+          var picks = CF.quizPicks(data, q.id);
+          var res = byId[q.id];
+          return (
+            <View key={q.id} style={styles.quizSet}>
+              <Text style={styles.quizSetTitle}>{q.title}</Text>
+              {q.prompt ? <Text style={styles.quizSetPrompt}>{q.prompt}</Text> : null}
+              {q.questions.map(function (item, qi) {
+                return (
+                  <View key={String(qi)} style={styles.quizQ}>
+                    <Text style={styles.quizQText}>{(qi + 1) + '. ' + item.q}</Text>
+                    {item.opts.map(function (o) {
+                      var sel = picks[qi] === o.outcome;
+                      return (
+                        <TouchableOpacity
+                          key={String(qi) + '_' + o.outcome}
+                          style={[styles.option, sel ? styles.optionSelected : null]}
+                          activeOpacity={0.6}
+                          onPress={function () { onPickQuiz(s, q.id, qi, o.outcome); }}
+                        >
+                          <Text style={[styles.optionName, sel ? styles.optionNameSelected : null]}>{o.text}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                );
+              })}
+              {res && res.answered === res.total ? (
+                <View style={styles.quizResult}>
+                  <Text style={styles.quizResultLine}>
+                    <Text style={styles.quizResultKey}>{res.resultName + '：'}</Text>
+                    {res.name}
+                  </Text>
+                  {res.desc ? <Text style={styles.quizResultDesc}>{res.desc}</Text> : null}
+                </View>
+              ) : (res ? <Text style={styles.quizHint}>{'（还差 ' + (res.total - res.answered) + ' 题）'}</Text> : null)}
+            </View>
+          );
+        })}
+      </View>
+    );
+  }
+
   function renderSummary() {
     var entries = CF.summaryEntries(card, data);
     if (!entries.length) {
@@ -733,6 +807,8 @@ function CreateScreen() {
             {step.showCalendar ? renderCalendar(step) : null}
           </View>
         );
+      case 'quiz':
+        return renderQuizSet(step);
       case 'select':
         return step.renderMode === 'quiz'
           ? (

@@ -384,8 +384,9 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
 //   桌面侧行为测试见 tests/unit/test_c3_player_name.js（真跑 CreateFlow.finish）。
 (function () {
   var src = readSrc('rn/screens/CreateScreen.js') || '';
+  // P67：finish 要把 card 传进 buildPlayerData（问卷结算需要卡带的 creationQuiz）
   check('G1 finish 内 buildPlayerData 落 playerData',
-    src.indexOf('GameState.playerData = CF.buildPlayerData(data)') >= 0);
+    src.indexOf('GameState.playerData = CF.buildPlayerData(data, card)') >= 0);
   check('G2 finish 内 Alias.get 取名',
     src.indexOf("Alias.get(GameState.playerData, 'name')") >= 0);
   check('G3 finish 内 setPlayerName 回写（cardId, saveId, String(pname)）',

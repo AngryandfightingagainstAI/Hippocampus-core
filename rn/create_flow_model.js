@@ -122,6 +122,49 @@ function clampNumber(v, min, max) {
 
 // ---------- 校验（返回错误码，文案由视图层给）----------
 
+// P67 问卷：答案存在 data['__picks_' + quizId]（按题序的 outcomeId 数组）
+function _quiz() {
+  return (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz : null;
+}
+
+function quizDefs(step) {
+  var Q = _quiz();
+  if (!Q || !step) return [];
+  return Q.normalize(step.quizzes);
+}
+
+function quizPicks(data, quizId) {
+  var v = data && data['__picks_' + quizId];
+  return Array.isArray(v) ? v : [];
+}
+
+function setQuizPick(data, quizId, qi, outcome) {
+  var arr = quizPicks(data, quizId).slice();
+  while (arr.length < qi) arr.push('');
+  arr[qi] = outcome;
+  if (data) data['__picks_' + quizId] = arr;
+  return arr;
+}
+
+function quizMissing(step, data) {
+  var defs = quizDefs(step);
+  var miss = 0;
+  defs.forEach(function (q) {
+    var picks = quizPicks(data, q.id);
+    q.questions.forEach(function (item, qi) { if (!picks[qi]) miss++; });
+  });
+  return miss;
+}
+
+function quizResults(step, data) {
+  var Q = _quiz();
+  if (!Q) return [];
+  var defs = quizDefs(step);
+  var picks = {};
+  defs.forEach(function (q) { picks[q.id] = quizPicks(data, q.id); });
+  return Q.scoreAll(defs, picks);
+}
+
 function validateStep(card, step, data) {
   if (!step) return { ok: true };
   if (step.type === 'form') {
@@ -148,6 +191,10 @@ function validateStep(card, step, data) {
   } else if (step.type === 'select') {
     var k = step.key || step.id;
     if (!data[k]) return { ok: false, code: 'SELECT_REQUIRED' };
+  } else if (step.type === 'quiz') {
+    // P67：问卷必须每题都选（判卷在引擎侧，视图只负责收答案）
+    var miss = quizMissing(step, data);
+    if (miss > 0) return { ok: false, code: 'QUIZ_MISS', miss: miss };
   } else if (step.type === 'multi-select') {
     var k2 = step.key || step.id;
     var cur = data[k2] || [];
@@ -191,13 +238,24 @@ function summaryEntries(card, data) {
       (step.options || []).forEach(function (o) { om[key + '.' + o.id] = o.name || o.label || o.id; });
     }
   });
-  return Object.keys(data).map(function (k) {
+  var quizRows = [];
+  (card && card.steps || []).forEach(function (step) {
+    if (!step || step.type !== 'quiz') return;
+    quizResults(step, data).forEach(function (r) {
+      if (r.answered !== r.total) return;
+      quizRows.push({ k: r.resultName, v: r.name });
+    });
+  });
+  var rows = Object.keys(data).filter(function (k) {
+    return k.indexOf('__') !== 0; // P67：__picks_* / __quiz 不进摘要
+  }).map(function (k) {
     var v = data[k];
     var l = lm[k] || k;
     if (Array.isArray(v)) v = v.map(function (x) { return om[k + '.' + x] || x; }).join('、');
     else if (typeof v === 'string' && om[k + '.' + v]) v = om[k + '.' + v];
     return { k: l, v: String(v) };
   });
+  return quizRows.concat(rows);
 }
 
 // ---------- 草稿（_draftKey/_peekDraft/_saveDraft/_clearDraft）----------
@@ -250,10 +308,25 @@ function clearDraft(cardId, saveId) {
 
 // ---------- 完成（finish:1036-1038 的数据段）----------
 
-function buildPlayerData(data) {
+function buildPlayerData(data, card) {
   var pd = JSON.parse(JSON.stringify(data || {}));
+  // P67：问卷答案只是过程数据，不进存档
+  Object.keys(pd).forEach(function (k) { if (k.indexOf('__picks_') === 0) delete pd[k]; });
   if (!pd.inventory) pd.inventory = { bar: [], common: [], story: [], rare: [] };
   if (typeof Alias !== 'undefined' && Alias && Alias.normalize) Alias.normalize(pd);
+  // P67：问卷结论落库（quiz_<id> / __quiz / __quizFacts），grants 叠加到属性
+  var Q = _quiz();
+  if (Q && card) {
+    var qStep = (card.steps || []).filter(function (s) { return s && s.type === 'quiz'; })[0];
+    if (qStep) {
+      var results = quizResults(qStep, data);
+      if (results.length) {
+        var bonus = Q.apply(pd, results);
+        Q.applyGrants(pd, bonus, card.attributes);
+        pd.__quizFacts = Q.facts(results);
+      }
+    }
+  }
   return pd;
 }
 
@@ -289,6 +362,11 @@ module.exports = {
   clampNumber: clampNumber,
   validateStep: validateStep,
   toggleMulti: toggleMulti,
+  quizDefs: quizDefs,
+  quizPicks: quizPicks,
+  setQuizPick: setQuizPick,
+  quizMissing: quizMissing,
+  quizResults: quizResults,
   summaryEntries: summaryEntries,
   draftKey: draftKey,
   peekDraft: peekDraft,

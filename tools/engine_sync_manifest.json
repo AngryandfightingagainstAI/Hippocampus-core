@@ -2,16 +2,16 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-18T13:29:45Z",
+  "recordedAt": "2026-10-18T14:09:28Z",
   "heads": {
     "rn": null,
     "desktop": null
   },
   "counts": {
-    "mirror": 64,
+    "mirror": 65,
     "mirrorEol": 22,
     "fork": 17,
-    "unsharedDesktop": 118,
+    "unsharedDesktop": 120,
     "unsharedRn": 150
   },
   "mirror": [
@@ -25,6 +25,7 @@
     "engine/core/card_validator.js",
     "engine/core/cards_demo.js",
     "engine/core/tool_executor.js",
+    "engine/creation_quiz.js",
     "engine/destiny.js",
     "engine/dice.js",
     "engine/dice_history.js",
@@ -131,9 +132,9 @@
       "diffLines": 249
     },
     "engine/core/prompt_builder.js": {
-      "rn": "99C2471596B980A2B0173B95FA3279F3",
-      "desktop": "B635A118FD2DFED4E4061A93295A75E2",
-      "diffLines": 877
+      "rn": "7F27B6F4F7B1AADA6DE42D10C009A59B",
+      "desktop": "D367E0BB320091DD532D3ACDDFF40649",
+      "diffLines": 587
     },
     "engine/core/storage.js": {
       "rn": "36BD53022CEA2F43CE2DE41B3C3A147C",

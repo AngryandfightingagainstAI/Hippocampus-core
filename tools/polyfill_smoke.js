@@ -41,7 +41,7 @@ var result = require('../rn/rn_bootstrap.js');
 
 // P4 同步 50→51：rn_bootstrap 新增 LogQuery（P4·S2 query_log 检索入口），断言随模块清单同步
 // P47·批次2 同步 64→65：rn_bootstrap 新增 Destiny（engine/destiny.js 天命系统），断言随模块清单同步
-check('BOOTSTRAP 67/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background、P47·批次2 加 Destiny、P65 加 ToolTrace、P66 加 StateGuard）', result.ok === 67 && result.failed === 0,
+check('BOOTSTRAP 68/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background、P47·批次2 加 Destiny、P65 加 ToolTrace、P66 加 StateGuard、P67 加 CreationQuiz）', result.ok === 68 && result.failed === 0,
   'ok=' + result.ok + ' failed=' + result.failed);
 check('result.localStoragePolyfill === true', result.localStoragePolyfill === true);
 check('typeof globalThis.localStorage === object',

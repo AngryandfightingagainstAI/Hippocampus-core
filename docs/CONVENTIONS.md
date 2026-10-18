@@ -82,11 +82,11 @@ node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 42 个**、**仅行尾不同 22 个**、**真差异 17 个**，
+最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 43 个**、**仅行尾不同 22 个**、**真差异 17 个**，
 合计 81 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（42 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（43 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -94,6 +94,7 @@ engine/background.js
 engine/card_display.js
 engine/core/api_client.js
 engine/core/tool_executor.js
+engine/creation_quiz.js
 engine/destiny.js
 engine/error_log_core.js
 engine/import/decode.js
@@ -238,7 +239,7 @@ vfs/vfs_guard.js
 【三、`rn/rn_bootstrap.js` 装载约定】
 ================================================================
 
-- 当前 **67 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
+- 当前 **68 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
 - 每个 `load(name, () => require('../engine/xxx.js'), extra?)`，`require` 参数必须是**字面量字符串**
   （Metro 只静态收集字面量；拼出来的路径不进 bundle）。
 - `load` 失败只打 `BOOTSTRAP_FAIL: …` 然后继续，**不抛** ⇒ 少一个模块不会立刻崩，
@@ -325,7 +326,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（64 套）
+node tools\run_batch.js                   # 前置门 + 全量（65 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
@@ -712,4 +713,28 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 
 教训：`--regen` 是「按**当前**内容判类」，改完共享件必须先 `--write`/`Copy-Item` 对齐两侧再 regen，
 否则 mirror 会被登记成 fork（本轮实际踩到：story.js / tool_trace.js 一度被判成 fork，61/19）。
+
+#### P67 · 开局问卷（2026-10-18，用户 m15413）
+
+用户说清了需求：像《哈利波特》开局那样给几套问卷（测学院 / 测魔杖 / 测守护神），
+答完给结论。**判卷必须在引擎侧**，理由与 P65/P66 同源：不能让 AI 决定「你是哪个学院」，
+否则同一份答案在不同会话里结论会漂。
+
+- 卡带侧：`steps[].type: 'quiz'` + `steps[].quizzes`（`{id,title,prompt,resultName,results[],questions[{q,opts[{text,outcome,desc}]}]}`）；
+  一个 step 可带 2–4 套卷子，`quizzes[].id` 决定答案落键 `data['__picks_' + id]`。
+- 判卷：`engine/creation_quiz.js`（严格同源件，两仓逐字节相同）。`score()` 按 `outcome` 计数、
+  平票**取卡带里先声明的那一项**（确定性，不随机）；`apply()` 把结论写进 `playerData['quiz_' + id]`
+  与 `playerData.__quiz`，`applyGrants()` 再按 `results[].grants` 调 `CreateFlow.changeAttr`
+  （受 `attributePool` 上限约束）。结算发生在 `CreateFlow.finish` 里，`__picks_*` 当轮剥掉。
+- 提示词：`prompt_builder.buildSemiStatic` 从 `GameState.playerData.__quiz` 渲染
+  「【开局问卷 · 已定】」段，AI 不必再猜角色出身；人设屏与角色卡面板也各有一行结论。
+- 手机侧：`rn/create_flow_model.js` 提供 `quizDefs/quizPicks/setQuizPick/quizMissing/quizResults`，
+  `rn/screens/CreateScreen.js` 用 `renderQuizSet` 渲染（`case 'quiz'`），`rn_bootstrap.js` 里
+  `load('CreationQuiz', …)`。桌面 `engine/story.js` 的 `renderQuizSet` 是同一套口径的 DOM 版。
+- 守卫：桌面 `tests/unit/test_p67_creation_quiz.js` 21 条（平票取先声明、grants 受上限、`__picks_` 剥离、
+  人设屏不漏 `__*` 字段、提示词有问卷段、两仓源码哨兵）。
+
+教训：**内部字段不能漏到玩家屏幕上**。首版把 `data['__quiz']` 直接塞进人设审核屏的「原始填写」
+列表（`engine/ui_portrait.js` 逐键渲染），玩家会看见一坨 JSON —— 现在所有 `__` 前缀键统一跳过，
+`quiz_*` 键改成显示「学院：焰羽院」这类结果名，而不是裸 id。
 

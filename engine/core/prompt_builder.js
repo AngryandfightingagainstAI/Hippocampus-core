@@ -354,6 +354,16 @@ var PromptBuilder = {
       const pt = Portrait.formatForPrompt(portrait);
       if (pt) { lines.push(pt); lines.push(''); }
     }
+    // P67：开局问卷结论（分院 / 魔杖 / 守护神 一类）。引擎判定，不是模型推测，
+    //   写正文时作为既成事实引用；没有问卷的卡带这里一行不出现。
+    try {
+      const qz = (GameState.playerData && GameState.playerData.__quiz) || null;
+      if (qz && typeof CreationQuiz !== "undefined" && CreationQuiz && CreationQuiz.promptBlock) {
+        const qlist = Object.keys(qz).map(function (k) { return qz[k]; });
+        const qblock = CreationQuiz.promptBlock(qlist);
+        if (qblock) { lines.push(qblock); lines.push(""); }
+      }
+    } catch (e) {}
 
     const entityIdx = this.buildEntityIndex();
     if (entityIdx) lines.push(entityIdx);

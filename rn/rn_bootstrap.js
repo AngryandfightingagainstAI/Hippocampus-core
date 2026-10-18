@@ -154,6 +154,8 @@ load('Alias',                 function () { return require('../engine/alias.js')
 load('DiceHistory',           function () { return require('../engine/dice_history.js'); });
 // P65：工具调用留痕（10 轮 TTL）+ 定期关键词自检；prompt_builder/story 会用到，必须早于它们
 load('ToolTrace',             function () { return require('../engine/tool_trace.js'); });
+// P67：开局问卷判卷（分院/灯杖/守灯兽）；创角屏与 create_flow_model 会用到
+load('CreationQuiz',          function () { return require('../engine/creation_quiz.js'); });
 load('StateGuard', function () { return require('../engine/state_guard.js'); });
 load('Outputs',               function () { return require('../engine/outputs.js'); });
 load('Background',            function () { return require('../engine/background.js'); });
