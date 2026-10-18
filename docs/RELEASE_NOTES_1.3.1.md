@@ -9,7 +9,7 @@
 | versionName | 1.3.1 |
 | versionCode | 10301 |
 | 桌面 `package.json` | 1.3.1 |
-| 构建基线（手机） | `a7cd5c6`（含 P58/P59/P60/P61 修复） |
+| 构建基线（手机） | `23cdefa`（含 P58/P59/P60/P61/P64·story.js 同源同步） |
 
 ## 变更摘要
 
@@ -23,8 +23,8 @@
 ### Android APK
 
 - 文件：`android/app/build/outputs/apk/release/app-release.apk`
-- 大小：22,048,933 B
-- SHA256：`D27DB6B2919388D3D99786B15D480E1A4CC74E475A87DB36F5C354F92A0AF32A`
+- 大小：22,049,669 B
+- SHA256：`E6DE967221EAED53A616D44507ABBBFB58E826FF04246DD8FEF0D6E46049C070`
 - 签名证书 SHA-256 指纹：`1C:D4:96:04:E4:FD:B4:34:C0:C7:6A:79:FF:83:C7:00:B9:B3:78:B6:C6:5C:C8:6F:E7:5C:36:BE:A3:54:FF:F4`
 - keystore alias：`hippocampus-release`；有效期 10000 天（2026-10-17 → 2054-03-04）；RSA 2048
 - 验签：`apksigner verify --print-certs` 通过，证书主体 `CN=Hippocampus, OU=Hippocampus, O=Hippocampus, L=Unknown, ST=Unknown, C=CN`（**不再是 Android Debug**）
@@ -32,11 +32,11 @@
 ### 桌面安装包
 
 - 文件：`dist/Hippocampus core Setup 1.3.1.exe`
-- 大小：111,698,349 B
-- sha512：`XNK0KKNz7L+I2/inqjOFTBrJVOKr1Qpupe1X16gn6yJ6uK076MOP2/lnCM0zC3oKURTJm/F8t4565dBRC1Th6w==`
-  （取自 `dist/latest.yml`，`version: 1.3.1`，`releaseDate: 2026-10-18T02:39:29.218Z`）
-- SHA256：`C5E0299744148D6DF27ED677D719848669CC1E386118550F9229F568E270B1ED`
-- 打包基线：桌面 `8028a47`（含 P59 的 `window.UI = {}` 命名空间根修复、P61 同源信封异步 KDF）
+- 大小：111,700,915 B
+- sha512：`PYcb/ijzWtIaoDXRxIwVLLigVa+G9uXHiZt6HgS4YHa8HofUBxPUMJfvKdHsll8GcI6XB8jTN0ipIGYXjayLMA==`
+  （取自 `dist/latest.yml`，`version: 1.3.1`，`releaseDate: 2026-10-18T07:16:17.247Z`）
+- SHA256：`AE9394B5B4DB6AABB1C14A54474218E7BCD99764B3E3A84B38DD1EF779D940CA`
+- 打包基线：桌面 `7f9da82`（含 P59 的 `window.UI = {}` 命名空间根修复、P61 同源信封异步 KDF、P64 报头时钟每回合刷新 + 诊断球在创角屏让位）
 
 ## 上传
 
