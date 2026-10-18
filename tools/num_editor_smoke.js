@@ -35,6 +35,11 @@ function eq(name, actual, expected) {
   check(name + '（actual=' + JSON.stringify(actual) + '）', actual === expected);
 }
 function md5(p) { return crypto.createHash('md5').update(fs.readFileSync(p)).digest('hex').toUpperCase(); }
+
+// P65：本机 core.autocrlf=true 会把工作区检成 CRLF，Linux CI 是 LF —— 基线的字节数与指纹
+// 都必须按「行尾归一后的 LF 内容」算，否则同一提交本地绿、CI 红（P65 首次推送撞到过）。
+function lfBuf(p) { return Buffer.from(fs.readFileSync(p, 'utf8').split('\r\n').join('\n'), 'utf8'); }
+function md5lf(p) { return crypto.createHash('md5').update(lfBuf(p)).digest('hex').toUpperCase(); }
 function read(p) { return fs.readFileSync(p, 'utf8'); }
 function lf(s) { return String(s).replace(/\r\n/g, '\n'); }
 
@@ -497,7 +502,8 @@ function runComponent() {
   //   P45 重记（prompt_builder 因 Qwen 那轮补 set_location / list_destinations / output_publish 字段而变，51275 B）
   var BASE = [
     // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 10413 / AABB3146…）
-    ['engine/core/gamestate.js', 11008, 'DE91961348772096B830E97E3204260E'],
+    // P65：loadFromSave 里加 ToolTrace.load()（换档重载痕迹）⇒ 行尾归一的 LF 口径 11006 B / E59DF6A0…
+    ['engine/core/gamestate.js', 11006, 'E59DF6A01FBBF772FAAE143588C0296C'],
     // P54·P1 重记：推演协议条件注入（推演关闭时不下发 request_deduction 半句 / NPC 推演行 / query_deductions）
     // 净化批 EX5 重记（2026-10-17，用户批准）：删外层防御 try/catch ⇒ 52222 B / 686F416572C0E0A862CEB8E8FC2368FD
     // query_portrait 阶段二重记（2026-10-17，用户批准）：_qExtLine 追加 query_portrait() 协议行（+19 B）⇒ 现盘值
@@ -509,8 +515,8 @@ function runComponent() {
   ];
   BASE.forEach(function (b) {
     var p = path.join(root, b[0]);
-    check('I7 RN 本仓只读基线未变 ' + b[0] + '（' + fs.statSync(p).size + ' B / ' + md5(p) + '）',
-      fs.statSync(p).size === b[1] && md5(p) === b[2]);
+    check('I7 RN 本仓只读基线未变 ' + b[0] + '（' + lfBuf(p).length + ' B / ' + md5lf(p) + '）',
+      lfBuf(p).length === b[1] && md5lf(p) === b[2]);
   });
   // P12·S1：参考件本仓化（方案 A，用户批准）。
   //   RN 仓有的 engine/web_search.js 改指本仓；

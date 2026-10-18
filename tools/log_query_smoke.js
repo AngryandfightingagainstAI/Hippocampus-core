@@ -36,6 +36,9 @@ function read(p) { return fs.readFileSync(p, 'utf8'); }
 
 // P30：桌面仓文件是 CRLF、RN 仓是 LF —— 同源判定按内容比（行尾归一），不再比字节
 function lfText(p) { return fs.readFileSync(p, 'utf8').split('\r\n').join('\n'); }
+// P65：本机 `core.autocrlf=true` 会把工作区检成 CRLF，而 Linux CI 是 LF —— 基线指纹必须
+// 先归一化行尾再算，否则同一份提交在本地绿、在 CI 红（P65 首次推送就撞了这条）。
+function md5lf(p) { return crypto.createHash('md5').update(Buffer.from(lfText(p), 'utf8')).digest('hex').toUpperCase(); }
 
 // ================= 内存 harness =================
 function installMemLocalStorage() {
@@ -602,7 +605,9 @@ function runG() {
   //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 当时现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
   var bases = [
     // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 AABB3146…）
-    ['engine/core/gamestate.js', 'DE91961348772096B830E97E3204260E'],
+    // P65 重记（2026-10-18）：gamestate.loadFromSave 里加 ToolTrace.load()（换档重载痕迹），
+    //   指纹改按「行尾归一后的 LF 字节」算（见 md5lf）⇒ 现值 E59DF6A0…，11006 B。
+    ['engine/core/gamestate.js', 'E59DF6A01FBBF772FAAE143588C0296C'],
     // P54·I-4/I-6 重记（同 num_editor_smoke）
     // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
     // 净化批 EX5 重记（2026-10-17，用户批准）：:839 删外层 try 保单防线 if ⇒ 现盘值
@@ -613,7 +618,7 @@ function runG() {
     ['engine/core/prompt_builder.js', '99C2471596B980A2B0173B95FA3279F3']
   ];
   bases.forEach(function (b) {
-    eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5(path.join(root, b[0])), b[1]);
+    eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5lf(path.join(root, b[0])), b[1]);
   });
   if (HAVE_OTHER) eq('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', md5(path.join(root, 'engine', 'info_feed.js')),
     md5(path.join(DESK, 'engine', 'info_feed.js')));
