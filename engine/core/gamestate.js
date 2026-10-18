@@ -60,6 +60,8 @@ var GameState = {
     if (typeof Achievements !== 'undefined') Achievements.load();
     if (typeof Avatar !== 'undefined') Avatar.load();
     if (typeof DiceHistory !== 'undefined') DiceHistory.load();
+    // P65：工具留痕跟档走（换档必须重载，否则会带着上一个存档的调用记录）
+    if (typeof ToolTrace !== 'undefined' && typeof ToolTrace.load === 'function') ToolTrace.load();
     if (typeof Endings !== 'undefined') Endings.load();
     if (typeof StoryNodes !== 'undefined') StoryNodes.load();
     // 元层/异步子系统同样显式按新存档加载，否则 _data 会残留上一个存档的队列造成串档

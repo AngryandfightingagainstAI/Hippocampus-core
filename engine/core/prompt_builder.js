@@ -722,6 +722,16 @@ var PromptBuilder = {
       // P10·B2③：同上，query_* 只在【工具协议】声明一次。
       lines.push('>>> （详情见【工具协议】查询类）');
     }
+    // ★ P65：工具留痕（10 轮 TTL）+ 定期关键词自检。
+    //   两段都是「有才出」：没有痕迹就不出一行，避免模型把空块当成暗示。
+    try {
+      if (typeof ToolTrace !== 'undefined' && ToolTrace && typeof ToolTrace.formatForPrompt === 'function') {
+        const traceBlock = ToolTrace.formatForPrompt();
+        if (traceBlock) lines.push(traceBlock);
+        const checkBlock = (typeof ToolTrace.selfCheckBlock === 'function') ? ToolTrace.selfCheckBlock() : '';
+        if (checkBlock) lines.push(checkBlock);
+      }
+    } catch (e) {}
     lines.push('');
     lines.push('════════════════════════════════════════');
     lines.push('【系统状态结束】现在开始写剧情。你的输出 = 【正文】+【时间】+【选项】。上面这些是参考。');

@@ -70,11 +70,11 @@
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 40 个**、**仅行尾不同 22 个**、**真差异 17 个**，
+最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 41 个**、**仅行尾不同 22 个**、**真差异 17 个**，
 合计 79 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（40 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（41 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -103,6 +103,7 @@ engine/outputs.js
 engine/portrait.js
 engine/proposals.js
 engine/story.js
+engine/tool_trace.js
 engine/words.js
 platform/platform_adapter.js
 tools/background_smoke.js
@@ -217,7 +218,7 @@ vfs/vfs_guard.js
 【三、`rn/rn_bootstrap.js` 装载约定】
 ================================================================
 
-- 当前 **65 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
+- 当前 **66 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
 - 每个 `load(name, () => require('../engine/xxx.js'), extra?)`，`require` 参数必须是**字面量字符串**
   （Metro 只静态收集字面量；拼出来的路径不进 bundle）。
 - `load` 失败只打 `BOOTSTRAP_FAIL: …` 然后继续，**不抛** ⇒ 少一个模块不会立刻崩，
@@ -304,7 +305,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（61 套）
+node tools\run_batch.js                   # 前置门 + 全量（62 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）

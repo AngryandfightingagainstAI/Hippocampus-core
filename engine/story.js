@@ -46,6 +46,17 @@ var StoryLoop = {
       const uiLine = ToolExecutor.formatDiceForUI(diceResult);
       if (uiLine) Platform.ui.appendDiceResult(uiLine);
       if (typeof DiceHistory !== 'undefined') DiceHistory.record(diceResult);
+      // P65：玩家自己掷的骰也算工具调用痕迹（否则模型会以为「没人查过」）
+      if (typeof ToolTrace !== 'undefined') {
+        try {
+          ToolTrace.record(null, [{
+            name: '掷骰（玩家发起）',
+            args: diceResult.expression || t,
+            ok: true,
+            note: diceResult.total != null ? ('总数 ' + diceResult.total) : (diceResult.check ? diceResult.check.level : '')
+          }]);
+        } catch (e) {}
+      }
       await this.callAI();
       return;
     }
@@ -55,6 +66,16 @@ var StoryLoop = {
       GameState.chatHistory.push({ role: 'user', content: t });
       const fb = ToolExecutor.formatForHistory([searchResult]);
       if (fb) GameState.chatHistory.push({ role: 'user', content: fb });
+      if (typeof ToolTrace !== 'undefined') {
+        try {
+          ToolTrace.record(null, [{
+            name: '联网搜索（玩家发起）',
+            args: searchResult.query || t,
+            ok: searchResult.ok !== false,
+            note: searchResult.ok === false ? (searchResult.reason || '') : ''
+          }]);
+        } catch (e) {}
+      }
       await this.callAI();
       return;
     }
@@ -329,6 +350,10 @@ var StoryLoop = {
       try {
         const toolsRaw = ToolExecutor.extract(content);
         toolResults = await ToolExecutor.executeAll(toolsRaw);
+        // P65：留痕（10 轮 TTL）。只记「真的执行过」的调用 —— 没有调用就没有痕迹。
+        if (toolResults.length && typeof ToolTrace !== 'undefined') {
+          try { ToolTrace.record(null, ToolTrace.callsFromResults(toolsRaw, toolResults)); } catch (e) {}
+        }
         if (toolResults.length) {
           toolResults.forEach(r => { if (r.ok && r.segmentCrossed) GameState._pendingSystemNotices.push('玩家 ' + r.label + ' 进入新状态：' + r.segmentCrossed.text); });
           const fb = ToolExecutor.formatForHistory(toolResults);
@@ -686,6 +711,18 @@ var StoryLoop = {
 
   parseAndRender(content, toolResults) {
     let story = '', options = [], timeDelta = 0;
+
+    // P65：先把【自检】块摘掉（玩家不该看到机器自检），结论留给下轮提示词用。
+    //   自检是被要求的时候才记；没要求却输出了也照记（说明模型在自查，无害）。
+    if (typeof ToolTrace !== 'undefined' && ToolTrace.stripSelfCheck) {
+      try {
+        const sc = ToolTrace.stripSelfCheck(content);
+        if (sc.selfCheck != null) {
+          content = sc.text;
+          ToolTrace.recordSelfCheck(null, sc.selfCheck);
+        }
+      } catch (e) {}
+    }
 
     const tMatch = content.match(/【时间】\s*([+\-]?\d+(?:\.\d+)?)\s*([分时天日周月年]?)/);
     let timeMarkerFound = false;
