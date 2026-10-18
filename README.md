@@ -7,7 +7,7 @@
 > 版本：1.3.1 ｜ Android 7.0+ ｜ Windows 桌面版 ｜ MIT 许可
 > 手机版在本仓（`HippocampusRN`），桌面版是同一个引擎内核 + Electron 外壳。
 
-**项目现状**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 65 套回归。
+**项目现状**：40 套 RN smoke 共 2625 条断言全绿；桌面版另有 14 项预检 + 65 套回归。
 
 ---
 
@@ -175,7 +175,7 @@ node tools/run_all_smokes.js        # 一键全跑（40 套）
 node tools/run_unit_tests.js        # 单元测试（14 套 / 200 条）
 ```
 
-当前基线：**40 套 / 2636 ok / 0 failed**（两仓同在的本机环境）。单仓口径：**2615 ok / 0 failed / `TOTAL_SKIP=20`**（`HIPPOCAMPUS_PC` 指向不存在目录时实测；总断言差 21 而 skip 记 20，是各套降级粒度不同导致的既有现象，以实测为准）。
+当前基线：**40 套 / 2625 ok / 0 failed**（两仓同在的本机环境）。单仓口径：**2615 ok / 0 failed / `TOTAL_SKIP=20`**（`HIPPOCAMPUS_PC` 指向不存在目录时实测；总断言差 21 而 skip 记 20，是各套降级粒度不同导致的既有现象，以实测为准）。
 
 CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：CI 里看不到桌面仓，跨仓同源断言自动降级为 SKIP。降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 

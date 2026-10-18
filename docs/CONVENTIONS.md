@@ -296,11 +296,11 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `import_smoke.js` | 130 |
 | `info_phone_smoke.js` | 45 |
 | `info_tick_smoke.js` | 14 |
-| `log_query_smoke.js` | 92 |
+| `log_query_smoke.js` | 89 |
 | `longline_token_smoke.js` | 22 |
 | `mobile_ux_smoke.js` | 83 |
 | `npc_boundary_smoke.js` | 36 |
-| `num_editor_smoke.js` | 72 |
+| `num_editor_smoke.js` | 68 |
 | `outputs_review_smoke.js` | 77 |
 | `p10_smoke.js` | 75 |
 | `p1_settings_smoke.js` | 202 |
@@ -317,9 +317,9 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `tool_ready_smoke.js` | 60 |
 | `version_sync_smoke.js` | 15 |
 | `web_search_smoke.js` | 51 |
-| `worldbook_smoke.js` | 180 |
+| `worldbook_smoke.js` | 176 |
 
-**当前基线：40 套 / 2636 ok / 0 failed。**
+**当前基线：40 套 / 2625 ok / 0 failed。**
 
 ### 4.2 桌面侧
 
@@ -332,7 +332,7 @@ node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
 ```
 
-**当前基线：59 套全绿（`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
+**当前基线：65 套全绿（`claims.js` 是前置门 —— 门红则一个测试都不跑）。**
 
 ### 4.3 环境坑（都真踩过）
 
@@ -369,7 +369,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条、`test_ui_proxy_cycle_unit.js` 5 条、
   `test_kdf_async_unit.js` 8 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
-  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2636 条」这组数字。
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2625 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报
