@@ -370,7 +370,14 @@ var StoryLoop = {
                 '），但没有调用 ' + m.tool + '。如果剧情确实发生了这个变化，请补调工具。'
               );
             });
-            Platform.ui.appendHint('（检测到可能的漏账：' + __missing.map(function(m) { return m.label; }).join('、') + '）');
+            // ★ P64：这条提示是给开发者的内部审计（「漏账」是工具调用层面的术语），
+            //   直接 appendHint 会插进玩家的剧情流里（实测第 30 轮出现「（检测到可能的漏账：NPC 登场或离场）」）。
+            //   默认只进 console（错误日志面板可见），要玩家可见得显式开 Storage.getGlobal().devHints。
+            var __devHints = false;
+            try { __devHints = !!(Storage.getGlobal() && Storage.getGlobal().devHints); } catch (__e2) {}
+            var __leakText = '（检测到可能的漏账：' + __missing.map(function(m) { return m.label; }).join('、') + '）';
+            if (__devHints) Platform.ui.appendHint(__leakText);
+            else console.info('[WordFamilies] ' + __leakText);
           }
         }
       } catch (__e) { console.warn('[WordFamilies] 后置校验失败：', __e); }
