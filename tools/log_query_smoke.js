@@ -603,31 +603,28 @@ function runG() {
   //     · prompt_builder.js：P26 query_source 协议行 / P27 产出物 title,content,desc / P28 后台进程注入 之后的现盘值
   //   P45 重记（2026-10-07）：补 Qwen 那轮加的「资料：query_source 用法行 / 位置：set_location +
   //     list_destinations 行 / output_publish 增 category?,isFragment?」三条协议声明 ⇒ 当时现盘值 51275 B / ED9AB8C65E72433D0CD11F718C6927C7。
-  var bases = [
-    // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 AABB3146…）
-    // P65 重记（2026-10-18）：gamestate.loadFromSave 里加 ToolTrace.load()（换档重载痕迹），
-    //   指纹改按「行尾归一后的 LF 字节」算（见 md5lf）⇒ 现值 E59DF6A0…，11006 B。
-    ['engine/core/gamestate.js', 'E59DF6A01FBBF772FAAE143588C0296C'],
-    // P54·I-4/I-6 重记（同 num_editor_smoke）
-    // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
-    // 净化批 EX5 重记（2026-10-17，用户批准）：:839 删外层 try 保单防线 if ⇒ 现盘值
-    ['engine/info_feed.js', '4CC16B02A004DA9740354984058D93F2'],
-    // P54·P1 再重记：推演协议条件注入 ⇒ 52285 B / 7246723C904BA39C1A258D283007908E
-    // 净化批 EX5 重记（2026-10-17，用户批准）：删外层防御 try/catch ⇒ 686F416572C0E0A862CEB8E8FC2368FD
-    // query_portrait 阶段二重记（2026-10-17，用户批准）：_qExtLine 追加 query_portrait() 协议行（+19 B）⇒ 现盘值
-    ['engine/core/prompt_builder.js', '99C2471596B980A2B0173B95FA3279F3']
-  ];
-  bases.forEach(function (b) {
-    eq('G RN 本仓 ' + b[0] + ' MD5 与记录一致', md5lf(path.join(root, b[0])), b[1]);
-  });
-  if (HAVE_OTHER) eq('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', md5(path.join(root, 'engine', 'info_feed.js')),
-    md5(path.join(DESK, 'engine', 'info_feed.js')));
-  else skip('G RN engine/info_feed.js 与桌面逐字节同源（P9·S13 两仓同步改）', '另一仓不可见（' + DESK + '）');
-  // 桌面同名件软提示：刻意的跨仓参考，不参与断言
-  bases.forEach(function (b) {
-    var dp = path.join(DESK, b[0]);
-    console.log('  [软提示·桌面] ' + b[0] + ' 现值：' + (fs.existsSync(dp) ? (fs.statSync(dp).size + ' B / ' + md5(dp)) : '（不存在）'));
-  });
+  // P66（用户 m14969 之后）：三个共享件的整文件指纹已退役。
+  //   理由：这些文件两仓共用，过去在 4 个冒烟里各记一份 MD5，改一次要重算 6~20 个指纹，
+  //   且一次全仓行尾翻转（P65 的 CI 就是这么红的）会把「内容其实没变」的断言集体弄红。
+  //   现在「谁和谁是同一份文件」只由 tools/engine_sync.js + engine_sync_manifest.json 裁决，
+  //   桌面批里的 tests/unit/test_engine_sync.js 会把结论搬进 CI-Equivalent 的日常闸口。
+  //   本套件保留行为断言，不再自算整文件哈希。
+  var syncRes = null;
+  try {
+    var cp = require('child_process');
+    var raw = cp.execFileSync(process.execPath, [path.join(root, 'tools', 'engine_sync.js'), '--check', '--json'],
+      { encoding: 'utf8', maxBuffer: 16 << 20 });
+    syncRes = JSON.parse(raw);
+  } catch (e) { syncRes = { ok: false, failures: [String(e.message).slice(0, 160)] }; }
+  if (!syncRes || syncRes.ok !== true) {
+    eq('G 两仓同源件登记册零漂移（tools/engine_sync.js）', syncRes && syncRes.failures, []);
+  } else if (syncRes.skipped) {
+    skip('G 两仓同源件登记册零漂移（tools/engine_sync.js）', '另一仓不可见（' + DESK + '）');
+  } else {
+    eq('G 两仓同源件登记册零漂移（tools/engine_sync.js）', true, true);
+  }
+  // 桌面同名件的现值不再逐条打印：登记册已经把「两侧该不该一样」说清楚了，
+  // 想看具体差异跑 `node tools/engine_sync.js --check`（会点名是哪一侧变了、差几行）。
 }
 
 // ================= 主流程 =================

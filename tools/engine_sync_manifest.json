@@ -1,0 +1,194 @@
+{
+  "v": 1,
+  "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
+  "reason": "--regen",
+  "recordedAt": "2026-10-18T13:29:45Z",
+  "heads": {
+    "rn": null,
+    "desktop": null
+  },
+  "counts": {
+    "mirror": 64,
+    "mirrorEol": 22,
+    "fork": 17,
+    "unsharedDesktop": 118,
+    "unsharedRn": 150
+  },
+  "mirror": [
+    "engine/achievements.js",
+    "engine/alias.js",
+    "engine/background.js",
+    "engine/calendar.js",
+    "engine/card_diagnose.js",
+    "engine/card_display.js",
+    "engine/core/api_client.js",
+    "engine/core/card_validator.js",
+    "engine/core/cards_demo.js",
+    "engine/core/tool_executor.js",
+    "engine/destiny.js",
+    "engine/dice.js",
+    "engine/dice_history.js",
+    "engine/endings.js",
+    "engine/error_log_core.js",
+    "engine/events.js",
+    "engine/import/decode.js",
+    "engine/import/draft.js",
+    "engine/import/formats.js",
+    "engine/import/index.js",
+    "engine/import/middle.js",
+    "engine/import/parsers/archive.js",
+    "engine/import/parsers/pdf.js",
+    "engine/import/parsers/textlike.js",
+    "engine/import/pipeline.js",
+    "engine/import/report.js",
+    "engine/import/unzip.js",
+    "engine/import/vault.js",
+    "engine/info_feed.js",
+    "engine/log_query.js",
+    "engine/npc_runtime.js",
+    "engine/outputs.js",
+    "engine/portrait.js",
+    "engine/proposal_semantic_check.js",
+    "engine/proposal_validator.js",
+    "engine/proposals.js",
+    "engine/runtime_repair.js",
+    "engine/shop.js",
+    "engine/snapshots.js",
+    "engine/state_guard.js",
+    "engine/status_card.js",
+    "engine/story.js",
+    "engine/story_nodes.js",
+    "engine/tasks.js",
+    "engine/theme.js",
+    "engine/tool_trace.js",
+    "engine/words.js",
+    "platform/platform_adapter.js",
+    "templates/number.js",
+    "templates/relation.js",
+    "tools/background_smoke.js",
+    "tools/claim_fact_smoke.js",
+    "tools/endings_gate_smoke.js",
+    "tools/import_smoke.js",
+    "tools/info_tick_smoke.js",
+    "tools/outputs_review_smoke.js",
+    "tools/proposal_audit_smoke.js",
+    "tools/source_readable_smoke.js",
+    "tools/tool_ready_smoke.js",
+    "tools/version_sync_smoke.js",
+    "vfs/local_store.js",
+    "vfs/logger.js",
+    "vfs/secure_envelope.js",
+    "vfs/storage_adapter.js"
+  ],
+  "mirrorEol": [
+    "engine/achievements.js",
+    "engine/alias.js",
+    "engine/calendar.js",
+    "engine/card_diagnose.js",
+    "engine/core/card_validator.js",
+    "engine/core/cards_demo.js",
+    "engine/dice.js",
+    "engine/dice_history.js",
+    "engine/endings.js",
+    "engine/events.js",
+    "engine/proposal_semantic_check.js",
+    "engine/proposal_validator.js",
+    "engine/runtime_repair.js",
+    "engine/shop.js",
+    "engine/snapshots.js",
+    "engine/status_card.js",
+    "engine/story_nodes.js",
+    "engine/tasks.js",
+    "engine/theme.js",
+    "templates/number.js",
+    "templates/relation.js",
+    "vfs/secure_envelope.js"
+  ],
+  "fork": {
+    "engine/api_manager.js": {
+      "rn": "C988647C55E60DE57EA4E975FA1AD1EC",
+      "desktop": "A999DA48A1271CC862634B74E53A1432",
+      "diffLines": 98
+    },
+    "engine/audit.js": {
+      "rn": "E2DCC71DF24B9D30983FF0D1579636B8",
+      "desktop": "6097CC92B6100BB9B66FDD0490142F94",
+      "diffLines": 2
+    },
+    "engine/avatar.js": {
+      "rn": "DB4A48F4803858A6CDD1099125C312AB",
+      "desktop": "2F554F742878A28BAEC7885F5300EB14",
+      "diffLines": 179
+    },
+    "engine/classify.js": {
+      "rn": "0B3563679EDAA3E6D5D94D8D82240A2B",
+      "desktop": "6D70C2168BED7E5B44A525F3E9A62D83",
+      "diffLines": 456
+    },
+    "engine/core/gamestate.js": {
+      "rn": "E59DF6A01FBBF772FAAE143588C0296C",
+      "desktop": "28C06930941317AC16D6512DCC79A770",
+      "diffLines": 249
+    },
+    "engine/core/prompt_builder.js": {
+      "rn": "99C2471596B980A2B0173B95FA3279F3",
+      "desktop": "B635A118FD2DFED4E4061A93295A75E2",
+      "diffLines": 877
+    },
+    "engine/core/storage.js": {
+      "rn": "36BD53022CEA2F43CE2DE41B3C3A147C",
+      "desktop": "99151A7A08FC4F08FC3BBFF28301234C",
+      "diffLines": 218
+    },
+    "engine/npc_deduction.js": {
+      "rn": "22041C70992B34910641D8A5778545D2",
+      "desktop": "15010DBD078A07BDB8554E3F6CCE8D6D",
+      "diffLines": 348
+    },
+    "engine/npc_deduction_ai.js": {
+      "rn": "65420A00837CA2C734FD600E90F8F864",
+      "desktop": "66C0836C2C8FE89800EB04237D62183A",
+      "diffLines": 228
+    },
+    "engine/realtime.js": {
+      "rn": "D7AA41FF7A719CCDBFA6ADDC0DF4EDA2",
+      "desktop": "5078AD56A3F246940592ED8A6FDD04A5",
+      "diffLines": 167
+    },
+    "engine/weather.js": {
+      "rn": "3805DD33D5A0DCA256550FE87609EEAE",
+      "desktop": "C99A9070B45919FB59BA8E528E74BFCF",
+      "diffLines": 507
+    },
+    "engine/web_search.js": {
+      "rn": "D769A793DE3484CCED48AAA588299D2B",
+      "desktop": "10681CC9D920F67BB7FBFA2D1206C9A2",
+      "diffLines": 7
+    },
+    "tools/longline_token_smoke.js": {
+      "rn": "DDA5D9916796909A19C67BD041D7598E",
+      "desktop": "76D8FF4C45112A9521990899CB614F8C",
+      "diffLines": 408
+    },
+    "tools/npc_boundary_smoke.js": {
+      "rn": "ABD860DDA16A1C54791B55CE14F81F14",
+      "desktop": "6B2F6A4F8DAE363146C0998368C569D0",
+      "diffLines": 251
+    },
+    "vfs/saves.js": {
+      "rn": "1E87EB592560370B74C60C4F52EE4D8C",
+      "desktop": "E919E482CC4CDAC1BDA22F3A8B6BE4C2",
+      "diffLines": 258
+    },
+    "vfs/vfs.js": {
+      "rn": "71B7E0E0A655589A5AC314B778793E3B",
+      "desktop": "26346DCD13454B82D5E16FB7E6482C01",
+      "diffLines": 262
+    },
+    "vfs/vfs_guard.js": {
+      "rn": "688B97F9E1074B9F909912EBC7499DDD",
+      "desktop": "BC1720408B59D687DA9B370A7679445B",
+      "diffLines": 93
+    }
+  }
+}

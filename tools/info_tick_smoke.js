@@ -291,8 +291,12 @@ function md5(buf) { return crypto.createHash('md5').update(buf).digest('hex').to
     if (!fs.existsSync(other)) return '找不到对仓文件 ' + other;
     const a = fs.readFileSync(SRC);
     const b = fs.readFileSync(other);
-    if (!a.equals(b)) return '字节不同：' + a.length + '/' + md5(a) + ' vs ' + b.length + '/' + md5(b);
-    console.log('INFO_TICK 同源件 engine/info_feed.js = %s B / %s', a.length, md5(a));
+    // P66：比较按行尾归一（两仓一方 CRLF 一方 LF 时，内容其实没变——P65 的 CI 就是这么红的）。
+    const lf = function (buf) { return buf.toString('utf8').split('\r\n').join('\n'); };
+    const la = lf(a);
+    const lb = lf(b);
+    if (la !== lb) return '内容不同：' + la.length + '/' + md5(Buffer.from(la, 'utf8')) + ' vs ' + lb.length + '/' + md5(Buffer.from(lb, 'utf8'));
+    console.log('INFO_TICK 同源件 engine/info_feed.js = %s B（LF 口径）/ %s', la.length, md5(Buffer.from(la, 'utf8')));
     return true;
   });
 

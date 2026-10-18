@@ -7,7 +7,7 @@
 
 - **手机版**：React Native 0.87（本仓 `HippocampusRN`）
 - **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 62 套回归
+- **测试**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 64 套回归
 - **版本**：1.3.1（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10301）
 
 > 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。

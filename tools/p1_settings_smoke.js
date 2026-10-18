@@ -405,9 +405,11 @@ async function runD() {
   var buf = fs.readFileSync(p);
   //  P30：原来拿「桌面冻结值」锁 RN 文件（2457/AA393C3F…），但桌面是 CRLF、RN 是 LF（同内容），
   //    行尾归一后两份逐字符相同（见 p30_baseline_probe.js），故改锁 RN 自己的现盘值。
-  eq('P1F-2 RN 侧字节数 2407（桌面同内容 CRLF 版为 2457）', buf.length, 2407);
-  eq('P1F-3 RN 侧 MD5（桌面同内容 CRLF 版为 AA393C3F50A4C2FD0F732D29C95115C4）',
-    crypto.createHash('md5').update(buf).digest('hex').toUpperCase(),
+  // P66：按行尾归一的字节算（cards_demo.js 是两仓共享件，行尾翻转不该弄红）。
+  var lfBuf = Buffer.from(buf.toString('utf8').split('\r\n').join('\n'), 'utf8');
+  eq('P1F-2 RN 侧字节数 2407（LF 口径）', lfBuf.length, 2407);
+  eq('P1F-3 RN 侧 MD5（LF 口径）',
+    crypto.createHash('md5').update(lfBuf).digest('hex').toUpperCase(),
     'E7937FAC502B33328E2AED7A8CFBD19C');
 
   var CARDS = require(p);

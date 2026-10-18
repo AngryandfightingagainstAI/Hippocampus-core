@@ -349,7 +349,25 @@ var StoryLoop = {
       let toolResults = [];
       try {
         const toolsRaw = ToolExecutor.extract(content);
+        // P66：工具执行前给关键数值拍快照，执行后逐项 diff。
+        // 唯一硬规则在 StateGuard.verdict 里：状态变了却一个工具都没成功 ⇒ 回滚。
+        const __stateBefore = (typeof StateGuard !== 'undefined' && StateGuard.snapshot) ? StateGuard.snapshot() : null;
         toolResults = await ToolExecutor.executeAll(toolsRaw);
+        if (__stateBefore && typeof StateGuard !== 'undefined' && StateGuard.verdict) {
+          try {
+            const __sv = StateGuard.verdict(__stateBefore, StateGuard.snapshot(), toolResults);
+            if (__sv.rollback) {
+              StateGuard.restore(__stateBefore);
+              Platform.ui.appendHint('（引擎回滚：' + __sv.reason + '。已还原到执行前的数值）');
+              GameState._pendingSystemNotices.push(
+                '引擎检测到：本回合 ' + __sv.reason + '，状态已回滚。'
+                + '如果剧情里确实发生了数值变化，请**重新**调用对应工具（一次一个，确认成功再下一个）。'
+              );
+              try { Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded(); } catch (eR) {}
+            }
+            if (typeof ToolTrace !== 'undefined' && ToolTrace.recordStateFacts) ToolTrace.recordStateFacts(__sv);
+          } catch (eSG) { console.warn('[StateGuard]', eSG); }
+        }
         // P65：留痕（10 轮 TTL）。只记「真的执行过」的调用 —— 没有调用就没有痕迹。
         if (toolResults.length && typeof ToolTrace !== 'undefined') {
           try { ToolTrace.record(null, ToolTrace.callsFromResults(toolsRaw, toolResults)); } catch (e) {}

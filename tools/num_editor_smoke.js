@@ -500,36 +500,21 @@ function runComponent() {
   //   断言条数不变（3 条），只换比较对象。
   //   P30 重记（gamestate 旧记录早于 RN 仓首次提交；prompt_builder 因 P26/P27/P28 改动而变）
   //   P45 重记（prompt_builder 因 Qwen 那轮补 set_location / list_destinations / output_publish 字段而变，51275 B）
-  var BASE = [
-    // P55 重记：写入契约批给 GameState.persist() 加失败透传（原 10413 / AABB3146…）
-    // P65：loadFromSave 里加 ToolTrace.load()（换档重载痕迹）⇒ 行尾归一的 LF 口径 11006 B / E59DF6A0…
-    ['engine/core/gamestate.js', 11006, 'E59DF6A01FBBF772FAAE143588C0296C'],
-    // P54·P1 重记：推演协议条件注入（推演关闭时不下发 request_deduction 半句 / NPC 推演行 / query_deductions）
-    // 净化批 EX5 重记（2026-10-17，用户批准）：删外层防御 try/catch ⇒ 52222 B / 686F416572C0E0A862CEB8E8FC2368FD
-    // query_portrait 阶段二重记（2026-10-17，用户批准）：_qExtLine 追加 query_portrait() 协议行（+19 B）⇒ 现盘值
-    ['engine/core/prompt_builder.js', 52829, '99C2471596B980A2B0173B95FA3279F3'],
-    // P54·I-4/I-6 重记：info_feed.js 补「静默失败可见性」（混流追加失败不再假成功、tick 批逐条容错）
-    // P54·O-8 再重记：JSON 提取收敛到 CardDiagnose.firstJsonObject
-    // 净化批 EX5 重记（2026-10-17，用户批准）：:839 删外层 try 保单防线 if ⇒ 现盘值
-    ['engine/info_feed.js', 49967, '4CC16B02A004DA9740354984058D93F2']
-  ];
-  BASE.forEach(function (b) {
-    var p = path.join(root, b[0]);
-    check('I7 RN 本仓只读基线未变 ' + b[0] + '（' + lfBuf(p).length + ' B / ' + md5lf(p) + '）',
-      lfBuf(p).length === b[1] && md5lf(p) === b[2]);
-  });
+  // P66：三条共享件（gamestate / prompt_builder / info_feed）的整文件指纹已退役，
+  //   改由 tools/engine_sync.js 的登记册统一裁决（桌面 tests/unit/test_engine_sync.js 搬进日常闸口）。
+  //   本套件只保留行为断言与「本仓独有件」的指纹。
   // P12·S1：参考件本仓化（方案 A，用户批准）。
   //   RN 仓有的 engine/web_search.js 改指本仓；
   //   桌面独有件 engine/editor.js（RN 实测不存在，RN 是 engine/num_editor.js + engine/wb/* 结构）
   //   不参与 red —— 该槽位改锁 RN 本仓移植产物 engine/num_editor.js（条数不变，只换比较对象）。
   var REF = [
-    ['engine/web_search.js', 11903, 'D769A793DE3484CCED48AAA588299D2B'],
     ['engine/num_editor.js', 11458, '01E7BED6AA56DA94FDC3CACFD89C9968']
   ];
   REF.forEach(function (b) {
     var p = path.join(root, b[0]);
-    check('I8 RN 本仓参考件只读未变 ' + b[0] + '（' + fs.statSync(p).size + ' B / ' + md5(p) + '）',
-      fs.statSync(p).size === b[1] && md5(p) === b[2]);
+    // P66：本仓独有件（另一仓没有）继续锁指纹，但按行尾归一的字节算，行尾翻转不该弄红。
+    check('I8 RN 本仓独有件未变 ' + b[0] + '（' + lfBuf(p).length + ' B / ' + md5lf(p) + '）',
+      lfBuf(p).length === b[1] && md5lf(p) === b[2]);
   });
   // 桌面独有件软提示：刻意的跨仓参考，不参与断言
   [['engine/editor.js'], ['engine/web_search.js']].forEach(function (b) {

@@ -63,6 +63,9 @@
 
     _data: null,          // [{ round, ts, name, args, ok, note }]
     _selfChecks: null,    // [{ round, ts, text }]
+  // P66：上一回合引擎自己数出来的实测事实（工具成功/失败数、数值变化项、是否回滚）。
+  // 只活在内存里、跟档无关，供 selfCheckBlock 引用；不落盘也不进提示词痕迹段。
+  _lastFacts: null,
     _version: 0,          // 变更计数：单测与「预算重渲染」用得上
 
     _path: function() {
@@ -193,6 +196,17 @@
       this.save();
     },
 
+    // P66：记下引擎实测事实（由 story.js 用 StateGuard.verdict 算好后传入）。
+    // 不进 _data、不落盘：这是「上一回合发生了什么」，跨档没有意义。
+    recordStateFacts: function (facts) {
+      if (!facts || typeof facts !== 'object') { this._lastFacts = null; return; }
+      this._lastFacts = {
+        ok: facts.ok | 0, fail: facts.fail | 0,
+        changed: facts.changed | 0, rollback: !!facts.rollback
+      };
+    },
+
+
     // 提示词里的「工具痕迹」段：没有痕迹 ⇒ 空串（不许出现空块）
     formatForPrompt: function(round) {
       var list = this.recent(round);
@@ -223,6 +237,12 @@
       lines.push('3) 「最近 ' + TTL + ' 轮工具痕迹」里没有的调用 = 你没有调过，不要写成"我查过"。');
       lines.push('4) 本轮结尾单独输出一个【自检】块，两行以内：缺什么 / 齐。例：【自检】齐');
       if (last) lines.push('（上次自检 · 第 ' + last.round + ' 轮：' + last.text + '）');
+      // P66：把「引擎自己数出来的事实」摆给 AI，别让它只靠记忆自评
+      var f = this._lastFacts;
+      if (f && (f.ok || f.fail || f.changed)) {
+        lines.push('（引擎实测 · 上一回合：工具成功 ' + f.ok + ' 个、失败 ' + f.fail + ' 个，关键数值变化 ' + f.changed + ' 项'
+          + (f.rollback ? '；全部失败却检测到写入，已自动回滚' : '') + '）');
+      }
       lines.push('【自检】块由引擎摘掉，玩家看不到，不要写进【正文】里。');
       return lines.join('\n');
     },

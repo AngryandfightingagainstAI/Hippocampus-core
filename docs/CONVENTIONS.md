@@ -66,15 +66,27 @@
 ================================================================
 
 **判定口径**：同一相对路径在两仓都存在，且字节内容**完全一致**（Node 逐文件 md5 相等）。
+
+P66 起，**权威登记册**是手机仓的 `tools/engine_sync_manifest.json`，由下面的命令裁决：
+
+```
+cd D:\HippocampusRN
+node tools\engine_sync.js --check   # 漂移检查（退出码 1 = 有漂移，报错会点名是哪一侧变了）
+node tools\engine_sync.js --write   # 把 mirror 件从手机仓推到桌面仓（保留桌面侧行尾风格）
+node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
+```
+
+本条之后的「三桶」是**独立复算**：桌面仓守卫 `tests/unit/test_p53_license_docs.js` 用另一套代码再算一遍，
+两边对不上就说明有文件漏登记。
 判定脚本不能靠记忆，必须现算（`%TEMP%\p13b_shared.js`；P53 口径：遍历两仓 `.js`，排除
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 41 个**、**仅行尾不同 22 个**、**真差异 17 个**，
-合计 79 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
+最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 42 个**、**仅行尾不同 22 个**、**真差异 17 个**，
+合计 81 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（41 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（42 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -102,6 +114,7 @@ engine/npc_runtime.js
 engine/outputs.js
 engine/portrait.js
 engine/proposals.js
+engine/state_guard.js
 engine/story.js
 engine/tool_trace.js
 engine/words.js
@@ -175,6 +188,9 @@ vfs/vfs_guard.js
 
 ### 2.1 同步办法
 
+0. **P66 起的正路**：共享文件只改手机仓（canonical），改完跑 `node tools\engine_sync.js --write`
+   把字节推到桌面仓；再跑 `--check` 确认零漂移。**别**再手改两遍、也别再在守卫里加整文件指纹。
+   只有 fork 件（两仓故意不同的 17 个）需要两侧同改，改完跑 `--regen` 重记哈希。
 1. 改之前：先算两仓该文件的 md5。**改前必须相等**（不相等说明它本来就不是同源件，别硬同步）。
 2. 改之后：两仓都要改成同一份字节（通常是一边写好、另一边**直接复制文件**，不要手改两遍）。
 3. 交报告时给**四格表**：`改前/改后 × 桌面/RN`，每格写 **字节数 + MD5 + 行尾**（CRLF 数、lone LF 数、逻辑行数三个数一起给）。
@@ -182,6 +198,10 @@ vfs/vfs_guard.js
    （P12 那次 APK 与前一版同 MD5，就是因为 Metro 规范化了行尾）。所以同源件要连行尾一起对齐。
 
 ### 2.2 同源哨兵（改单边就会红的既有断言）
+
+> P66 变更：四个冒烟脚本里「读只读基线 / 锁定基线」的整文件 MD5 已退役（原本一处改动要在 4 个脚本里
+> 重算 6~20 个指纹，且一次全仓行尾翻转就会集体误红——P65 的 CI 就是这么红的）。
+> 现在共享件的身份只由 `engine_sync.js` 裁决，冒烟脚本保留行为断言；本仓独有件仍锁指纹，但按行尾归一字节算。
 
 | 守卫在哪 | 守什么 |
 |---|---|
@@ -218,7 +238,7 @@ vfs/vfs_guard.js
 【三、`rn/rn_bootstrap.js` 装载约定】
 ================================================================
 
-- 当前 **66 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
+- 当前 **67 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`）。
 - 每个 `load(name, () => require('../engine/xxx.js'), extra?)`，`require` 参数必须是**字面量字符串**
   （Metro 只静态收集字面量；拼出来的路径不进 bundle）。
 - `load` 失败只打 `BOOTSTRAP_FAIL: …` 然后继续，**不抛** ⇒ 少一个模块不会立刻崩，
@@ -305,7 +325,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（62 套）
+node tools\run_batch.js                   # 前置门 + 全量（64 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
@@ -670,3 +690,26 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 
 **版本**：v2（P53 文档口径统一）
 **对应桌面仓**：`docs/CONVENTIONS.md`（分层公约 v1）
+
+#### P66 · 同源单源化 + 契约锚点 + 状态守卫（2026-10-18，用户 m14969）
+
+三件事一起做，动机是 P65 的 CI 红：一次全仓行尾翻转把四个冒烟脚本里的
+「读只读基线」整文件 MD5 集体弄红，而这些指纹本身并不表示任何行为。
+
+1. **单源化**：两仓同源关系由 `tools/engine_sync.js` + `tools/engine_sync_manifest.json`
+   裁决（mirror / fork / 独有）。canonical 是手机仓，改完跑 `--write` 推字节、`--check` 验漂移；
+   fork 件故意不同，锁两侧行尾归一哈希，改完跑 `--regen`。桌面 `tests/unit/test_engine_sync.js`
+   把它搬进闸口，手机 `tools/log_query_smoke.js` 的 G 组也跑一次。
+2. **锚点替代整文件指纹**：`log_query_smoke` / `num_editor_smoke` / `worldbook_smoke` /
+   `info_tick_smoke` / `p1_settings_smoke` 里「共享件整文件 MD5」全部退役，改为
+   （a）共享件交给登记册；（b）本仓独有件锁**行尾归一**字节（`md5lf`），避免 CRLF/LF 误红；
+   （c）协议/符号层用「源码哨兵」按行断言（`query_source`、`list_destinations`、
+   `globalThis.GM_DEFAULTS` 这类必须存在的行）。行为断言一条不动。
+3. **状态守卫**：`engine/state_guard.js` 在工具执行前后给 `GameState.currentState` 拍快照、
+   逐项 diff；硬规则只有一条——**状态变了却没有任何工具成功 ⇒ 回滚并回喂一次**。
+   实测事实（成功/失败数、变化项、是否回滚）经 `ToolTrace.recordStateFacts` 进
+   「关键词自检」段，让 AI 对着引擎数出来的数字自评，而不是凭记忆。
+
+教训：`--regen` 是「按**当前**内容判类」，改完共享件必须先 `--write`/`Copy-Item` 对齐两侧再 regen，
+否则 mirror 会被登记成 fork（本轮实际踩到：story.js / tool_trace.js 一度被判成 fork，61/19）。
+
