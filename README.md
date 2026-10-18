@@ -1,141 +1,123 @@
 # 神秘小引擎（Hippocampus）
 
-> 由AI制作，一个由外部环境权威限制AI过于自由的毛病的AI文游引擎，仅需自行输入API key接通AI后，根据界面指引于APK外的AI对话窗口转化文游指令为json指即可导入文游进行游玩，demo版本持续优化制作中。
+**一个在手机上玩的 AI 文字冒险。剧本、NPC、世界走向全由大模型当场编，存档和日志只留在你自己手机里。**
 
+不需要服务器，不需要注册账号，不用等别人开服——你给它一张「卡带」（世界观 + 角色 + 规则），它让 AI 当主持人，你按选项或自己打字往下玩。
 
-一个**离线优先的 AI 文字冒险引擎**：你在手机或桌面上玩一场由大模型当主持人（GM）的文字游戏，剧本、NPC、世界状态由 AI 现场生成，而**存档、日志、骰子、信息层、世界书全部留在本机**，不依赖这台机器以外的任何服务器——除了你自己填的那个模型 API。
+> 版本：1.3.1 ｜ Android 7.0+ ｜ Windows 桌面版 ｜ MIT 许可
+> 手机版在本仓（`HippocampusRN`），桌面版是同一个引擎内核 + Electron 外壳。
 
-- **手机版**：React Native 0.87（本仓 `HippocampusRN`）
-- **桌面版**：Electron（同一套 `engine/` 内核 + 纯 JS/DOM 外壳）
-- **测试**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 65 套回归
-- **版本**：1.3.1（本仓 `package.json`、`package-lock.json` 与 `android/app/build.gradle` 的 `versionName` 三处同值，`versionCode` 10301）
-
-> 本仓是**手机版**。`engine/` 是两版共用的引擎内核（无 React Native 依赖，可纯 Node 跑），`rn/` 是手机壳。
+**项目现状**：40 套 RN smoke 共 2636 条断言全绿；桌面版另有 14 项预检 + 65 套回归。
 
 ---
 
-## 手机直接下载安装（不用电脑）
+## 先看它长什么样
 
-**👉 [点这里下载最新 APK](https://github.com/AngryandfightingagainstAI/Hippocampus-core/releases/latest)**（Android 7.0+；每次发版的文件名与 SHA256 都写在对应 Release 里）
-
-1. 手机点开上面的链接，在 Release 页里下载最新那个 `HippocampusRN-<版本>-release-universal-<批次>.apk`（认最新一条 Release）。
-2. 点开安装（首次要在系统里允许「安装未知来源应用 / 来自此来源的应用」）。
-3. 打开 App → 设置里填**你自己的**模型 API key（OpenAI / DeepSeek / Gemini / 通义 等任意兼容接口）。
-4. 首屏「导入卡带」粘贴或选择卡带 JSON，也可以直接用内置示例卡带先跑一把 → 开始叙事。
-
-> 每个 Release 都会写明版本号（`versionName` / `versionCode`）与 APK 的 SHA256，可以自行核对。
-> 只想玩的话到这里就够了；下面的「快速开始 / 打包 APK / 跑测试」是**开发者**从源码跑起来和编译的步骤，需要电脑。
-
----
-
-
-## 目录
-
-- [手机直接下载安装（不用电脑）](#手机直接下载安装不用电脑)
-- [它是什么](#它是什么)
-- [截图](#截图)
-- [功能清单](#功能清单)
-- [快速开始](#快速开始)
-- [打包 APK](#打包-apk)
-- [跑测试](#跑测试)
-- [项目结构](#项目结构)
-- [数据落在哪里](#数据落在哪里)
-- [接自己的 AI](#接自己的-ai)
-- [已知限制](#已知限制)
-- [致谢与许可](#致谢与许可)
-
----
-
-## 它是什么
-
-一句话：**把「跑团」交给 AI，把「记忆」留在你手机里。**
-
-普通 AI 聊天玩文字冒险，玩到几十回合就会忘掉前面发生的事。这个引擎的做法是：
-
-1. 每回合把**结构化状态快照**（HUD、侧栏、镜头内 NPC、手机未读、产出物、世界书命中项）拼进提示词，而不是把全部历史一股脑塞进去；
-2. 历史过长时**自动把旧对话压缩成「日志」**（一次独立的 AI 调用产出 `title/summary/entities/tags/unresolved`），原文进 VFS 存档，摘要回灌提示词；
-3. 提示词有**预算刹车**：估算超预算就按 6 档逐级降级（保留最近 1 条 → 裁到 2 条 → 收敛查询 → … → 摘要降到 0），并把「已降级 N 档」显示在侧栏；
-4. AI 通过 `<<<TOOL>>>{...}<<<END>>>` 调用**受白名单约束的工具**（改数值、加物品、掷骰、查 NPC、发手机讯息、触发事件……），所有状态变更都走这一条通道，可回放、可审计。
-
----
-
-## 截图
-
-| 叙事页（顶栏 📱 未读徽标） | 侧栏（手机入口徽标 + 预算估算） |
+| 叙事页 | 侧栏（角色卡） |
 |---|---|
 | ![叙事页](docs/shots_p13/p13_50_topbar_unread1.png) | ![侧栏](docs/shots_p13/p13_51_sidebar_badge1.png) |
 
-| 手机面板（剧情外信息层） | 冷启动续玩 |
+| 手机讯息面板 | 关掉再打开还能接着玩 |
 |---|---|
 | ![手机面板](docs/shots_p13/p13_52_panel_unread1.png) | ![续玩](docs/shots_p13/p13_41_after_continue.png) |
 
-| 导入文游资料 | 解析报告与缺口清单 |
+| 导入卡带 | 导入后先给你一份体检报告 |
 |---|---|
 | ![导入入口](docs/shots_p15/p15_import_section.png) | ![导入报告](docs/shots_p15/p15_inapp_report.png) |
 
 ---
 
-## 功能清单
+## 三步开始玩
 
-### 叙事与 AI
+**1. 装到手机上**
 
-- **流式回合制叙事**：`【正文】+【时间】+【选项】` 协议解析；选项按钮 / 自定义行动输入；`🔁 重新生成`（仅最新轮）与 `↩ 回到这里`（快照回退）。
-- **思考链展示**：`reasoning_content`、联网搜索结果、token 用量三块可分别开关（`filterThinkingMeta`），渲染成可折叠的「思考块」。
-- **提示词预算刹车**：`estimateTokens` 估算 → 6 档降级 → 侧栏显示 `≈ N tok` 与「⚠ 预算超限，已降级 N 档」。
-- **自动日志压缩**：跨天或累积满阈值时把旧对话压成日志；失败保留原文并提示。
-- **前情回灌**：最近的日志摘要（默认 3 条）+ 相关 NPC + 未完成事项自动进系统状态快照。
-- **`query_log` 关键词检索**：摘要被降级到 0 时仍留一句提示，AI 可以自己去翻原文。
+👉 **[下载最新 APK](https://github.com/AngryandfightingagainstAI/Hippocampus-core/releases/latest)**
 
-### 工具调用（AI 能改世界的唯一通道）
+在 Release 页面下载最新那条里的 `HippocampusRN-<版本>-release-universal-<批次>.apk`，点开安装（第一次需要在系统里允许「安装未知来源应用」）。每个 Release 都写了版本号与 APK 的 SHA256，可以自己核对。
 
-- 同步白名单 18 项：`modify_hud`、`modify_sidebar`、`modify_entry`、`modify_relation`、`add_item`、`remove_item`、`query_player`、`query_npc`、`query_faction`、`query_map`、`query_worldsetting`、`roll_dice`、`roll_check`、`roll_opposed`、`web_search`、`set_location`、`list_destinations`。
-- 另有 62 项由各 `engine/` 模块注册（与内置 18 项合计 **80 项**）：`open_shop`/`buy_item`/`sell_item`、`trigger_event`、`add_task`/`complete_task`、成就、结局、剧情节点、`propose_change`、`info_send`/`info_broadcast`/`info_read`/`info_promote`、立绘等。**全部在模块加载时同步挂上，没有启动空窗**——以前这批工具是 `setTimeout` 错峰注册的，冷启动头两秒 AI 调用它们会被判「未知工具」。
-- **超长工具块保护**：单个工具块超过 12000 字符时**保留原文但不执行**，并在叙事流给出可见信号，避免截断造成状态错乱。
-- **查询结果结构化截断**：`query_*` 回显超过 800 字符时摘关键字段；`query_player` 回显剔除立绘与开场提示词。
+**2. 打开 App，先跑一把**
 
-### 剧情外信息层（「小手机」）
+首屏自带一张「示例卡带」，直接点「新建存档」就能玩，不用准备任何东西。
+想玩自己的世界：点「导入卡带」，把卡带 JSON 粘进去（或从文件选）。
 
-- AI 在**空闲期**可以主动给玩家发讯息 / 发广播（每 25 游戏分钟一次冷却 + 25% 概率，不是每回合都发）。
-- **首条有触达保证**：玩家还没收到过任何信息时，从第 3 回合起不再掷概率闸（冷却与每回合上限仍然生效），保证第一条讯息一定会来。
-- 短信只在手机里，默认**不进正文**；带 `importance:'actionable'` 作建议，或用 `info_promote(id)` 升级进正文；**玩家在手机上点「跟进正文」优先**。
-- 未读徽标三处可见：顶栏 📱+N、侧栏「手机」入口徽标、面板内每线程 `●N`；超过 99 显示 `99+`。
-- 打开面板**不清零**，进具体线程才 `markRead`——避免玩家没看内容就把红点消掉。
+**3. 接上 AI**
 
-### 世界与角色
+设置 → 🤖 AI：
 
-- **世界书（World Book）** 12 个子编辑器：世界观、NPC、种族、职业、技能、物品、商店、势力、货币、地图、时间线、产出物。
-- **角色卡带（卡带/Card）**：多卡带、卡带校验、卡带分类（`classify.js`）、卡带诊断。
-- **NPC 自主性**：NPC 有独立的知识来源（`witness/told/rumor/public/deduced/misconception/manual/legacy`）与推理链，可以拒绝、误解、忽略玩家，玩家离开后继续行动。
-- **主体边界**：引擎级规则禁止 AI 替玩家写「想了什么 / 感受到什么 / 决定了什么」；NPC 规则明确「可以行动 ≠ 必须行动」。
-
-### 导入文游资料
-
-已经写好一堆设定、但不想手搓卡带 JSON 时用这条路：**把原始资料丢进去 → 引擎解析 → 生成卡带草稿 → AI 补缺口 → 落库**。入口在卡带库的「导入文游资料」。
-
-- **支持 22 种格式**：纯文本 / Markdown / CSV / TSV / JSON / YAML / XML / HTML / RTF 直接解析；**docx / odt / epub / PDF / ZIP 走文档解析**（不依赖任何第三方解析库，ZIP 与 inflate 是自实现的纯 JS）。
-- **原件单独保管**：解析前先把原文件（连同 sha256）存进 `vfs:/imports/<importId>/`，AI 的转换结果另存一份。**转换错了可以回溯原始资料**，不会被 AI 的改写覆盖。
-- **永不静默丢内容**：认不出格式 / 解析失败 / 格式不支持，一律降级成「原文保留 + 报告里写明原因」，不会悄悄吞掉你的资料。
-- **草稿一定带缺口清单**：按表头/小节标题把表格映射到 NPC / 势力 / 物品 / 技能 / 商店 / 职业 / 种族 / 任务 / 成就 / 事件；认不出的会列成「缺口」而不是假装填好了。
-- **让 AI 补全**：把缺口和允许的补丁结构发给 AI，只接受白名单字段的补丁（`__inject` 之类的注入被丢弃），补完自动跑卡带校验，最多 3 轮。**没过校验不允许落库。**
-- **诚实边界**：加密 PDF 会明确报「已加密」；有页面但抽不到文字的 PDF 会报「极可能是扫描件，需要 OCR」，不会假装读到了内容。
-
-### 系统与运营
-
-- **存档**：分片存储、快照（默认保留最近 30 个）、按轮次回退、断点续玩。
-- **骰子**：`1d100` 等表达式、对抗检定、骰子历史、手动掷骰、`/ra50` `/1d100` 简写。
-- **状态卡**：HUD + 侧栏 + 多组面板数据（属性 / 名声 / 社交 / 世界），支持自定义数值编辑器（`templates/number.js`、`relation.js`）。
-- **实时系统**：游戏内时钟、天气、节日（不含农历）。
-- **产出物发酵**：玩家产出的东西会在后续回合逐渐发生变化。
-- **元层提议**：AI 可以提出变更提议 / 事件提议，玩家批准才生效（`ProposalValidator` + 语义检查）。
-- **报错面板 + 日志检索**：所有引擎异常进 ErrorLog，可在面板里查，也能按关键词检索历史日志。
-- **设置十页**：AI / 搜索 / 通用 / 骰子 / 天气 / 实时 / 编辑器 / 世界书 / 数据 / GM。
+- **有 API key**：填 Base URL / 模型名 / Key（OpenAI、DeepSeek、Gemini、通义、中转站、本地 Ollama 都行，只要是 OpenAI 兼容接口）。
+- **没有 key / 不想花钱**：把「对话通道」切成 **外部 AI（手动复制 → 粘贴）**。这时 App 完全不联网——你把每轮的提示词复制出去，交给任意一个 AI（网页版、别的客户端都行），再把它的回复粘回来提交。
 
 ---
 
-> ⚠️ 下面「快速开始 / 打包 APK」是**开发者**用的（需要电脑 + Node 22 / JDK 17 / Android SDK）。只想在手机上玩，请看最上面的「[手机直接下载安装（不用电脑）](#手机直接下载安装不用电脑)」。
+## 卡带是什么
 
+一张卡带就是一个世界：世界观、NPC、属性、商店、结局都写在里面，本质是一个 JSON。
 
-### 环境要求
+- **不想写**：把已有的设定文档（txt / md / docx / pdf / epub 等）丢进「导入文游资料」，引擎会解析成卡带草稿，再让 AI 补缺口，补完还要过一遍校验才允许入库。
+- **会写**：直接写 JSON 粘贴导入；导入前引擎会先给你一份「卡带诊断」——缺哪个面板、哪个字段没填、哪条引用断了，都会列出来，`WARN` 也能强行导入。
+
+---
+
+## 常见问题
+
+**要电脑吗？**
+玩不用，一个 APK 就够。只有想自己改代码、自己打包 APK 才需要电脑。
+
+**要不要花钱？**
+软件本身 MIT 免费。AI 的钱是给模型商的：填自己的 key，按调用量付费。
+一分钱都不想花也能玩——用「外部 AI」通道，把你已经在用的网页版 AI 的回复粘回来，App 这边不产生任何请求。
+
+**存档在哪？会不会被上传？**
+在手机本地的 SQLite 里（`hippocampus_vfs.db`），不上传，也没有账号。卸载或清数据会一起删掉，重要存档请用「数据」页导出备份。
+
+**支持 iPhone 吗？**
+暂不支持。原生模块（选文件等）只写了 Android 一侧，`ios/` 目前是模板脚手架。
+
+**AI 会玩着玩着忘掉前面吗？**
+引擎每回合会重新拼一份「状态快照」（数值、在场 NPC、时间、未读讯息、世界书命中项）给 AI，历史太长时会把旧对话压成「日志」，所以比普通 AI 聊天抗忘。但长局仍会有偏差，这不是无记忆问题的彻底解。
+
+**AI 会不会乱改我的数值？**
+所有世界改动只能通过受限制的工具调用（改数值、加物品、掷骰、查 NPC……）。而且从 1.3.x 起有状态守卫：某一轮工具全部失败却动了数值，引擎会自动回滚并告诉 AI「重来」。
+
+**能玩多人 / 联机吗？**
+不能。这是单人、纯本地的。
+
+---
+
+## 玩起来有什么
+
+- **叙事**：流式回合制；选项按钮或自定义行动输入；`重新生成`（只重来最新一轮）、`回到这里`（回退到某轮快照）。
+- **思考链**：模型返回的推理过程、联网搜索结果、token 用量，三块可分别开关。
+- **骰子**：`1d100`、对抗检定、`/ra50` 这类简写，历史可查。
+- **手机讯息**：AI 可以在剧情外给你发短信/广播，未读有红点；要不要让它进正文由你决定。
+- **角色卡 / 侧栏**：属性、名声、关系、物品、世界书命中项一屏可见。
+- **世界书**：世界观、NPC、种族、职业、技能、物品、商店、势力、货币、地图、时间线、产出物，共 12 个子编辑器。
+- **设置十页**：AI / 搜索 / 通用 / 骰子 / 天气 / 实时 / 编辑器 / 世界书 / 数据 / GM。
+- **主题**：纸白 / 流光 / 古卷，可导入主题包。
+
+---
+
+## 它是怎么做到「不像普通 AI 聊天」的（给好奇的人）
+
+<details>
+<summary>展开看实现要点</summary>
+
+1. **每回合重建状态，而不是把历史一股脑塞进去**：HUD、侧栏、镜头内 NPC、未读讯息、产出物、世界书命中项打成结构化快照进提示词。
+2. **旧对话自动压缩成日志**：跨天或累积到阈值时，用一次独立调用产出 `title/summary/entities/tags/unresolved`，原文留在本机，摘要回灌提示词。
+3. **预算刹车**：估算超预算就 6 档逐级降级（保留最近 1 条 → 裁到 2 条 → 收敛查询 → … → 摘要降到 0），并在侧栏显示「已降级 N 档」。
+4. **工具白名单**：AI 只能通过 `<<<TOOL>>>{...}<<<END>>>` 调用受限制的工具改世界，状态变更可回放、可审计。
+5. **状态守卫**：工具执行前后各拍一次状态快照，本轮没有任何工具成功却改了数值 ⇒ 自动回滚并回喂 AI 重试。
+6. **主体边界**：引擎级规则禁止 AI 替你写「想了什么 / 感受到什么 / 决定了什么」。
+
+</details>
+
+---
+
+# 给开发者
+
+> 下面都是从源码跑、打包、跑测试的内容，需要电脑（Node 22 / JDK 17 / Android SDK）。
+
+## 环境要求
 
 | 依赖 | 版本 |
 |---|---|
@@ -146,13 +128,13 @@
 
 JavaScript 引擎全在仓库里，**不需要额外下载模型或数据**。
 
-### 安装依赖
+## 安装依赖
 
 ```sh
 npm install
 ```
 
-### 开发模式运行（连真机 / 模拟器）
+## 开发模式运行（连真机 / 模拟器）
 
 ```sh
 # 终端 1：起 Metro
@@ -164,8 +146,6 @@ npm run android
 
 > 装 APK 到 vivo 等国产 ROM 时，请用 `adb install -r -i com.android.vending`，否则会被 `PackageInterceptActivity` 拦住。
 
----
-
 ## 打包 APK
 
 ```sh
@@ -173,62 +153,35 @@ cd android
 ./gradlew assembleRelease      # Windows: gradlew.bat assembleRelease
 ```
 
-产物：
-
-```
-android/app/build/outputs/apk/release/app-release.apk
-```
+产物：`android/app/build/outputs/apk/release/app-release.apk`
 
 > **签名口径（自 1.3.1 起）**：release 型用 `android/keystore/keystore.properties` 指向的正式 keystore 签名，
 > 该凭据文件与 keystore 均不入仓。若凭据缺失（新克隆 / CI），构建会**回退 debug 签名**并在构建日志打 `WARN` ——
 > 回退包仅供本地调试，**禁止上传 Release**（debug 证书是公开的，任何人都能伪造「同签名」更新包）。
 
-`assets/index.android.bundle` 是 Hermes 字节码（Metro 打包产物），所以直接对 APK 搜中文会搜不到——属正常现象。
+`assets/index.android.bundle` 是 Hermes 字节码（Metro 打包产物），直接对 APK 搜中文搜不到，属正常现象。
 
-> **产物只含一套 ABI**：`android/gradle.properties` 的 `reactNativeArchitectures` 决定包里带哪几套原生库，
-> 当前值为 `arm64-v8a`。P54 实测同一份源码：四 ABI 全打 **62,967,094 B**，只留 `arm64-v8a` 后 **22,005,657 B**
-> （其中原生库 14,578,360 B / 13 个 `.so`）。要联调 x86 模拟器时把该行改回
-> `armeabi-v7a,arm64-v8a,x86,x86_64` 再打包即可。历史归档件名里的 `-universal-` 是当时的口径，
-> 与当前这只包不符——认版本号和 SHA256，别认文件名。
-
----
+> **产物只含一套 ABI**：`android/gradle.properties` 的 `reactNativeArchitectures` 决定带哪几套原生库，当前为 `arm64-v8a`。
+> P54 实测同一份源码：四 ABI 全打 62,967,094 B，只留 `arm64-v8a` 后 22,005,657 B（其中原生库 14,578,360 B / 13 个 `.so`）。
+> 要联调 x86 模拟器时把该行改回 `armeabi-v7a,arm64-v8a,x86,x86_64` 再打包。
+> 历史归档件名里的 `-universal-` 是当时的口径，与当前这只包不符——认版本号和 SHA256，别认文件名。
 
 ## 跑测试
 
 测试**不依赖真机**，全是 Node 跑的 smoke（少量用仓内 babel 做 JSX 语法校验）：
 
 ```sh
-node tools/cards_smoke.js           # 以及 tools/ 下其余 36 套（也可以直接 node tools/run_all_smokes.js 一键全跑）
-node tools/p10_smoke.js
-node tools/info_phone_smoke.js
-node tools/settings_smoke.js
-node tools/longline_token_smoke.js
+node tools/run_all_smokes.js        # 一键全跑（40 套）
+node tools/run_unit_tests.js        # 单元测试（14 套 / 200 条）
 ```
 
-当前基线：**40 套 / 2636 ok / 0 failed**（两仓同在的本机环境）。
+当前基线：**40 套 / 2636 ok / 0 failed**（两仓同在的本机环境）。单仓口径：**2615 ok / 0 failed / `TOTAL_SKIP=20`**（`HIPPOCAMPUS_PC` 指向不存在目录时实测；总断言差 21 而 skip 记 20，是各套降级粒度不同导致的既有现象，以实测为准）。
 
-CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：
-CI 里看不到桌面仓，于是跨仓同源断言自动降级为 SKIP —— 最早实测 **2485 ok / 0 failed / `TOTAL_SKIP=10`**
-（该次实测于提交 `66fe662`、CI run `38275495453`；当时记 10 条是因为 `num_editor_smoke.js` 的 H 组用 1 条组级 skip 吞掉了 8 条断言，
-P54·④ 已改为逐条记 skip ⇒ 单仓口径变为 `TOTAL_SKIP=17`、`TOTAL_OK` 仍是 2485）；
-此后本机断言总数从 2495 长到 2502（+7），单仓执行数同步为 `2492 ok / 17 skipped`。
-P54·第17条 再 +1 套（`secure_envelope_smoke.js`）并分两阶段长大：stage 1 只钉引擎层信封原语（64 条），stage 2 接了「导出/导入要口令」后 83 条（W 组 10 条 + S 组 9 条）⇒
-本机两仓同在时是 2585 ok / 0 failed / `TOTAL_SKIP=0`，单仓**实测为 2565 ok / 0 failed / `TOTAL_SKIP=19`**
-（口径：造出真正只有手机仓的环境跑完整 38 套（把桌面仓 `package.json` 临时改名，等价于 `HIPOCAMPUS_PC` 指向不存在的目录）；此前按「逐套相加」推算的 2555 偏 7 条，
-以实测为准 —— 原因是各套降级粒度不同，相加减会重复计入跨仓断言）。
-降级只影响「另一仓是否可见」这类断言，不影响产品行为。
-
-> 上两段是 38 套时期的实测记录。**40 套**（P57/P58 后 +`cache_prefix_smoke.js`、+`dice_history_smoke.js`）同口径实测：
-> 两仓同在 **2636 ok / 0 failed / 0 skipped**，单仓 **2615 ok / 0 failed / `TOTAL_SKIP=20`**（2026-10-17，
-> `HIPPOCAMPUS_PC` 指向不存在目录；总断言差 21 而 skip 记 20，是各套降级粒度不同导致的既有现象，以实测为准）。
-
-> 跑法：`node tools/run_all_smokes.js`（跑批器自己定位仓根）。单套 `node tools/xxx_smoke.js` 也可从任意目录跑 —— P54 从 `%TEMP%` 直跑 16 套与整套跑批，断言数与在仓库根下跑**逐字相同**。
+CI（GitHub Actions，`.github/workflows/smoke.yml`）在**单仓**环境下跑同一套 `node tools/run_all_smokes.js`：CI 里看不到桌面仓，跨仓同源断言自动降级为 SKIP。降级只影响「另一仓是否可见」这类断言，不影响产品行为。
 
 引擎本身也能离开 React Native 跑：`engine/` + `vfs/` 在纯 Node 下可加载（只有 `rn/export_util.js`、`rn/rn_platform.js`、`rn/use_theme.js` 三个文件 `require('react-native')`），因此可以做无头回合驱动测试。
 
-除集成 smoke 外，`tests/unit/` 还有 14 套**单元测试**（`node tools/run_unit_tests.js`，纯 Node + `vm` 沙箱、零新依赖、秒级）：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（30 条）、`json_extract`（14 条）、`story_compress`（8 条）、`story_channel`（8 条）、`prompt_deduction`（5 条）、`snapshot_cut`（9 条）、`vfs_write_contract`（20 条）、`json_locate`（13 条）、`ui_proxy_cycle`（5 条）、`kdf_async`（8 条）、`p67_creation_quiz`（12 条），共 200 条。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
-
----
+`tests/unit/` 的 14 套单元测试用 `vm` 沙箱、零新依赖、秒级：`proposal_validator`（17 条）、`info_feed`（33 条）、`tool_executor`（18 条）、`outputs`（30 条）、`json_extract`（14 条）、`story_compress`（8 条）、`story_channel`（8 条）、`prompt_deduction`（5 条）、`snapshot_cut`（9 条）、`vfs_write_contract`（20 条）、`json_locate`（13 条）、`ui_proxy_cycle`（5 条）、`kdf_async`（8 条）、`p67_creation_quiz`（12 条）。它们**不进 smoke 基线**（跑批器只扫 `tools/*_smoke.js`），定位改动边界比 smoke 快，详见 `docs/CONVENTIONS.md` §4.4。
 
 ## 项目结构
 
@@ -238,10 +191,12 @@ HippocampusRN/
 ├── engine/                 引擎内核（与桌面版共用，无 RN 依赖）
 │   ├── core/               gamestate / prompt_builder / tool_executor / api_client / storage / saves …
 │   ├── story.js            StoryLoop（回合主循环）+ CreateFlow（创角流程）
+│   ├── creation_quiz.js    开局问卷（分院/灯杖/守灯兽）确定性判卷
+│   ├── state_guard.js      回合状态守卫（无工具成功却改数值 ⇒ 回滚）
 │   ├── info_feed.js        剧情外信息层（手机）
 │   ├── npc_runtime.js      NPC 运行时、知识来源
 │   ├── snapshots.js        快照与回退
-│   ├── import/             导入文游资料（22 种格式 → 中间格式 → 卡带草稿；与桌面版共用）
+│   ├── import/             导入文游资料（22 种格式 → 中间格式 → 卡带草稿）
 │   ├── worldbook / wb/     世界书数据层
 │   └── …                   events / tasks / achievements / endings / shop / dice / weather / proposals …
 ├── vfs/                    存储抽象层
@@ -255,12 +210,10 @@ HippocampusRN/
 │   ├── components/         SidebarDrawer / PanelHost / ThinkingBlock / InfoPhonePanel …
 │   ├── panels/             15 个面板 + panel_data.js
 │   ├── rn_platform.js      引擎 → 平台桥（Platform.ui.*）
-│   └── rn_bootstrap.js     按序加载 65 个引擎模块
-├── tools/                  38 套 smoke 测试
+│   └── rn_bootstrap.js     按序加载 68 个引擎模块
+├── tools/                  40 套 smoke 测试
 └── docs/                   报告与真机截图
 ```
-
----
 
 ## 数据落在哪里
 
@@ -269,42 +222,32 @@ HippocampusRN/
 - 日志：`vfs:/saves/<cardId>/<saveId>/logs/<年>/<月>/W<周>/<日期>.json`，另有 `_week.json` 索引。
 - **一切都在本机**。唯一的对外请求是你自己配置的模型 API 与（可选的）联网搜索。
 
----
-
-## 接自己的 AI
+## 接自己的 AI（详细）
 
 设置 → 🤖 AI → 添加配置，填 `baseUrl` / `model` / `apiKey`：
 
 - 兼容 OpenAI Chat Completions 格式的**任何**端点（官方、中转、本地 Ollama / llama.cpp / vLLM 都行）。
 - 本地地址（`localhost` / `127.0.0.1` / `::1` / 内网段）**免 Key**。
 - 支持 JSON mode；模型不支持时自动降级重试一次。
-- 「最大输出」建议 ≥ 8192：思考模型会把 `reasoning_content` 和正文共用一个 completion 预算，调小了正文会被挤掉（引擎检测到空正文会直接提示你去调高）。
+- 「最大输出」建议 ≥ 8192：思考模型会把 `reasoning_content` 和正文共用一个 completion 预算，调小了正文会被挤掉（引擎检测到空正文会直接提示你调高）。
 - 可选填搜索 API，AI 就能用 `web_search` 工具。
 
----
-
-
-### 两条路径的取舍（直连 / 外部 AI）
+### 两条通道的取舍（直连 / 外部 AI）
 
 `engine/core/api_client.js` 保留「直连自己的模型」这条路，也是默认路径：提示词直接发给设置里那个端点，一轮一问，最省事，但你需要有 Key。
 
-从这一版起，设置 → 🤖 AI → **对话通道** 里可以选 **外部 AI（手动复制 → 粘贴）**：App 不联网，先把整轮提示词用「复制提示词」交给任意 AI（网页版、别的客户端、本地随便什么模型都行），再把它的回复粘回弹窗提交。隐私立场不变（唯一的对外请求仍然是你自己配置的端点；选了外部通道后连它也不发），代价是每轮多两步手动操作。
+设置 → 🤖 AI → **对话通道** 里可以选 **外部 AI（手动复制 → 粘贴）**：App 不联网，先把整轮提示词用「复制提示词」交给任意 AI，再把回复粘回弹窗提交。代价是每轮多两步手动操作。
 
 两条路走同一套 intake：粘贴回来的正文一样要过工具调用解析、状态校验与压缩归档，所以换通道不会让存档格式分叉。
 
 ## 已知限制
 
-- **仅 Android 可用**：`android/` 完整可打包；`ios/` 是 RN 0.87.1 的模板脚手架，**从未 `pod install`**
-  （无 `Podfile.lock` / `Pods/` / `.xcworkspace`），且「选文件」是 Android 专有原生模块
-  （`android/app/src/main/java/com/hippocampusrn/FilePickerModule.kt`；`ios/` 下除 `AppDelegate.swift`
-  没有任何原生代码）。要上 iOS 得先补 iOS 侧 picker 原生模块，再做 pod 安装与真机验证。
+- **仅 Android 可用**：`android/` 完整可打包；`ios/` 是 RN 0.87.1 的模板脚手架，**从未 `pod install`**（无 `Podfile.lock` / `Pods/` / `.xcworkspace`），且「选文件」是 Android 专有原生模块（`android/app/src/main/java/com/hippocampusrn/FilePickerModule.kt`）。要上 iOS 得先补 iOS 侧 picker 原生模块，再做 pod 安装与真机验证。
 - **信息层仍是概率性的**（25 分钟冷却 + 25%），所以「连着好些回合没有短信」是正常表现；只有**第一条**有触达保证。
 - **农历节日不做**（每年日期不同，引擎暂不支持）。
-- **导入文游资料**在手机版：文本类可以粘贴，也可以点「从文件导入…」走系统文件选择器（卡带 JSON 与资料文件都已接）；docx / odt / epub / PDF / ZIP 这类压缩包格式建议在桌面版导入后再导出卡带。
+- **导入文游资料**在手机版：文本类可以粘贴，也可以点「从文件导入…」走系统文件选择器；docx / odt / epub / PDF / ZIP 这类压缩包格式建议在桌面版导入后再导出卡带。
 - **创角流程**、**结局触发**、**元层提议**已有自动化覆盖（`tools/create_flow_smoke.js` 120 条、`tools/endings_gate_smoke.js` 27 条、`tools/proposal_audit_smoke.js` 19 条），但真机人工验证仍是主要手段。
-- 设置页「未保存就切 tab」目前只拦**涉及世界书的切换**（从世界书离开、或切进世界书时弹确认）；其他页之间切换仍不拦，因为那些页是即时生效的。
-
----
+- 设置页「未保存就切 tab」目前只拦**涉及世界书的切换**；其他页之间切换不拦，因为那些页是即时生效的。
 
 ## 致谢与许可
 
