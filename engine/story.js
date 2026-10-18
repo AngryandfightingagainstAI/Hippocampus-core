@@ -427,7 +427,7 @@ var StoryLoop = {
         }
       } catch (_e) { console.warn('[NpcDeductionAI] 触发异常：', _e); }
         Platform.ui.updateTokenBadge();
-        await this.maybeCompress();
+        await this.maybeCompress(__channel);
       } catch (renderErr) {
         try {
           const idx = GameState.chatHistory.indexOf(assistantMsgRef);
@@ -577,12 +577,26 @@ var StoryLoop = {
     });
   },
 
-  async maybeCompress() {
+  async maybeCompress(channel) {
     if (typeof Logger === 'undefined') return;
     if (!GameState.currentCardId || !GameState.currentSaveId) return;
     const g = Storage.getGlobal();
     const lg = g.logging || {};
     if (lg.enabled === false) return;
+
+    // ★ P63·②：没有可用 API 就不该尝试压缩。
+    //   外部 AI 通道（storyChannel === 'external'）与「没配 baseUrl」两种情况下，
+    //   Logger.compress 必然失败，而失败会往叙事流里打两条提示
+    //   （「（正在生成日志…）」「（日志生成失败，保留原文）」）；又因为永远生成不出 lastLog，
+    //   从第 20 条消息起每回合都会重来一次 —— 日志功能等于不存在，还刷屏。
+    //   这里整段跳过：不提示、不发请求、历史不缩（真正的窗口裁剪由 applyWindow 负责）。
+    //   通道由调用点传入（本轮已在 :280 裁决过一次，结果存 __channel），
+    //   这里不再二次取通道，保持「通道裁决只有在 :280 那一处」。
+    if (channel === 'external') return;
+    if (typeof Logger.canCompress !== 'function' || !Logger.canCompress()) return;
+    // 连续失败退让：API 配了但报错（key 失效/服务不可用）时，别每回合都重试并刷提示。
+    // 成功一次即清零；连续失败 2 次后静默停到下次加载存档。
+    if ((GameState._logCompressFailStreak || 0) >= 2) return;
 
     // ★ 快照当前游戏时间，防止压缩失败重试时日期漂移
     var snapTime = GameState._gameTime ? { year: GameState._gameTime.year, month: GameState._gameTime.month, day: GameState._gameTime.day, hour: GameState._gameTime.hour, minute: GameState._gameTime.minute } : null;
@@ -639,7 +653,15 @@ var StoryLoop = {
         msgFrom: batchMsgFrom,
         messages: toCompress
       });
-    if (!logData) { Platform.ui.appendHint('（日志生成失败，保留原文）'); return; }
+    if (!logData) {
+      // P63·②：失败提示保留（API 配好却失败时该让玩家知道），但连续失败要退让，
+      //   否则每回合两条提示 + 两次请求，叙事流会被埋掉。
+      GameState._logCompressFailStreak = (GameState._logCompressFailStreak || 0) + 1;
+      Platform.ui.appendHint('（日志生成失败，保留原文' +
+        (GameState._logCompressFailStreak >= 2 ? '；本档不再尝试，重新进入存档后再试' : '') + '）');
+      return;
+    }
+    GameState._logCompressFailStreak = 0;
 
     GameState.chatHistory = [GameState.chatHistory[0]].concat(rest.slice(keepFrom));
     GameState._lastCompressMsgCount = GameState.chatHistory.filter(m => m.role !== 'system').length;

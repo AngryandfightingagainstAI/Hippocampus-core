@@ -76,6 +76,7 @@ function mkVFSStory(opts) {
     Logger: {
       listLogs: function() { return []; },
       shouldCompress: function() { return { yes: true, reason: opts.reason || 'crossDay' }; },
+      canCompress: function() { return opts.canCompress === undefined ? true : !!opts.canCompress; },
       compress: function(o) { compressCalls.push(o); return Promise.resolve(opts.compressResult === undefined ? { title: '日志标题' } : opts.compressResult); }
     }
   });
@@ -107,7 +108,7 @@ H.run('K2 可压缩量 < 4 条时提前返回：一条提示都不发（不再�
   const hist = [{ role: 'system', content: 'SYS' }, { role: 'user', content: '第1轮' }, { role: 'assistant', content: 'GM1' }];
   const s = mkVFSStory({ history: hist });
   const before = JSON.stringify(hist);
-  return s.SL.maybeCompress().then(function() {
+  return s.SL.maybeCompress('direct').then(function() {
     H.deepEq(s.hints, [], 'K2 无任何提示');
     H.eq(JSON.stringify(s.gs.chatHistory), before, 'K2 历史未动');
     H.eq(s.compressCalls.length, 0, 'K2 没有调用压缩');
@@ -118,7 +119,7 @@ H.run('K2 可压缩量 < 4 条时提前返回：一条提示都不发（不再�
 H.run('K3 成功压缩：进度+成功两条提示；保留 10 轮真实玩家发言（系统消息不占配额）', function() {
   const hist = makeHistory(14);   // rest = 34 条
   const s = mkVFSStory({ history: hist, reason: 'firstLog' });
-  return s.SL.maybeCompress().then(function() {
+  return s.SL.maybeCompress('direct').then(function() {
     H.deepEq(s.hints, ['（正在生成日志…）', '（日志已生成：日志标题）'], 'K3 两条提示、顺序正确');
     const kept = s.gs.chatHistory.slice(1);
     H.eq(s.gs.chatHistory[0].role, 'system', 'K3 首条仍是 system');
@@ -139,7 +140,7 @@ H.run('K4 压缩失败：进度提示后接失败提示，历史与计数都没�
   const hist = makeHistory(14);
   const s = mkVFSStory({ history: hist, compressResult: null, lastCount: 7 });
   const before = JSON.stringify(hist);
-  return s.SL.maybeCompress().then(function() {
+  return s.SL.maybeCompress('direct').then(function() {
     H.deepEq(s.hints, ['（正在生成日志…）', '（日志生成失败，保留原文）'], 'K4 两条提示');
     H.eq(JSON.stringify(s.gs.chatHistory), before, 'K4 原文保留');
     H.eq(s.gs._lastCompressMsgCount, 7, 'K4 计数未动');

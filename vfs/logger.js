@@ -463,6 +463,18 @@
     // 参数：
     //   lastLogDate      上一次日志的游戏内日期（可能为 null）
     //   currentGameDate  当前游戏内日期
+    // ★ P63·②：压缩要靠 API。没有可用 API（外部 AI 通道 / 未配 baseUrl）时，
+    //   compress 必然失败，但调用方会把「（正在生成日志…）」「（日志生成失败，保留原文）」
+    //   两条提示打进叙事流，而且因为永远没有 lastLog，之后每回合都会重来一次。
+    //   所以调用方先问 canCompress()，false 就整段跳过（不提示、不发请求）。
+    canCompress: function() {
+      try {
+        if (typeof ApiManager === 'undefined' || !ApiManager || typeof ApiManager.getActive !== 'function') return false;
+        var p = ApiManager.getActive();
+        if (!p) return false;
+        return !!String(p.baseUrl || '').trim();
+      } catch (e) { return false; }
+    },
     //   newMessageCount  自上次压缩以来新增的对话消息数（不含 system）。
     //                    注意：跨日分支不使用它 —— 跨日只看日期，哪怕只有 2 条新消息
     //                    也会触发一次压缩（这是设计如此，不是「当天累积」）。

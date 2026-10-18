@@ -70,11 +70,11 @@
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 39 个**、**仅行尾不同 23 个**、**真差异 17 个**，
+最近一次实算（净化批 EX7 后重记，2026-10-17）：**逐字节相同 40 个**、**仅行尾不同 22 个**、**真差异 17 个**，
 合计 79 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（39 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（40 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -116,10 +116,11 @@ tools/source_readable_smoke.js
 tools/tool_ready_smoke.js
 tools/version_sync_smoke.js
 vfs/local_store.js
+vfs/logger.js
 vfs/storage_adapter.js
 ```
 
-**仅行尾不同**（23 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
+**仅行尾不同**（22 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
 这类**不是内容不同**：P13 时曾把其中一部分误列进「内容不同」）：
 
 ```text
@@ -145,7 +146,6 @@ engine/tasks.js
 engine/theme.js
 templates/number.js
 templates/relation.js
-vfs/logger.js
 vfs/secure_envelope.js
 ```
 
@@ -304,7 +304,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools\run_batch.js                   # 前置门 + 全量（60 套）
+node tools\run_batch.js                   # 前置门 + 全量（61 套）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
@@ -355,7 +355,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 - 被测的模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
   `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`、
   `engine/story.js`、`engine/snapshots.js`、`vfs/logger.js`）都是**两仓同源件**
-  （`card_diagnose.js`、`vfs/logger.js` 属「仅行尾不同」桶，`engine/story.js`、
+  （`card_diagnose.js` 属「仅行尾不同」桶，`engine/story.js`、`vfs/logger.js`、
   `engine/snapshots.js` 属「逐字节相同」桶；
   `test_story_compress_unit.js` 的 K7 只把 `engine/core/storage.js` 当**源码文本**读，
   该文件两仓本就不同源）；`test_prompt_deduction_unit.js` 另外要读
@@ -574,6 +574,27 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   —— 典型值 0，logger 的轮号是**本日志自身的批次局部轮号**，不再声称与 `snap.round` 同轴，
   比较时按偏保守处理，源码哨兵见 §4.4 的 K8）；桌面 `engine/ui_snapshot.js` 两处 `Logger.deleteLogsAfter(...)` 同时补第 4 参
   `r.snap.round`，与手机仓 P4（`rn/snapshot_actions.js:34`）对齐。
+- 桌面 `tests/unit/test_p63_chrome.js` 的 14 条锁住 **P63·桌面上「看得见但用得难受」的四件事**
+  （起因是 30 轮真机 playtest：自建卡带「雾港守夜人」跑满 30 轮，外部 AI 通道喂回复；
+  报告 `%TEMP%\p62_report.json`，复核脚本 `%TEMP%\p54_probe\p62_verify.js` / `p63_verify.js`）：
+  ① `#errlog-fab` 诊断球压住 `#send-btn` —— 实测 send `[912,675,976,717]`、fab `[926,694,972,740]`、
+  重叠 **1081 px²**、`elementFromPoint(发送键中心)` = `errlog-fab`（z-index 99998），真实鼠标点发送键
+  **右半部分**会打开诊断日志面板、消息根本不发；现在 `placeFab()` 以「输入栏与发送键中更靠上的边」为界
+  （不是只用输入栏高度），实测重叠 **1081 → 0 px²**、`topAtCenter = send-btn`、真机 Playwright
+  `click('#send-btn')` 能推进回合。② 外部 AI 通道下每回合都尝试日志压缩 ⇒ 30 轮里 **19 条**
+  `[Logger] 压缩失败： Error: API Base URL 为空` 控制台错误 + 两条可见提示（`（正在生成日志…）`、
+  `（日志生成失败，保留原文）`）；根因是 `engine/story.js` 的 `maybeCompress()` 自己再用 `_channelKind()`
+  裁决一次通道，而外部通道没有 API 可用；现在入口收实参 `async maybeCompress(channel)`（通道裁决只在
+  `callAI` 一处，`_channelKind()` 全文件只出现 1 次）、`vfs/logger.js` 加 `canCompress()`（没 baseUrl 不压）、
+  `_logCompressFailStreak` 连续 3 次失败后不再提示；实测 3 轮里 `logGenStart=0 / logGenFail=0 /
+  [Logger] 错误 0 条`。③ HUD 图标名不在图标集里时把名字当文字打出来（`flame 灯油 60/100`）；
+  `engine/ui.js` 的 `renderIcon` 现在回落到 `●`（`FALLBACK_ICON`），实测渲染成 `● 灯油 60/100`。
+  ④ 报头时钟只在切屏时刷（`renderHeader` 只被 `showScreen` 调），回合推进后报头停在旧时间；
+  现在 `_clockText()` 单独取时、`renderTopbar()` 末尾 `refreshClock()`，实测 before `1987-11-03 22:40`
+  → `23:05` → `23:45` → `1987-11-04 00:45`，每一轮都与 `GameState.formatGameTime()` 相等。
+  RN 侧同源契约跟着变：`test_story_compress_unit.js` 的 Logger 桩补 `canCompress`、`maybeCompress` 传
+  `'direct'`（否则压缩单测按「无 API」早退，K3 直接空提示）。教训：**桌面版的「能用」靠真跑**，
+  四条里没有一条能被现有回归套件撞到 —— 它们都不改变逻辑结果，只改变「玩家能不能按到、看不看得见」。
 
 ================================================================
 【五、断言计数与报告口径】
