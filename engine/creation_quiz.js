@@ -68,7 +68,11 @@
   function normalizeOne(raw, pos) {
     if (!raw || typeof raw !== 'object') return null;
     var outcomes = [];
-    (Array.isArray(raw.outcomes) ? raw.outcomes : []).forEach(function (o, i) {
+    // 结论清单：主字段 outcomes；也接受 results（P67 实测：卡带作者两种写法都有，
+    //   写成 results 时若只认 outcomes，整套卷会被静默丢掉，玩家看到「没有可用题目」）
+    var outcomeList = Array.isArray(raw.outcomes) ? raw.outcomes
+      : (Array.isArray(raw.results) ? raw.results : []);
+    outcomeList.forEach(function (o, i) {
       var c = _cleanOutcome(o, i);
       if (c) outcomes.push(c);
     });
