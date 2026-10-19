@@ -37,6 +37,27 @@ var ErrorLogPanel = require('../panels/ErrorLogPanel.js');
 var DebugPanel = require('../panels/DebugPanel.js');
 var InfoPhonePanel = require('./InfoPhonePanel.js');
 
+// 面板级错误边界：某个面板在渲染期抛错时，只把这一块换成一行提示，
+// 不再把整个 App 干掉（否则表现为"点了面板整屏空白/闪退"）。
+class PanelBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err: err }; }
+  componentDidCatch() {}
+  render() {
+    if (this.state.err) {
+      // 颜色由调用方传 token 进来（c.danger）；组件内不留 hex —— panels_smoke D8 会拦。
+      return (
+        <View style={{ padding: 14 }}>
+          <Text style={{ color: this.props.color, fontSize: 13, lineHeight: 19 }}>
+            {'面板渲染失败：' + String((this.state.err && this.state.err.message) || this.state.err)}
+            {'\n'}（其它面板不受影响，可关闭后重试）</Text>
+        </View>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 var TITLE_MAP = {
   statusCard: '状态卡',
   log: '日志',
@@ -114,6 +135,7 @@ function PanelHost() {
                 </TouchableOpacity>
               </View>
               <ScrollView>
+                <PanelBoundary key={panelId} color={c.danger}>
                 <View style={{ padding: 14 }}>
                   {panelId === 'statusCard' ? <StatusCardPanel tokens={tk} /> : null}
                   {panelId === 'log' ? <LogPanel tokens={tk} /> : null}
@@ -133,6 +155,7 @@ function PanelHost() {
                   {panelId === 'infoPhone' ? <InfoPhonePanel tokens={tk} /> : null}
                   {customId ? <EntriesPanel tokens={tk} panelId={customId} /> : null}
                 </View>
+                </PanelBoundary>
               </ScrollView>
             </View>
           </TouchableWithoutFeedback>

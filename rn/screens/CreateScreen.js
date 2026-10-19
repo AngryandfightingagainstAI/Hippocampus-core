@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // 战役 P5 · 新建存档（创角）屏（B 类，RN 组件）
 // RN 独有。与桌面 engine/story.js CreateFlow 同契约：
 //   逻辑/数据全在 A 类模块 rn/create_flow_model.js（池、跳过、草稿、
@@ -383,7 +383,7 @@ function CreateScreen() {
   quizSetPrompt: { fontSize: f.sm, color: c.muted, lineHeight: Math.round(f.sm * 1.6), marginBottom: 12 },
   quizQ: { marginBottom: 14 },
   quizQText: { fontSize: f.sm, color: c.text, lineHeight: Math.round(f.sm * 1.7), marginBottom: 8 },
-  quizResult: { borderLeftWidth: 3, borderLeftColor: c.primary, backgroundColor: c.cardBg, paddingVertical: 10, paddingHorizontal: 12, marginTop: 6 },
+  quizResult: { borderLeftWidth: 3, borderLeftColor: c.primary, backgroundColor: c.bgCard, paddingVertical: 10, paddingHorizontal: 12, marginTop: 6 },
   quizResultLine: { fontSize: f.sm, color: c.text },
   quizResultKey: { color: c.muted },
   quizResultDesc: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.6), marginTop: 4 },
@@ -880,3 +880,4 @@ function CreateScreen() {
 }
 
 module.exports = { CreateScreen: CreateScreen };
+

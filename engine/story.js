@@ -1046,6 +1046,7 @@ var CreateFlow = {
     }
     html += (step.fields || []).map(f => {
       const id = 'cf-f-' + f.key;
+      const idAttr = escapeAttr(id);                                  // ★ 安全：f.key 来自卡带，不能直接拼进 id 属性
       const fallback = (f.default != null) ? f.default : (isAttr && f.min != null ? f.min : '');
       // 同步 fallback 到 this.data：用户没动过输入框时，data 里也应该是 fallback 的值
       if ((this.data[f.key] == null) && fallback !== '' && fallback != null) {
@@ -1055,25 +1056,28 @@ var CreateFlow = {
       const req = f.required ? '<span class="req"> *</span>' : '';
       let input = '';
       if (f.type === 'text') {
-        input = '<input id="' + id + '" type="text" value="' + escapeAttr(val) + '" placeholder="' + escapeAttr(f.placeholder || '') + '" oninput="CreateFlow.onTextInput(\'' + f.key + '\', this.value, false)">';
+        input = '<input id="' + idAttr + '" type="text" value="' + escapeAttr(val) + '" placeholder="' + escapeAttr(f.placeholder || '') + '" oninput="CreateFlow.onTextInput(' + jsAttr(f.key) + ', this.value, false)">';
       } else if (f.type === 'number') {
-        const minAttr = f.min != null ? 'min="' + f.min + '"' : '';
-        const maxAttr = f.max != null ? 'max="' + f.max + '"' : '';
-        const minJs = f.min != null ? f.min : 'null';
-        const maxJs = f.max != null ? f.max : 'null';
-        input = '<input id="' + id + '" type="number" ' + minAttr + ' ' + maxAttr + ' value="' + escapeAttr(val) + '" ' +
-          'oninput="CreateFlow.onNumberInput(\'' + f.key + '\', this, ' + minJs + ', ' + maxJs + ', ' + (isAttr ? 'true' : 'false') + ')" ' +
-          'onblur="CreateFlow.onNumberBlur(\'' + f.key + '\', this, ' + minJs + ', ' + maxJs + ', ' + (isAttr ? 'true' : 'false') + ')">';
+        // ★ 安全：min/max 来自卡带，先归一成数字再拼（既防属性注入，也防 jsArg 位置注入）
+        const minNum = (f.min != null && isFinite(Number(f.min))) ? Number(f.min) : null;
+        const maxNum = (f.max != null && isFinite(Number(f.max))) ? Number(f.max) : null;
+        const minAttr = minNum != null ? 'min="' + minNum + '"' : '';
+        const maxAttr = maxNum != null ? 'max="' + maxNum + '"' : '';
+        const minJs = minNum != null ? String(minNum) : 'null';
+        const maxJs = maxNum != null ? String(maxNum) : 'null';
+        input = '<input id="' + idAttr + '" type="number" ' + minAttr + ' ' + maxAttr + ' value="' + escapeAttr(val) + '" ' +
+          'oninput="CreateFlow.onNumberInput(' + jsAttr(f.key) + ', this, ' + minJs + ', ' + maxJs + ', ' + (isAttr ? 'true' : 'false') + ')" ' +
+          'onblur="CreateFlow.onNumberBlur(' + jsAttr(f.key) + ', this, ' + minJs + ', ' + maxJs + ', ' + (isAttr ? 'true' : 'false') + ')">';
       } else if (f.type === 'choice') {
         input = '<div>';
         (f.options || []).forEach(o => {
           const sel = val === o.id ? 'selected' : '';
-          input += '<button class="cf-option ' + sel + '" onclick="CreateFlow.setField(\'' + f.key + '\', \'' + escapeAttr(o.id) + '\'); CreateFlow.render();">' +
+          input += '<button class="cf-option ' + sel + '" onclick="CreateFlow.setField(' + jsAttr(f.key) + ', ' + jsAttr(o.id) + '); CreateFlow.render();">' +
             '<div class="opt-name">' + escapeHtml(o.label || o.name || o.id) + '</div></button>';
         });
         input += '</div>';
       } else {
-        input = '<input id="' + id + '" type="text" value="' + escapeAttr(val) + '" oninput="CreateFlow.onTextInput(\'' + f.key + '\', this.value, false)">';
+        input = '<input id="' + idAttr + '" type="text" value="' + escapeAttr(val) + '" oninput="CreateFlow.onTextInput(' + jsAttr(f.key) + ', this.value, false)">';
       }
       return '<div class="field"><label>' + escapeHtml(f.label) + req + '</label>' + input + '</div>';
     }).join('');
@@ -1200,7 +1204,7 @@ var CreateFlow = {
       if (o.events && o.events.length) eh = '<div class="opt-events">' + o.events.map(e => '· ' + escapeHtml(e)).join('<br>') + '</div>';
       let fh = '';
       if (o.figures && o.figures.length) fh = '<div class="opt-figures">活跃：' + o.figures.map(escapeHtml).join('、') + '</div>';
-      return '<button class="cf-option ' + sel + '" onclick="CreateFlow.setField(\'' + key + '\', \'' + escapeAttr(o.id) + '\'); CreateFlow.render();">' +
+      return '<button class="cf-option ' + sel + '" onclick="CreateFlow.setField(' + jsAttr(key) + ', ' + jsAttr(o.id) + '); CreateFlow.render();">' +
         '<div class="opt-name">' + escapeHtml(o.name || o.label || o.id) + '</div>' +
         (o.desc ? '<div class="opt-desc">' + escapeHtml(o.desc) + '</div>' : '') +
         ph + eh + fh + tags + '</button>';
@@ -1211,7 +1215,7 @@ var CreateFlow = {
     const val = this.data[key];
     return (step.options || []).map(o => {
       const sel = val === o.id ? 'selected' : '';
-      return '<button class="cf-quiz-card ' + sel + '" onclick="CreateFlow.setField(\'' + key + '\', \'' + escapeAttr(o.id) + '\'); CreateFlow.render();">' +
+      return '<button class="cf-quiz-card ' + sel + '" onclick="CreateFlow.setField(' + jsAttr(key) + ', ' + jsAttr(o.id) + '); CreateFlow.render();">' +
         '<div class="opt-name">' + escapeHtml(o.name || o.label || o.id) + '</div>' +
         (o.desc ? '<div class="opt-desc">' + escapeHtml(o.desc) + '</div>' : '') + '</button>';
     }).join('');
@@ -1224,7 +1228,7 @@ var CreateFlow = {
     let html = '<div class="muted" style="margin-bottom:10px;">已选 ' + cur.length + ' / 最多 ' + max + (min ? ' · 至少 ' + min : '') + '</div>';
     html += (step.options || []).map(o => {
       const sel = cur.includes(o.id) ? 'selected' : '';
-      return '<button class="cf-option ' + sel + '" onclick="CreateFlow.toggleMulti(\'' + key + '\', \'' + escapeAttr(o.id) + '\', ' + min + ', ' + max + '); CreateFlow.render();">' +
+      return '<button class="cf-option ' + sel + '" onclick="CreateFlow.toggleMulti(' + jsAttr(key) + ', ' + jsAttr(o.id) + ', ' + min + ', ' + max + '); CreateFlow.render();">' +
         '<div class="opt-name">' + escapeHtml(o.name || o.label || o.id) + '</div>' +
         (o.desc ? '<div class="opt-desc">' + escapeHtml(o.desc) + '</div>' : '') + '</button>';
     }).join('');
@@ -1238,7 +1242,7 @@ var CreateFlow = {
     let html = '<div class="cf-quiz-hint" style="margin-bottom:14px;">已选 ' + cur.length + ' / 最多 ' + max + (min ? ' · 至少 ' + min : '') + '</div>';
     html += (step.options || []).map(o => {
       const sel = cur.includes(o.id) ? 'selected' : '';
-      return '<button class="cf-quiz-card ' + sel + '" onclick="CreateFlow.toggleMulti(\'' + key + '\', \'' + escapeAttr(o.id) + '\', ' + min + ', ' + max + '); CreateFlow.render();">' +
+      return '<button class="cf-quiz-card ' + sel + '" onclick="CreateFlow.toggleMulti(' + jsAttr(key) + ', ' + jsAttr(o.id) + ', ' + min + ', ' + max + '); CreateFlow.render();">' +
         '<div class="opt-name">' + escapeHtml(o.name || o.label || o.id) + '</div>' +
         (o.desc ? '<div class="opt-desc">' + escapeHtml(o.desc) + '</div>' : '') + '</button>';
     }).join('');
@@ -1289,7 +1293,7 @@ var CreateFlow = {
         html += '<div class="cf-quiz-q"><div class="cf-quiz-qtext">' + (qi + 1) + '. ' + escapeHtml(item.q) + '</div><div class="cf-quiz-opts">';
         item.opts.forEach(o => {
           const sel = picks[qi] === o.outcome ? ' selected' : '';
-          html += '<button class="cf-option cf-quiz-opt' + sel + '" onclick="CreateFlow.pickQuizOption(\'' + escapeAttr(q.id) + '\',' + qi + ',\'' + escapeAttr(o.outcome) + '\')">' +
+          html += '<button class="cf-option cf-quiz-opt' + sel + '" onclick="CreateFlow.pickQuizOption(' + jsAttr(q.id) + ',' + qi + ',' + jsAttr(o.outcome) + ')">' +
             '<div class="opt-name">' + escapeHtml(o.text) + '</div></button>';
         });
         html += '</div></div>';

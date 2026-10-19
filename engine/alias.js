@@ -101,7 +101,7 @@
             major: ['专业']
           };
           var labels = labelMap[standardKey] || [];
-          var steps = GameState.currentCard.steps || [];
+          var steps = (GameState.currentCard && GameState.currentCard.steps) || [];
           for (var si = 0; si < steps.length; si++) {
             var fields = steps[si].fields || [];
             for (var fi = 0; fi < fields.length; fi++) {

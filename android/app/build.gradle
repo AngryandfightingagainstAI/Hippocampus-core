@@ -123,10 +123,31 @@ android {
         }
         release {
             // P56：release 型指向 signingConfigs.release（正式 keystore；凭据缺失时该块内部已回退 debug 值）。
+            // 安全（2026-10 审计）：回退本身保留（不让 clone/CI 直接配置失败），但下面
+            // taskGraph 守卫会在「真要打 release」且没凭据时直接失败，见 android{} 之后。
             signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"
         }
+    }
+}
+
+// ── 安全守卫：禁止「静默用 debug 密钥签 release 包」 ─────────────────────────
+// 背景：signingConfigs.release 在凭据缺失时会回退到仓内提交的 debug.keystore，
+// 而 debug 密钥是全仓公开的 —— 用它签的包等于「谁都能签出同签名更新」，
+// 且无法上架。所以只在真的打 release 时才失败，debug/单测照常。
+def allowDebugSigning = project.hasProperty('allowDebugSigning') &&
+        project.property('allowDebugSigning').toString().toLowerCase() == 'true'
+gradle.taskGraph.whenReady { graph ->
+    def wantsRelease = graph.allTasks.any { t ->
+        def n = t.name.toLowerCase()
+        n.contains('release') && !n.contains('test') && !n.contains('lint') && !n.contains('report')
+    }
+    if (wantsRelease && !hasReleaseKeystore && !allowDebugSigning) {
+        throw new GradleException(
+            "\n[安全] 本次构建包含 *Release 任务，但 android/keystore/keystore.properties 不存在。\n" +
+            "· 正式出包：照 android/keystore.properties.example 在 android/keystore/keystore.properties 填四项凭据；\n" +
+            "· 仅本机试装：显式加 -PallowDebugSigning=true（产物绝不可发布）。\n")
     }
 }
 

@@ -83,6 +83,17 @@
     return { resolved: null, reason: '无法自动判断' };
   }
 
+  // 【安全】日志脱敏：错误信息 / 堆栈里可能带出带 Key 的 URL（联网搜索把 key 拼在 query 上）
+  // 或 Authorization 头。落库前统一打码 —— 否则「复制整份报告」会把 Key 一起发给别人。
+  function redactText(s) {
+    return String(s == null ? '' : s)
+      .replace(/\bsk-[A-Za-z0-9_\-]{6,}/g, 'sk-***')
+      .replace(/((?:\?|&|;\s*)(?:api[_-]?key|apikey|key|token|access_token|subscription[_-]?key)=)([^&\s"']{4,})/gi, '$1***')
+      .replace(/((?:x-api-key|ocp-apim-subscription-key|authorization)\s*[:=]\s*(?:bearer\s+)?)([^\s,;"']{6,})/gi, '$1***')
+      .replace(/(Bearer\s+)[A-Za-z0-9._\-]{6,}/gi, '$1***')
+      .replace(/("(?:apiKey|api_key|token|secret)"\s*:\s*")([^"]{2,})(")/gi, '$1***$3');
+  }
+
   function recordError(err) {
     if (state._capturing) return;
     state._capturing = true;
@@ -92,8 +103,8 @@
         time: now(),
         timeFull: nowFull(),
         type: err.type || 'Error',
-        message: String(err.message || err).slice(0, 2000),
-        stack: String(err.stack || '').slice(0, 4000),
+        message: redactText(String(err.message || err)).slice(0, 2000),
+        stack: redactText(String(err.stack || '')).slice(0, 4000),
         context: ctx,
         recentActions: state.actions.slice(-20)
       };
@@ -112,7 +123,7 @@
 
   function recordAction(kind, detail) {
     try {
-      state.actions.push({ time: now(), kind: kind, detail: String(detail || '').slice(0, 500) });
+      state.actions.push({ time: now(), kind: kind, detail: redactText(String(detail || '')).slice(0, 500) });
       if (state.actions.length > MAX_ACTIONS) state.actions.shift();
     } catch (e) {}
   }

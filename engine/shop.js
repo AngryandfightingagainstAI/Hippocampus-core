@@ -177,7 +177,7 @@
       var currencyId = item.currencyId || (shop.currencyId) || '';
       if (!currencyId) {
         // 没指定货币 → 从卡带 currency 里取主货币
-        var wb = GameState.currentCard.worldbook || {};
+        var wb = (GameState.currentCard && GameState.currentCard.worldbook) || {};
         var cur = wb.currency || {};
         var mains = (cur.currencies || []).filter(function(c) { return c.isMain; });
         if (mains.length) currencyId = mains[0].name || mains[0].id;
@@ -257,7 +257,7 @@
 
       var currencyId = (itemDef && itemDef.currencyId) || (shop.currencyId) || '';
       if (!currencyId) {
-        var wb = GameState.currentCard.worldbook || {};
+        var wb = (GameState.currentCard && GameState.currentCard.worldbook) || {};
         var mains = ((wb.currency || {}).currencies || []).filter(function(c) { return c.isMain; });
         if (mains.length) currencyId = mains[0].name || mains[0].id;
       }

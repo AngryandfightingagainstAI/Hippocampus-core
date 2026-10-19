@@ -447,7 +447,8 @@ function CardsScreen() {
       btnRow: { flexDirection: 'row', gap: 10, flexWrap: 'wrap' },
       primaryBtn: {
         borderWidth: 1, borderColor: c.accent, borderRadius: tk.radius.sm,
-        paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.accent
+        paddingHorizontal: 14, paddingVertical: 8, backgroundColor: c.accent,
+        minHeight: 44, alignItems: 'center', justifyContent: 'center'
       },
       primaryBtnText: { fontFamily: fonts.sans, fontSize: f.sm, color: c.bgWhite, letterSpacing: 1 },
       curBtn: {
@@ -462,6 +463,7 @@ function CardsScreen() {
       dangerBtnText: { fontFamily: fonts.sans, fontSize: f.sm, color: c.danger, letterSpacing: 1 },
       divider: { height: 1, backgroundColor: c.hair, marginVertical: 14 },
       topAction: { flexDirection: 'row', marginBottom: 12 },
+      pinnedAction: { flexDirection: 'row', paddingHorizontal: 16, paddingTop: 14 },
       textarea: {
         borderWidth: 1, borderColor: c.hair, borderRadius: tk.radius.sm,
         padding: 12, minHeight: 140, fontSize: f.sm, color: c.text,
@@ -492,12 +494,19 @@ function CardsScreen() {
         <Text style={styles.count}>{cardIds.length + ' 张'}</Text>
       </View>
       {/* P42：keyboardShouldPersistTaps ⇒ 键盘弹着也能直接点按钮（原来第一下只收键盘） */}
+      {/* V2·RN-FIX：顶栏动作条固定在 ScrollView 之外——真机（V2118A / Fabric）上放在滚动内容最顶部时，
+          按钮上半段收不到触摸（只有底部 ~77px 可点），移出滚动区后全高度可点，且按钮常驻可见。 */}
+      <View style={styles.pinnedAction}>
+        <TouchableOpacity
+          style={styles.primaryBtn}
+          accessibilityRole="button"
+          accessibilityLabel={'生成卡带指令'}
+          onPress={function () { setInstrOpen(true); }}
+        >
+          <Text style={styles.primaryBtnText}>{'生成卡带指令'}</Text>
+        </TouchableOpacity>
+      </View>
       <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
-        <View style={styles.topAction}>
-          <TouchableOpacity style={styles.primaryBtn} onPress={function () { setInstrOpen(true); }}>
-            <Text style={styles.primaryBtnText}>{'生成卡带指令'}</Text>
-          </TouchableOpacity>
-        </View>
         {!cardIds.length ? (
           <Text style={styles.empty}>{EmptyTexts.NO_CARDS}</Text>
         ) : (

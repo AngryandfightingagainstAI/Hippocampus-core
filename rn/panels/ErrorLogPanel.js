@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // P1-E · 报错面板（B 类，RN 组件）
 // 桌面锚点：engine/error_log_dom.js（Electron 专属 DOM 壳，判不搬）；
 // 数据源沿用 core：engine/error_log_core.js 的 _load() / _state.errors，
@@ -62,7 +62,7 @@ function ErrorLogPanel(props) {
     },
     btnDanger: {
       paddingHorizontal: 14, paddingVertical: 8,
-      borderRadius: tk.radius.sm || 4, backgroundColor: c.danger || c.error || c.hair
+      borderRadius: tk.radius.sm || 4, backgroundColor: c.danger || c.hair
     },
     btnText: { fontSize: f.sm, color: c.text },
     btnTextOn: { fontSize: f.sm, color: c.bgWhite || '#fff' },

@@ -59,6 +59,24 @@ function normalizeCardOut(card) {
   return out;
 }
 
+// 【安全】合并持久化对象用的 Object.assign 替身：跳过原型污染键。
+// JSON.parse('{"__proto__":{...}}') 会把 __proto__ 变成「自有属性」，
+// 而 Object.assign 走 [[Set]] —— 赋值 __proto__ 等同于改目标对象的原型。
+// 一旦被塞进去，之后任何「持久化里缺失的键」都会落到攻击者提供的原型上。
+function safeMerge(target) {
+  for (var i = 1; i < arguments.length; i++) {
+    var src = arguments[i];
+    if (!src || typeof src !== 'object') continue;
+    var keys = Object.keys(src);
+    for (var j = 0; j < keys.length; j++) {
+      var k = keys[j];
+      if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+      target[k] = src[k];
+    }
+  }
+  return target;
+}
+
 var Storage = {
   GLOBAL_KEY: 'ai_tg_global',
   LEGACY_KEY: 'ai_global_cfg',
@@ -118,17 +136,17 @@ var Storage = {
       // 以默认值为底整体合并：持久化里有的覆盖默认，缺的键保留默认。
       // 这样以后新增顶层配置键（如 proposalCheck/npcDeduction）对老存档自动透传，
       // 不再依赖一张会漏键的显式白名单。
-      const out = Object.assign({}, d, p);
+      const out = safeMerge({}, d, p);
       // 嵌套对象逐字段合并，避免持久化里的残缺子对象整块盖掉默认子结构
-      out.weather = Object.assign({}, d.weather, p.weather || {});
-      out.realtime = Object.assign({}, d.realtime, p.realtime || {});
-      out.settings = Object.assign({}, d.settings, p.settings || {});
-      out.gm = Object.assign({}, d.gm, p.gm || {});
-      out.logging = Object.assign({}, d.logging, p.logging || {});
-      out.proposalCheck = Object.assign({}, d.proposalCheck, p.proposalCheck || {});
-      out.npcDeduction = Object.assign({}, d.npcDeduction, p.npcDeduction || {});
-      out.settings.dice = Object.assign({}, d.settings.dice, (p.settings && p.settings.dice) || {});
-      out.settings.thinking = Object.assign({}, d.settings.thinking, (p.settings && p.settings.thinking) || {});
+      out.weather = safeMerge({}, d.weather, p.weather || {});
+      out.realtime = safeMerge({}, d.realtime, p.realtime || {});
+      out.settings = safeMerge({}, d.settings, p.settings || {});
+      out.gm = safeMerge({}, d.gm, p.gm || {});
+      out.logging = safeMerge({}, d.logging, p.logging || {});
+      out.proposalCheck = safeMerge({}, d.proposalCheck, p.proposalCheck || {});
+      out.npcDeduction = safeMerge({}, d.npcDeduction, p.npcDeduction || {});
+      out.settings.dice = safeMerge({}, d.settings.dice, (p.settings && p.settings.dice) || {});
+      out.settings.thinking = safeMerge({}, d.settings.thinking, (p.settings && p.settings.thinking) || {});
       // 一次性迁移：骰子总开关历史默认值为 false，老存档即便从未动过骰子设置，
       // 合并出来也是 false（表现为 /ra50 完全无响应、AI 调 roll_* 报"骰子系统未开启"）。
       // 迁移一次：把历史 false 纠正为 true 并回写存档；之后用户自己的开关选择正常持久化。

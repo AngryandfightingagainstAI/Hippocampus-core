@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // 战役 4 · 批次 4-3：叙事页 StoryScreen（B 类，RN 组件）
 // RN 独有。订阅 story_store（A 类）渲染叙事流，替代 Electron 侧
 // ui_core 对 #story-area 的全部 DOM 拼装；engine/story.js 一行不改。
@@ -522,7 +522,7 @@ function StoryScreen() {
         ) : null}
         {loading ? <Text style={styles.loadingLine}>{'（AI 正在生成…）'}</Text> : null}
         {liveThinking.active && liveThinking.reasoning ? (
-          <View style={{ marginTop: 8, padding: 12, backgroundColor: c.faint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
+          <View style={{ marginTop: 8, padding: 12, backgroundColor: c.textFaint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
             <Text style={{ fontSize: f.xs, color: c.muted, fontStyle: 'italic', marginBottom: 6 }}>🧠 AI 思考中…</Text>
             <Text style={{ fontSize: f.sm, color: c.muted, fontStyle: 'italic', lineHeight: 18 }}>{liveThinking.reasoning}</Text>
           </View>
@@ -539,7 +539,7 @@ function StoryScreen() {
             <Text style={styles.busyText}>{'AI 思考中…'}</Text>
           </View>
           {liveThinking.active && liveThinking.reasoning ? (
-            <View style={{ marginTop: 8, padding: 12, backgroundColor: c.faint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
+            <View style={{ marginTop: 8, padding: 12, backgroundColor: c.textFaint2 || 'rgba(128,128,128,0.1)', borderRadius: 8 }}>
               <Text style={{ fontSize: f.sm, color: c.muted, fontStyle: 'italic', lineHeight: 18 }}>{liveThinking.reasoning}</Text>
             </View>
           ) : null}
@@ -573,3 +573,4 @@ function StoryScreen() {
 }
 
 module.exports = { StoryScreen: StoryScreen };
+

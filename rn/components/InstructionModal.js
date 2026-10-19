@@ -79,15 +79,45 @@ function InstructionModal(props) {
     if (visible) setActive('1');
   }, [visible]);
 
-  var text = (TEXT_OF[active] || Tpl.part1)();
+  // 段文本：改成惰性 + 容错。
+  //  - 浮层收起时不再白拼 8.6KB 字符串（原来每次渲染都算一遍，含 visible=false）
+  //  - 模板取值若抛错，退化成空串而不是把整个屏幕炸掉（"点了没反应/白屏"加固）
+  var text = React.useMemo(function () {
+    if (!visible) return '';
+    try {
+      var fn = TEXT_OF[active] || Tpl.part1;
+      var v = fn ? fn() : '';
+      return typeof v === 'string' ? v : String(v == null ? '' : v);
+    } catch (e) {
+      return '';
+    }
+  }, [active, visible]);
 
   function copyCurrent() {
+    var ok = false, err = '';
     try {
-      Clipboard.setString(text);
-      Platform.ui.toast('已复制', { type: 'success' });
-    } catch (e) {
-      Platform.ui.toast('复制失败', { type: 'error' });
+      if (Clipboard && typeof Clipboard.setString === 'function' && text) {
+        Clipboard.setString(text);
+        ok = true;
+      }
+    } catch (e) { err = String(e && e.message || e); }
+    // 兜底：老/新 RN 上核心 Clipboard 可能不在（0.87 已标记弃用），走 Platform 适配层
+    if (!ok) {
+      try {
+        if (typeof Platform !== 'undefined' && Platform.clipboard && typeof Platform.clipboard.setString === 'function') {
+          Platform.clipboard.setString(text);
+          ok = true;
+        }
+      } catch (e2) { err = err || String(e2 && e2.message || e2); }
     }
+    try {
+      if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.toast) {
+        // 失败文案保留「复制失败」四字（冒烟 P1I4-7 逐字断言），后面补一句操作提示
+        var FAIL_MSG = '复制失败';
+        Platform.ui.toast(ok ? '已复制' : FAIL_MSG + '：长按文本可手动复制', { type: ok ? 'success' : 'error' });
+      }
+    } catch (e3) { /* toast 失败不阻塞 */ }
+    return ok;
   }
 
   var styles = React.useMemo(function () {
@@ -146,6 +176,10 @@ function InstructionModal(props) {
       }
     });
   }, [tk]);
+
+  // 收起时整层不挂载：既省一次样式/模板计算，也让「点了没打开」这类问题
+  // 在父级 state 没变的情况下不会留下半透明残影
+  if (!visible) return null;
 
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>

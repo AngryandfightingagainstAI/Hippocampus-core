@@ -568,7 +568,12 @@ if (k in out.radius && typeof theme.radius[k] === 'string') out.radius[k] = them
 });
 }
 if (theme.background && typeof theme.background === 'object') {
-out.background = Object.assign(out.background, theme.background);
+// ★ 安全：逐个浅合并并跳过 __proto__/constructor/prototype，
+// 否则导入的主题 JSON 里带 {"background":{"__proto__":{…}}} 会改掉 out.background 的原型。
+Object.keys(theme.background).forEach(function(k) {
+if (k === '__proto__' || k === 'constructor' || k === 'prototype') return;
+if (k in out.background) out.background[k] = theme.background[k];
+});
 }
 // 开放 schema：透传未知的顶层键。
 // 未来给主题加新字段（如 borderStyle / cornerDecoration / dividerStyle）时，
@@ -608,7 +613,9 @@ if (activeId === 'custom' && custom) return mergeWithDefault(custom);
 var builtin = findBuiltin(activeId);
 if (!builtin) builtin = BUILTIN_THEMES[0];
 var merged = clone(builtin);
-if (custom && s.overrides) {
+// 自定义色值覆盖对任意主题生效（此前门禁写成 custom，导致非 custom 主题下
+// setColorOverride 落盘但不生效：改色后一会就"还原"，切主题也不同步）
+if (s.overrides) {
 Object.keys(s.overrides).forEach(function(k) {
 if (k in merged.colors) merged.colors[k] = s.overrides[k];
 });
