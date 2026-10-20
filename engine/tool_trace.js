@@ -136,6 +136,41 @@
       return added;
     },
 
+    // P70·T1：记录本轮工具漏调覆盖情况（漏调列表 + 已自动登记列表）
+    // cov = { missing: [{kind, expectedTool, hit, snippet}], repaired: [{kind, action}] }
+    // 以 name:'__coverage__' 写入 _data，note 存 JSON；recent() 会过滤掉它不污染调试面板。
+    recordCoverage: function(round, cov) {
+      this._ensure();
+      var r = (typeof round === 'number' && round > 0) ? round : _roundNo();
+      var note = '';
+      try { note = JSON.stringify(cov || {}); } catch (e) { note = '{}'; }
+      // 同一轮只保留最新一条 coverage（先删旧的，避免累积）
+      this._data = this._data.filter(function(c) { return !(c.name === '__coverage__' && c.round === r); });
+      this._data.push({
+        round: r,
+        ts: Date.now(),
+        name: '__coverage__',
+        args: '',
+        ok: true,
+        note: _clip(note, 400)
+      });
+      this._version++;
+      this.save();
+    },
+
+    // P70·T1：读回某轮的 coverage（最近一条 __coverage__ 记录）
+    coverageOf: function(round) {
+      this._ensure();
+      var r = (typeof round === 'number' && round > 0) ? round : _roundNo();
+      for (var i = this._data.length - 1; i >= 0; i--) {
+        var c = this._data[i];
+        if (c.name === '__coverage__' && c.round === r) {
+          try { return JSON.parse(c.note); } catch (e) { return null; }
+        }
+      }
+      return null;
+    },
+
     // 超期删除（真删，不只是显示过滤）
     prune: function(round) {
       this._ensure();
@@ -151,7 +186,10 @@
     recent: function(round) {
       this._ensure();
       var r = (typeof round === 'number' && round > 0) ? round : _roundNo();
-      return this._data.filter(function(c) { return (r - c.round) < TTL; }).slice();
+      // P70·T1：过滤 __coverage__ 记录，不让它污染现有调试面板显示
+      return this._data.filter(function(c) {
+        return (r - c.round) < TTL && c.name !== '__coverage__';
+      }).slice();
     },
 
     // 每轮自检间隔：5~10，可关（selfCheck:false）

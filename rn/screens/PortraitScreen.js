@@ -1,25 +1,8 @@
 // ============================================================
 // H6 G9 · 人设屏（B 类，RN 组件）
-// RN 独有。承载 UI_Portrait 的 RN 侧交互：
-//   - TextInput 让用户手填人设总述（或编辑 AI 生成结果）
-//   - 「让 AI 生成」→ ApiManager.getActive + UI_Portrait.generate（两阶段审核：
-//     先 audit 后 generate；conflict 阻断确认，concern 提示后放行）
-//   - P47·1：讨论发送 → UI_Portrait.sendAndGenerate（同两阶段）
-//   - 「确认」→ Portrait.save + UI_Portrait.complete（回叙事页 + appendHint）
-//   - 「跳过」→ UI_Portrait.skip（Portrait.fallback 兜底）
-//   - 「取消」→ UI_Portrait.cancel（回叙事页，不写档）
-//   P10·A5：补「讨论输入行（发送 = 多轮迭代）」与「开场白 opening」两项，
-//     文案/交互照桌面 ui_portrait.js:86-102；opening 随 confirm/skip 落
-//     playerData._openingPrompt（UI_Portrait.applyOpening，空则删）。
-//
-// 两条入口（由 UI_Portrait 模块状态区分，本屏不判）：
-//   A. 创角流程：UI_Portrait.start(playerData, cb) 已设 _cb，complete 调 cb
-//   B. 重审人设：CharacterPanel 直触发屏，无 cb，complete 回叙事页 + 提示
-//
+// P71 阶段 2：三动作分流（发送讨论 / 审核并生成 / 整理成人设）+ 流式 + 撤回
 // 纪律：颜色/字号只取自 useTheme() tokens，无字面量色值/字号；
-//   零 document./window.；引擎模块（Portrait/ApiClient/ApiManager/
-//   Platform/GameState）与 UI_Portrait 由 bootstrap 挂全局，裸用同 engine 风格。
-// 参照 CreateScreen.js 结构（headerRow/scroll/btnRow/primaryBtn/ghostBtn）。
+//   零 document./window.；引擎模块由 bootstrap 挂全局。
 // ============================================================
 
 'use strict';
@@ -37,7 +20,6 @@ var SafeArea = require('react-native-safe-area-context');
 
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
-// P57-B：全局背景渲染层统一挂载（用户裁决：其余屏一起挂上；同 HomeScreen/StoryScreen 挂法）
 var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
 
 function PortraitScreen() {
@@ -49,14 +31,12 @@ function PortraitScreen() {
   var nav = useNavigation();
   var insets = SafeArea.useSafeAreaInsets();
 
-  // 初始 portrait：从 UI_Portrait 拿已有（重审场景预填）；无则空
   var initPortrait = null;
   var initText = '';
   var initOpening = '';
   try {
     initPortrait = UI_Portrait.getCurrentPortrait() || null;
     if (initPortrait && initPortrait.summary) initText = String(initPortrait.summary);
-    // P10·A5：开场白预填（桌面 ui_portrait.js:77 existingOpening = playerData._openingPrompt）
     initOpening = UI_Portrait.getOpeningPrompt ? String(UI_Portrait.getOpeningPrompt() || '') : '';
   } catch (e) { /* */ }
 
@@ -64,13 +44,15 @@ function PortraitScreen() {
   var text = textState[0];
   var setText = textState[1];
 
-  // P10·A5：开场白（可空）与讨论多轮
   var openingState = React.useState(initOpening);
   var opening = openingState[0];
   var setOpening = openingState[1];
+
+  // 讨论区（含流式中的 AI 气泡）
   var discState = React.useState([]);
   var disc = discState[0];
   var setDisc = discState[1];
+
   var discInputState = React.useState('');
   var discInput = discInputState[0];
   var setDiscInput = discInputState[1];
@@ -79,8 +61,6 @@ function PortraitScreen() {
   var portrait = portraitState[0];
   var setPortrait = portraitState[1];
 
-  // P47·1.4：最近一次审核结果（{ verdict, issues, comment } | null）
-  //   conflict → onConfirm 阻断；concern → 展示建议但放行；ok → 正常
   var auditState = React.useState(null);
   var audit = auditState[0];
   var setAudit = auditState[1];
@@ -93,6 +73,17 @@ function PortraitScreen() {
   var err = errState[0];
   var setErr = errState[1];
 
+  // 最近改动（撤回列表）
+  var undoListState = React.useState([]);
+  var undoList = undoListState[0];
+  var setUndoList = undoListState[1];
+
+  function refreshUndo() {
+    try { setUndoList(UI_Portrait.listUndo() || []); } catch (e) { setUndoList([]); }
+  }
+
+  React.useEffect(function () { refreshUndo(); }, []);
+
   function failToast(msg) {
     setErr(msg);
     Platform.ui.toast(msg, { type: 'error' });
@@ -104,11 +95,19 @@ function PortraitScreen() {
     });
   }
 
-  // P47·1.2/1.3：两阶段审核结果的统一处理
-  //   result = { audit, portrait }
-  //   conflict → 讨论区列出问题、不填 portrait、阻断确认
-  //   concern  → 讨论区列出建议 + 填 portrait（允许确认）
-  //   ok       → 直接填 portrait
+  // 更新最后一条 AI 消息的内容（流式用）
+  function updateLastAi(content) {
+    setDisc(function (prev) {
+      if (!prev.length) return prev;
+      var out = prev.slice();
+      var last = out[out.length - 1];
+      if (last && last.role === 'ai') {
+        out[out.length - 1] = { role: 'ai', content: String(content == null ? '' : content) };
+      }
+      return out;
+    });
+  }
+
   function handleGenResult(result) {
     if (!result) { setBusy(false); return; }
     var a = result.audit;
@@ -122,7 +121,7 @@ function PortraitScreen() {
       appendMsg('ai', issueText);
       setErr('人设存在冲突，请先沟通修改后再确认。');
       setBusy(false);
-      return; // conflict → 不填 portrait
+      return;
     }
     if (a && a.verdict === 'concern' && a.issues && a.issues.length) {
       var concernText = '人设基本合理，但有以下小建议：\n';
@@ -139,8 +138,8 @@ function PortraitScreen() {
     setBusy(false);
   }
 
-  // 让 AI 生成（P47·1.2：改走 UI_Portrait.generate 两阶段审核）
-  function onGenerate() {
+  // ② 审核并生成
+  function onAudit() {
     if (busy) return;
     setBusy(true);
     setErr('');
@@ -150,7 +149,7 @@ function PortraitScreen() {
       setBusy(false);
       return;
     }
-    UI_Portrait.generate()
+    UI_Portrait.audit()
       .then(handleGenResult)
       .catch(function (e) {
         failToast('生成失败：' + (e && e.message ? e.message : String(e)));
@@ -158,13 +157,14 @@ function PortraitScreen() {
       });
   }
 
-  // P10·A5 · 讨论发送：多轮迭代（P47·1.3：改走 UI_Portrait.sendAndGenerate 两阶段审核）
+  // ① 发送（讨论，流式）
   function onSend() {
     if (busy) return;
     var t = String(discInput || '').trim();
     if (!t) return;
     setDiscInput('');
     appendMsg('user', t);
+    appendMsg('ai', ''); // 流式占位
     setBusy(true);
     setErr('');
     var profile = ApiManager.getActive();
@@ -173,19 +173,63 @@ function PortraitScreen() {
       setBusy(false);
       return;
     }
-    UI_Portrait.sendAndGenerate(t)
-      .then(handleGenResult)
-      .catch(function (e) {
-        appendMsg('ai', '（出错：' + (e && e.message ? e.message : String(e)) + '）');
-        failToast('生成失败：' + (e && e.message ? e.message : String(e)));
+    UI_Portrait.sendStream(t, {
+      onContent: function (delta, full) { updateLastAi(full); },
+      onDone: function (full) { updateLastAi(full); setBusy(false); },
+      onError: function (msg) {
+        updateLastAi('（出错：' + msg + '）');
+        failToast('讨论失败：' + msg);
         setBusy(false);
+      }
+    }).catch(function (e) {
+      updateLastAi('（出错：' + (e && e.message ? e.message : String(e)) + '）');
+      failToast('讨论失败：' + (e && e.message ? e.message : String(e)));
+      setBusy(false);
+    });
+  }
+
+  // ③ 整理成人设
+  function onExtract() {
+    if (busy) return;
+    setBusy(true);
+    setErr('');
+    UI_Portrait.extract()
+      .then(function (result) {
+        setBusy(false);
+        if (!result || !result.ok) {
+          failToast('整理失败：' + (result && result.error ? result.error : '未知错误'));
+          return;
+        }
+        Platform.ui.toast('已整理：' + result.label, { type: 'success' });
+        appendMsg('ai', '已整理成人设：' + result.label);
+        refreshUndo();
+      })
+      .catch(function (e) {
+        setBusy(false);
+        failToast('整理失败：' + (e && e.message ? e.message : String(e)));
       });
   }
 
-  // 确认：用 AI 生成的 portrait，或手填文本构造；Portrait.save + complete
+  // ④ 撤回（二次确认）
+  function onUndo(entry) {
+    if (busy) return;
+    var label = entry && entry.label ? entry.label : '该改动';
+    Platform.ui.confirmAsync('确定撤回「' + label + '」吗？').then(function (ok) {
+      if (!ok) return;
+      var r = UI_Portrait.undo(entry.id);
+      if (!r || !r.ok) {
+        Platform.ui.toast('撤回失败：' + (r && r.error ? r.error : '未知错误'), { type: 'warn' });
+        return;
+      }
+      var msg = '已撤回：' + r.label;
+      if (r.cascaded > 0) msg += '（连带回退了 ' + r.cascaded + ' 条后续改动）';
+      Platform.ui.toast(msg, { type: 'success' });
+      refreshUndo();
+    });
+  }
+
   function onConfirm() {
     if (busy) return;
-    // P47·1.4：审核 conflict 时阻断确认（先沟通修改）
     if (audit && audit.verdict === 'conflict') {
       failToast('人设存在冲突，请先在讨论区与 AI 沟通修改后再确认。');
       return;
@@ -197,14 +241,8 @@ function PortraitScreen() {
         failToast('请先让 AI 生成或手填人设总述，或点「跳过」。');
         return;
       }
-      p = {
-        summary: trimmed,
-        traits: [],
-        lockedAt: new Date().toISOString(),
-        aiVersion: 1
-      };
+      p = { summary: trimmed, traits: [], lockedAt: new Date().toISOString(), aiVersion: 1 };
     } else {
-      // AI 生成后用户可能编辑过文本 → 以最新文本为准
       if (trimmed && trimmed !== p.summary) {
         p = Object.assign({}, p, { summary: trimmed });
       }
@@ -252,7 +290,6 @@ function PortraitScreen() {
         minHeight: 120, textAlignVertical: 'top'
       },
       err: { fontSize: f.sm, color: c.danger, marginBottom: 10 },
-      // P47·1.4：审核状态块（颜色走 tokens，无字面量色值字号）
       auditBox: {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
         backgroundColor: c.panel, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 12
@@ -260,7 +297,6 @@ function PortraitScreen() {
       auditTitle: { fontSize: f.sm, color: c.ink, fontWeight: '600', marginBottom: 4 },
       auditBody: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.7), marginBottom: 4 },
       auditIssue: { fontSize: f.xs, color: c.danger, lineHeight: Math.round(f.xs * 1.7) },
-      // P10·A5：讨论区 / 输入行 / 开场白（样式走 tokens，无字面量色值字号）
       discBox: {
         borderWidth: 1, borderColor: c.hair, borderRadius: tk.radius.sm,
         backgroundColor: c.panel, paddingHorizontal: 10, paddingVertical: 8,
@@ -300,10 +336,33 @@ function PortraitScreen() {
         paddingHorizontal: 14, paddingVertical: 9
       },
       ghostBtnText: { fontSize: f.sm, color: c.muted, letterSpacing: 2 },
+      extractBtn: {
+        borderWidth: 1, borderColor: c.accent, backgroundColor: c.accent,
+        borderRadius: tk.radius.sm, paddingHorizontal: 14, paddingVertical: 9
+      },
+      extractBtnText: { fontSize: f.sm, color: c.card, letterSpacing: 1, fontWeight: '600' },
       btnDisabled: { opacity: 0.45 },
       busyRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 },
       busyText: { fontSize: f.sm, color: c.muted, letterSpacing: 1 },
-      note: { fontSize: f.xs, color: c.faint, lineHeight: Math.round(f.xs * 1.7), marginBottom: 10, marginTop: 6 }
+      note: { fontSize: f.xs, color: c.faint, lineHeight: Math.round(f.xs * 1.7), marginBottom: 10, marginTop: 6 },
+      // 最近改动
+      undoBox: {
+        borderWidth: 1, borderColor: c.hair, borderRadius: tk.radius.sm,
+        backgroundColor: c.panel, paddingHorizontal: 10, paddingVertical: 8,
+        marginBottom: 14, maxHeight: 180
+      },
+      undoTitle: { fontSize: f.xs, color: c.muted, marginBottom: 6, letterSpacing: 1 },
+      undoEmpty: { fontSize: f.sm, color: c.faint, paddingVertical: 8, textAlign: 'center' },
+      undoRow: {
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: c.hair
+      },
+      undoLabel: { flex: 1, fontSize: f.sm, color: c.text },
+      undoBtn: {
+        borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
+        paddingHorizontal: 10, paddingVertical: 4
+      },
+      undoBtnText: { fontSize: f.xs, color: c.muted }
     });
   }, [tk, insets]);
 
@@ -320,20 +379,20 @@ function PortraitScreen() {
         <Text style={styles.stepLine}>{'人设总述 · 可手填或让 AI 生成'}</Text>
         <Text style={styles.stepTitle}>{'重审人设'}</Text>
         <Text style={styles.guide}>
-          {'写一段让 GM 快速理解这个角色的人设总述（性格、气质、说话方式、行为倾向）。可点「让 AI 生成」自动起草，再编辑确认。'}
+          {'先和 AI 讨论角色细节，满意后点「整理成人设」把讨论结果写进字段。'}
         </Text>
 
-        {/* P10·A5：多轮讨论区（桌面 ui_portrait.js:86-93 portrait-disc + 输入行） */}
+        {/* 讨论区 + 流式 */}
         <View style={styles.discBox}>
           {disc.length ? disc.map(function (m, i) {
             return (
               <View key={'d' + i} style={styles.discMsg}>
                 <Text style={styles.discRole}>{m.role === 'user' ? '你' : 'AI'}</Text>
-                <Text style={styles.discContent}>{m.content}</Text>
+                <Text style={styles.discContent}>{m.content || (m.role === 'ai' && busy ? '…' : '')}</Text>
               </View>
             );
           }) : (
-            <Text style={styles.discEmpty}>{'点下方"让 AI 生成"开始，或直接输入想让 AI 注意的点。'}</Text>
+            <Text style={styles.discEmpty}>{'点下方按钮开始，或直接输入想让 AI 注意的点。'}</Text>
           )}
         </View>
         <View style={styles.inputRow}>
@@ -355,7 +414,6 @@ function PortraitScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* P47·1.4：当前审核状态（conflict 红 / concern 提示 / ok 通过） */}
         {audit ? (
           <View style={styles.auditBox}>
             <Text style={styles.auditTitle}>
@@ -387,7 +445,6 @@ function PortraitScreen() {
 
         {err ? <Text style={styles.err}>{err}</Text> : null}
 
-        {/* P10·A5：开场白（可选）——文案逐字照桌面 ui_portrait.js:100-102 */}
         <Text style={styles.sectionTitle}>{'开场白（可选）'}</Text>
         <Text style={styles.hint}>{'游戏开始时给 AI 的第一句指令。留空则使用卡带默认或通用默认。'}</Text>
         <TextInput
@@ -400,10 +457,31 @@ function PortraitScreen() {
           editable={!busy}
         />
 
+        {/* 最近改动（撤回） */}
+        <View style={styles.undoBox}>
+          <Text style={styles.undoTitle}>{'最近改动'}</Text>
+          {undoList.length ? undoList.map(function (e, i) {
+            return (
+              <View key={'u' + i} style={styles.undoRow}>
+                <Text style={styles.undoLabel} numberOfLines={1}>{e.label || '（无标签）'}</Text>
+                <TouchableOpacity
+                  style={styles.undoBtn}
+                  activeOpacity={0.6}
+                  onPress={function () { onUndo(e); }}
+                >
+                  <Text style={styles.undoBtnText}>{'撤回'}</Text>
+                </TouchableOpacity>
+              </View>
+            );
+          }) : (
+            <Text style={styles.undoEmpty}>{'还没有改动记录'}</Text>
+          )}
+        </View>
+
         {busy ? (
           <View style={styles.busyRow}>
             <ActivityIndicator size="small" color={c.accent} />
-            <Text style={styles.busyText}>{'AI 生成中…'}</Text>
+            <Text style={styles.busyText}>{'AI 处理中…'}</Text>
           </View>
         ) : null}
 
@@ -411,9 +489,16 @@ function PortraitScreen() {
           <TouchableOpacity
             style={[styles.ghostBtn, busy ? styles.btnDisabled : null]}
             activeOpacity={0.6} disabled={busy}
-            onPress={onGenerate}
+            onPress={onAudit}
           >
-            <Text style={styles.ghostBtnText}>{'让 AI 生成'}</Text>
+            <Text style={styles.ghostBtnText}>{'审核并生成'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.extractBtn, busy ? styles.btnDisabled : null]}
+            activeOpacity={0.6} disabled={busy}
+            onPress={onExtract}
+          >
+            <Text style={styles.extractBtnText}>{'整理成人设'}</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.primaryBtn, busy ? styles.btnDisabled : null]}
@@ -439,7 +524,7 @@ function PortraitScreen() {
         </View>
 
         <Text style={styles.note}>
-          {'「确认」写入存档并回叙事页；「跳过」用原始字段兜底（不进 AI 提示词）；「取消」不写档直接返回。'}
+          {'「确认」写入存档并回叙事页；「跳过」用原始字段兜底；「取消」不写档直接返回。'}
         </Text>
       </ScrollView>
     </View>

@@ -174,6 +174,10 @@ load('NpcDeductionAI',        function () { return require('../engine/npc_deduct
 load('InfoFeed',              function () { return require('../engine/info_feed.js'); });
 load('NpcRuntime',            function () { return require('../engine/npc_runtime.js'); });
 load('Portrait',              function () { return require('../engine/portrait.js'); });
+// P71 阶段 2：人设共创会话层（滚动窗口/纪要约 15 轮 + token 安全阀 + 落盘到 portrait_chat.json）
+// 纯逻辑无 DOM，与桌面 engine/portrait_chat.js 逐字节同源。缺了它 RN 端讨论会报
+// 「组装消息失败：Property 'PortraitChat' doesn't exist」（真机实测）。
+load('PortraitChat',          function () { return require('../engine/portrait_chat.js'); });
 load('ProposalSemanticCheck', function () { return require('../engine/proposal_semantic_check.js'); });
 load('Snapshots',             function () { return require('../engine/snapshots.js'); });
 load('Theme',                 function () { return require('../engine/theme.js'); });

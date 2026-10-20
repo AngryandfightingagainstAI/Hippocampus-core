@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  P71 · 网络安全配置（2026-10-21，用户拍板「只放行本地回环」）
+
+  背景：release 包原本是 android:usesCleartextTraffic="false"，于是
+  1) 内置「Ollama 本地」预设 http://localhost:11434/v1 在手机上永远连不上；
+  2) 用 adb reverse / 手机本机反代到 PC 的纯 http 服务也无法测试。
+  一旦设置了 networkSecurityConfig，Android 7.0+ 会以本文件为准
+  （application 上的 usesCleartextTraffic 不再生效）。
+
+  策略：
+  - base-config 仍然禁止明文（系统默认 + 显式写死，等于原来的 false）；
+  - 只对 localhost / 127.0.0.1 两个回环地址放行明文，
+    流量不出设备、不经网络，被中间人抓包的前提是设备本身已被攻破。
+  - 私网段（192.168.* / 10.*）不放行 —— 用户 2026-10-21 明确只选「本地回环」。
+    将来要连同一 WiFi 下 PC 的 Ollama，需在此处追加 <domain> 或改用 https。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+</network-security-config>

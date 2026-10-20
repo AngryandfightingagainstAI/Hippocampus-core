@@ -12,6 +12,81 @@
 // ============================================================
 
 (function() {
+  // ── TextEncoder / TextDecoder 兜底 ────────────────────────────
+  // RN（Hermes）**没有** 内置 TextEncoder/TextDecoder，而
+  // engine/core/api_client.js:152 的流式解码 `new TextDecoder()` 与
+  // 下面 httpStream 的 XHR 假 reader 都依赖它们 —— 缺了就是
+  // "TextDecoder is not defined"，整条流式直接抛错（真机实测过）。
+  // 这里只在缺失时补一个最小实现（浏览器/Electron 有内置，不会走到）。
+  // NATIVE_CODEC 同时当"这台机器能不能用 fetch 流式"的探针：
+  // 原生浏览器/Electron 有 TextDecoder 且 fetch 返回带 body.getReader 的 Response；
+  // RN 的 whatwg-fetch 没有 reader，且原本没有 TextDecoder —— 因此
+  // 缺原生 codec 时 httpStream 直接用 XHR 假 reader，避免"先整段 fetch 一次、
+  // 再 XHR 重发一次"的双请求（真机实测首包要等 3.3s，白花一倍 token）。
+  var NATIVE_CODEC = true;
+  (function ensureTextCodec() {
+    var g = typeof globalThis !== 'undefined' ? globalThis
+      : (typeof window !== 'undefined' ? window : this);
+    if (!g) return;
+    NATIVE_CODEC = (typeof g.TextDecoder !== 'undefined' && typeof g.TextEncoder !== 'undefined');
+
+    function utf8Decode(bytes) {
+      var out = '', i = 0, n = bytes.length;
+      while (i < n) {
+        var b = bytes[i], cp, extra;
+        if (b < 0x80) { cp = b; extra = 0; }
+        else if (b >= 0xC2 && b <= 0xDF) { cp = b & 0x1F; extra = 1; }
+        else if (b >= 0xE0 && b <= 0xEF) { cp = b & 0x0F; extra = 2; }
+        else if (b >= 0xF0 && b <= 0xF4) { cp = b & 0x07; extra = 3; }
+        else { out += '\uFFFD'; i++; continue; }
+        if (i + extra >= n) break;                       // 尾部半截字符，留给下一包
+        var ok = true;
+        for (var k = 1; k <= extra; k++) {
+          var cb = bytes[i + k];
+          if ((cb & 0xC0) !== 0x80) { ok = false; break; }
+          cp = (cp << 6) | (cb & 0x3F);
+        }
+        if (!ok) { out += '\uFFFD'; i++; continue; }
+        if (cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) { out += '\uFFFD'; i += extra + 1; continue; }
+        out += String.fromCodePoint(cp);
+        i += extra + 1;
+      }
+      return { text: out, consumed: i };
+    }
+
+    if (typeof g.TextDecoder === 'undefined') {
+      var Dec = function(label, opts) { this._rest = []; };
+      Dec.prototype.decode = function(input, options) {
+        var stream = !!(options && options.stream);
+        if (typeof input === 'string') return input;
+        var bytes = (input == null) ? [] : Array.prototype.slice.call(input);
+        var all = this._rest.concat(bytes);
+        var r = utf8Decode(all);
+        this._rest = stream ? all.slice(r.consumed) : [];
+        return r.text;
+      };
+      g.TextDecoder = Dec;
+    }
+
+    if (typeof g.TextEncoder === 'undefined') {
+      var Enc = function() {};
+      Enc.prototype.encode = function(str) {
+        str = (str == null) ? '' : String(str);
+        var bytes = [];
+        for (var i = 0; i < str.length; i++) {
+          var c = str.codePointAt ? str.codePointAt(i) : str.charCodeAt(i);
+          if (c > 0xFFFF) i++;
+          if (c < 0x80) bytes.push(c);
+          else if (c < 0x800) bytes.push(0xC0 | (c >> 6), 0x80 | (c & 0x3F));
+          else if (c < 0x10000) bytes.push(0xE0 | (c >> 12), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F));
+          else bytes.push(0xF0 | (c >> 18), 0x80 | ((c >> 12) & 0x3F), 0x80 | ((c >> 6) & 0x3F), 0x80 | (c & 0x3F));
+        }
+        return new Uint8Array(bytes);
+      };
+      g.TextEncoder = Enc;
+    }
+  })();
+
   var Platform = {
     // 直连 fetch，接口与原生一致：返回 Promise<Response>
     // 用法：await Platform.http(url, { method, headers, body })
@@ -23,9 +98,78 @@
     // 流式请求：与 http 相同参数，返回原始 Response（调用方用 body.getReader() 读 SSE）
     // 用法：const resp = await Platform.httpStream(url, { method, headers, body });
     //        const reader = resp.body.getReader();
-    // RN 侧实现为 fetch（RN 0.73+ 支持 TextDecoder streaming）
+    // 优先 fetch（RN 0.73+ 支持 body.getReader）；拿不到 reader 时降级 XHR，
+    //   用 xhr.onprogress 里 text.slice(prevLen) 造 {read(){...}} 假 reader，
+    //   保证 engine/core/api_client.js 的 reader.read() 循环零改动可用。
     httpStream: function(url, options) {
-      return window.fetch(url, options);
+      options = options || {};
+      function makeXhrReader() {
+        return new Promise(function(resolve, reject) {
+          var xhr = new XMLHttpRequest();
+          xhr.open(options.method || 'POST', url, true);
+          var headers = options.headers || {};
+          Object.keys(headers).forEach(function(k) {
+            try { xhr.setRequestHeader(k, headers[k]); } catch (e) {}
+          });
+          xhr.responseType = 'text';
+          var prevLen = 0;
+          var queue = [];     // 待交付的增量文本
+          var done = false;
+          var waiter = null;  // 挂起的 read() resolve
+
+          function pump() {
+            if (waiter && queue.length) {
+              var w = waiter; waiter = null;
+              var text = queue.shift();
+              w({ value: new TextEncoder().encode(text), done: false });
+            } else if (waiter && done) {
+              var w2 = waiter; waiter = null;
+              w2({ done: true });
+            }
+          }
+          xhr.onprogress = function() {
+            var text = xhr.responseText || '';
+            if (text.length > prevLen) {
+              queue.push(text.slice(prevLen));
+              prevLen = text.length;
+              pump();
+            }
+          };
+          xhr.onload = function() {
+            done = true;
+            pump();
+          };
+          xhr.onerror = function() { reject(new Error('XHR 网络错误')); };
+          try { xhr.send(options.body); } catch (e) { reject(e); }
+
+          var reader = {
+            read: function() {
+              return new Promise(function(resolveRead) {
+                if (queue.length) {
+                  var text = queue.shift();
+                  resolveRead({ value: new TextEncoder().encode(text), done: false });
+                } else if (done) {
+                  resolveRead({ done: true });
+                } else {
+                  waiter = resolveRead;
+                }
+              });
+            }
+          };
+          resolve({ ok: true, status: 200, body: { getReader: function() { return reader; } } });
+        });
+      }
+
+      // 无原生 codec（RN）→ 直接 XHR，别先整段 fetch 一遍再重发
+      if (!NATIVE_CODEC && typeof XMLHttpRequest !== 'undefined') return makeXhrReader();
+
+      return window.fetch(url, options).then(function(resp) {
+        if (resp && resp.body && typeof resp.body.getReader === 'function') return resp;
+        return makeXhrReader();
+      }).catch(function() {
+        // fetch 本身失败（无 fetch / 网络拒绝）也走 XHR
+        return makeXhrReader();
+      });
     },
 
     dialog: {

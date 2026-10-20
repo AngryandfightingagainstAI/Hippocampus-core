@@ -5,11 +5,209 @@
 
 var _nodeStuckShown = false;
 
+// ============ P70·T1 辅助函数（纯逻辑，供工具漏调自动登记用） ============
+
+// P70·T1 返工（P0-1）：NPC 名只从卡带声明里取，不再从正文猜。
+//   在正文中做最长匹配，返回命中的卡带 NPC def 列表（去重）。
+function _findDeclaredNpcsInText(text) {
+  var out = [];
+  try {
+    var wb = (GameState.currentCard && GameState.currentCard.worldbook) || {};
+    var defs = wb.npcs || [];
+    var t = String(text || '');
+    var matches = [];
+    defs.forEach(function(def) {
+      if (!def) return;
+      var names = [];
+      if (def.name) names.push(String(def.name));
+      if (Array.isArray(def.aliases)) def.aliases.forEach(function(a) { if (a) names.push(String(a)); });
+      names.forEach(function(n) {
+        if (n && t.indexOf(n) >= 0) matches.push({ def: def, len: n.length });
+      });
+    });
+    // 最长匹配优先，同 def 只取一次
+    matches.sort(function(a, b) { return b.len - a.len; });
+    var seen = {};
+    matches.forEach(function(m) {
+      var id = m.def.id || m.def.name;
+      if (!seen[id]) { seen[id] = true; out.push(m.def); }
+    });
+  } catch (e) {}
+  return out;
+}
+
+// NPC 黑名单：泛称/景物，不建档也不提示
+var NPC_BLACKLIST = [
+  '一个', '那个', '这个', '两人', '众人', '男人', '女人', '老人', '孩子',
+  '门', '窗', '他', '她', '它', '他们', '她们', '它们',
+  '有人', '某人', '对方', '那人', '此人', '旁人', '路人', '过客'
+];
+
+// P70·T1 返工二：黑名单要拿「候选名」比，不能拿整段正文比。
+//   之前 `NPC_BLACKLIST.some(b => clean.indexOf(b) >= 0)` 只要正文里出现「他/她/门/窗」就整轮静默，
+//   而叙事正文几乎必然含这些字 ⇒ "未声明角色出场"的提示在真实正文里永远不出现。
+//   这里只在**提示判定**时做一次轻量候选名猜测（不参与建档），命中黑名单才静默。
+function _guessNameCandidate(text, hit) {
+  if (!text || !hit || !hit.length) return '';
+  var t = String(text);
+  for (var i = 0; i < hit.length; i++) {
+    var w = hit[i];
+    var idx = t.indexOf(w);
+    if (idx < 0) continue;
+    var before = t.slice(Math.max(0, idx - 6), idx);
+    before = before.replace(/[，。！？、；：""''（）\s,.!?;:]/g, '').replace(/(的|了|着|过|和|与|跟|向|朝|往)$/, '');
+    if (before.length >= 2 && before.length <= 6) return before;
+  }
+  return '';
+}
+
+// 从正文中提取物品名：acquire 取命中词之后的 2-6 字，loss 取之前的。
+function _extractItemName(text, hit, kind) {
+  if (!text || !hit || !hit.length) return '';
+  var t = String(text);
+  for (var i = 0; i < hit.length; i++) {
+    var w = hit[i];
+    var idx = t.indexOf(w);
+    if (idx < 0) continue;
+    var frag = '';
+    if (kind === 'acquire') {
+      frag = t.slice(idx + w.length, idx + w.length + 8);
+    } else {
+      frag = t.slice(Math.max(0, idx - 8), idx);
+    }
+    frag = frag.replace(/[，。！？、；：""''（）\s,.!?;:]/g, '').replace(/^(的|了|着|过|把|将|给|被)/, '').replace(/(的|了|着|过)$/, '');
+    if (frag.length >= 2 && frag.length <= 8) return frag;
+  }
+  return '';
+}
+
+// P70·T1 返工（P0-2）：时间词拆两张表。
+//   DURATION = 经过的时长（推进 gameTime）；CLOCK = 时刻（本轮不推进，只记 coverage）。
+var TIME_DURATION = {
+  '第二天': 1440, '第三天': 2880, '三天后': 4320, '两天后': 2880, '一天后': 1440,
+  '次日': 1440, '翌日': 1440, '隔日': 1440, '次日清晨': 1440,
+  '一周后': 10080, '一个月后': 43200, '一年后': 525600,
+  '过了一会': 30, '过了一会儿': 30, '不久': 30, '片刻后': 15,
+  '一个时辰后': 120, '几个时辰后': 240,
+  '时间流逝': 60, '时光飞逝': 60,
+  '斗转星移': 60, '物换星移': 60, '春去秋来': 60, '寒来暑往': 60
+};
+var TIME_CLOCK = {
+  '清晨': 1, '黎明': 1, '拂晓': 1, '入夜': 1, '黄昏': 1, '傍晚': 1,
+  '午夜': 1, '深夜': 1, '半夜': 1, '三更': 1
+};
+
+// 取时间词命中里最大的 DURATION 分钟数；CLOCK 词返回 0（不推进）。
+function _maxDurationMinutes(hit) {
+  if (!hit || !hit.length) return 0;
+  var max = 0;
+  for (var i = 0; i < hit.length; i++) {
+    var v = TIME_DURATION[hit[i]];
+    if (v > max) max = v;
+  }
+  return max;
+}
+
 var StoryLoop = {
   busy: false, currentOptions: [],
   _regenContext: null,
   _lastPlayerLocation: '',
   _windowAnchor: null,
+
+  // P70·T1：工具漏调自动登记（level 3 主体，纯逻辑可单测）
+  // 输入：正文 clean、WordFamilies.analyze 输出的 missing 列表、当前轮次 round
+  // 输出：{ repaired: [成功登记文案], notices: [未登记提醒文案] }
+  _autoRegisterMissing: function(clean, missing, round) {
+    var repaired = [];
+    var notices = [];
+    var seenKeys = {};
+    if (!missing || !missing.length) return { repaired: repaired, notices: notices };
+
+    missing.forEach(function(m) {
+      // P1-4：去重键 round + kind + 首个命中词，同轮同键只记一次
+      var key = round + '|' + m.kind + '|' + (m.hit && m.hit[0] ? m.hit[0] : '');
+      if (seenKeys[key]) return;
+      seenKeys[key] = true;
+
+      if (m.kind === 'npc') {
+        // P0-1：只登记卡带已声明的 NPC，未声明的只 notice，黑名单直接跳过
+        var declaredNpcs = _findDeclaredNpcsInText(clean);
+        if (declaredNpcs.length > 0) {
+          declaredNpcs.forEach(function(def) {
+            try {
+              if (typeof NpcRuntime !== 'undefined' && NpcRuntime.get) {
+                var npcKey = def.id || def.name;
+                if (!npcKey) return;
+                var rt = NpcRuntime.get(npcKey);
+                if (rt) {
+                  rt.lastSeenRound = round;
+                  rt.source = 'engine:auto';
+                  repaired.push('NPC「' + (def.name || npcKey) + '」出场登记');
+                }
+              }
+            } catch (e) {}
+          });
+        } else {
+          // 候选名只用于"要不要提示"的判定，绝不拿来建档
+          var cand = _guessNameCandidate(clean, m.hit);
+          var blacklisted = !cand || NPC_BLACKLIST.some(function(b) { return cand.indexOf(b) >= 0; });
+          if (!blacklisted) {
+            notices.push('正文出现角色登场信号（' + (m.hit ? m.hit.slice(0, 2).join('、') : '') +
+              '），候选名「' + cand + '」未在卡带声明里，未登记。请在人物面板手动添加或确认。');
+          }
+        }
+      } else if (m.kind === 'acquire' || m.kind === 'loss') {
+        // 物品：提取名字后必须命中卡带 worldbook.items 声明才登记，否则 notice
+        var itemName = _extractItemName(clean, m.hit, m.kind);
+        var itemDeclared = false;
+        try {
+          var items = ((GameState.currentCard && GameState.currentCard.worldbook) || {}).items || [];
+          for (var j = 0; j < items.length; j++) {
+            if (items[j].name === itemName) { itemDeclared = true; break; }
+          }
+        } catch (e) {}
+        if (itemDeclared) {
+          if (m.kind === 'acquire') {
+            var r = ToolExecutor._addItem('story', itemName, 'engine:auto 自动登记');
+            if (r && r.ok) repaired.push('获得物品「' + itemName + '」');
+            else notices.push('正文提到获得物品「' + itemName + '」，但自动登记失败，请手动确认。');
+          } else {
+            var r2 = ToolExecutor._removeItem(itemName);
+            if (r2 && r2.ok) repaired.push('失去物品「' + itemName + '」');
+            else notices.push('正文提到失去物品「' + itemName + '」，但背包中未找到，请手动确认。');
+          }
+        } else {
+          notices.push('正文提到' + (m.kind === 'acquire' ? '获得' : '失去') +
+            '物品（' + (m.hit ? m.hit.slice(0, 2).join('、') : '') + '），但未匹配到卡带声明的物品，未登记。');
+        }
+      } else if (m.kind === 'time') {
+        // P0-2：DURATION 取最大值只推一次；CLOCK（清晨/入夜…）本轮不推进
+        var mins = _maxDurationMinutes(m.hit);
+        if (mins > 0 && GameState.advanceTime) {
+          GameState.advanceTime(mins);
+          repaired.push('时间推进 ' + mins + ' 分钟');
+        }
+        // CLOCK 词不推进，自然落入 coverage，不提示
+      } else if (m.kind === 'relation') {
+        // P0-3：不建 proposal（to/delta 无法唯一确定），只 notice 提醒手动调整
+        // 返工二：同一关系词 10 轮内只提醒一次，避免每轮往 pendingSystemNotices 里塞同样的话
+        var relKey = (m.hit && m.hit[0]) ? String(m.hit[0]) : '';
+        if (!StoryLoop._relNoticeAt) StoryLoop._relNoticeAt = {};
+        var lastRelRound = StoryLoop._relNoticeAt[relKey];
+        if (relKey && lastRelRound != null && (round - lastRelRound) < 10) return;
+        if (relKey) StoryLoop._relNoticeAt[relKey] = round;
+        notices.push('正文提到关系变化（' + (m.hit ? m.hit.slice(0, 2).join('、') : '') +
+          '），AI 未调 modify_relation。请在人物面板确认后手动调整关系值。');
+      } else {
+        // injury/money/fatigue/hunger/skill/weather/event/task/ending/node/foreshadow/shop/status/info/achievement：
+        // 不猜数值，一律 notice 提醒补调
+        notices.push('上一轮正文提到了「' + m.label + '」（' + (m.hit ? m.hit.slice(0, 2).join('、') : '') +
+          '），但没有调用 ' + m.expectedTool + '。该类数值不自动猜测，请人工补调。');
+      }
+    });
+
+    return { repaired: repaired, notices: notices };
+  },
 
   async start() {
     var card = GameState.currentCard;
@@ -403,24 +601,82 @@ var StoryLoop = {
         }
       });
       // 输出后置校验：检测 AI 正文提到的状态变化，但没调对应工具
+      // P70·T1：按 toolGuard 档位执行（0关 / 1提示 / 2提醒 / 3自动登记 / 4留TODO）
       try {
-        if (typeof WordFamilies !== 'undefined' && WordFamilies.checkMissing) {
-          var __missing = WordFamilies.checkMissing(clean, toolResults);
+        if (typeof WordFamilies !== 'undefined' && WordFamilies.analyze) {
+          var __g = null;
+          try { __g = Storage.getGlobal(); } catch (__e2) {}
+          var __level = 3;
+          try { __level = (__g && __g.toolGuard && __g.toolGuard.level != null) ? Number(__g.toolGuard.level) : 3; } catch (__e3) {}
+          if (!isFinite(__level) || __level < 0) __level = 3;
+          // 兼容旧 devHints：开了 devHints 至少按 1 档（提示）处理
+          var __devHints = false;
+          try { __devHints = !!(__g && __g.devHints); } catch (__e4) {}
+          if (__devHints && __level < 1) __level = 1;
+
+          var __hasTimeBlock = /【时间】/.test(content);
+          var __analysis = WordFamilies.analyze(clean, toolResults, { hasTimeBlock: __hasTimeBlock });
+          var __missing = __analysis.filter(function(a) { return !a.exempt && !a.toolCalled; });
+
           if (__missing.length > 0) {
-            __missing.forEach(function(m) {
-              GameState._pendingSystemNotices.push(
-                'AI 上一轮正文提到了「' + m.label + '」（' + m.words.join('、') +
-                '），但没有调用 ' + m.tool + '。如果剧情确实发生了这个变化，请补调工具。'
-              );
+            var __missingLabels = __missing.map(function(m) {
+              return m.label + '（' + m.hit.slice(0, 2).join('、') + '）';
             });
-            // ★ P64：这条提示是给开发者的内部审计（「漏账」是工具调用层面的术语），
-            //   直接 appendHint 会插进玩家的剧情流里（实测第 30 轮出现「（检测到可能的漏账：NPC 登场或离场）」）。
-            //   默认只进 console（错误日志面板可见），要玩家可见得显式开 Storage.getGlobal().devHints。
-            var __devHints = false;
-            try { __devHints = !!(Storage.getGlobal() && Storage.getGlobal().devHints); } catch (__e2) {}
-            var __leakText = '（检测到可能的漏账：' + __missing.map(function(m) { return m.label; }).join('、') + '）';
-            if (__devHints) Platform.ui.appendHint(__leakText);
-            else console.info('[WordFamilies] ' + __leakText);
+
+            // coverage 留痕（先记 missing，自动登记后再补 repaired）
+            if (typeof ToolTrace !== 'undefined' && ToolTrace.recordCoverage) {
+              try {
+                ToolTrace.recordCoverage(null, {
+                  missing: __missing.map(function(m) { return { kind: m.kind, expectedTool: m.expectedTool, hit: m.hit, snippet: m.snippet }; }),
+                  repaired: []
+                });
+              } catch (__e5) {}
+            }
+
+            if (__level === 0) {
+              console.info('[WordFamilies] 检测到可能的漏账：' + __missingLabels.join('、'));
+            } else if (__level === 1) {
+              Platform.ui.appendHint('（检测到可能漏调工具：' + __missingLabels.join('、') + '）');
+            } else if (__level === 2) {
+              __missing.forEach(function(m) {
+                GameState._pendingSystemNotices.push(
+                  '上一轮正文提到了「' + m.label + '」（' + m.hit.slice(0, 2).join('、') +
+                  '），但没有调用 ' + m.expectedTool + '。如果剧情确实发生了这个变化，请补调工具。'
+                );
+              });
+            } else if (__level >= 3) {
+              var __round = 0;
+              try {
+                __round = ((GameState.chatHistory || []).filter(function(mm) {
+                  return mm && mm.role === 'user' && !String(mm.content || '').startsWith('【系统 ·');
+                })).length;
+              } catch (__e6) {}
+
+              var __reg = StoryLoop._autoRegisterMissing(clean, __missing, __round);
+              var __repaired = __reg.repaired;
+              var __notices = __reg.notices;
+
+              // P1-4：每轮最多 1 条 appendHint，合并成"已自动登记 N 项：…"
+              if (__repaired.length) {
+                Platform.ui.appendHint('（已自动登记 ' + __repaired.length + ' 项：' + __repaired.join('、') + '）');
+              }
+
+              // 凡进自动档但未登记成功的，必须落一条 notice，不许静默
+              __notices.forEach(function(n) {
+                GameState._pendingSystemNotices.push(n);
+              });
+
+              // 更新 coverage 的 repaired
+              if (typeof ToolTrace !== 'undefined' && ToolTrace.recordCoverage) {
+                try {
+                  ToolTrace.recordCoverage(null, {
+                    missing: __missing.map(function(m) { return { kind: m.kind, expectedTool: m.expectedTool, hit: m.hit, snippet: m.snippet }; }),
+                    repaired: __repaired.map(function(r) { return { action: r }; })
+                  });
+                } catch (__e9) {}
+              }
+            }
+            // level 4：自动登记 + 补调（本轮留 TODO，不实现）
           }
         }
       } catch (__e) { console.warn('[WordFamilies] 后置校验失败：', __e); }

@@ -437,6 +437,11 @@ function SetTextInput(props) {
       multiline: false,
       numberOfLines: 1,
       textAlignVertical: 'center',
+      // P71：允许调用方声明键盘类型。URL 字段要用 keyboardType='url' ——
+      // 中文输入法会把 http://127.0.0.1 打成全角「http：、、127。0。0。1」。
+      keyboardType: props.keyboardType || 'default',
+      autoCapitalize: props.autoCapitalize || 'sentences',
+      autoCorrect: props.autoCorrect === undefined ? true : !!props.autoCorrect,
       style: style
     }
   );

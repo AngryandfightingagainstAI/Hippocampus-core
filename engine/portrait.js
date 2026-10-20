@@ -1,8 +1,9 @@
 // ============================================================
-// 人设审核 / 生成（两阶段流程）
+// 人设审核 / 生成（两阶段流程）+ 共创讨论（P71）
 // 阶段 1：AI 审核人设在世界观中的合理性 → 输出 verdict + issues
 // 阶段 2：审核通过后，AI 生成 summary + traits
-// 数据存：/saves/{cardId}/{saveId}/portrait.json
+// 数据存：/saves/{cardId}/{saveId}/portrait.json（瘦身，只存人设）
+//        /saves/{cardId}/{saveId}/portrait_chat.json（聊天 + 撤回，不进 playerData）
 // 也同步一份到 playerData.portrait 供 prompt 注入
 // ============================================================
 
@@ -13,23 +14,452 @@
       return '/saves/' + GameState.currentCardId + '/' + GameState.currentSaveId + '/portrait.json';
     },
 
-    // 从存档读取
+    // 聊天 + 撤回独立文件（不进 playerData、不进快照、不进 prompt）
+    _chatPath: function() {
+      if (!GameState.currentCardId || !GameState.currentSaveId) return null;
+      return '/saves/' + GameState.currentCardId + '/' + GameState.currentSaveId + '/portrait_chat.json';
+    },
+
+    // 从存档读取（老档缺失字段归一为 []，调用方无需再写 || []）
     load: function() {
       var p = this._path();
       if (!p) return null;
-      return VFS.readJSON(p) || null;
+      var raw = VFS.readJSON(p) || null;
+      if (!raw) return null;
+      if (!Array.isArray(raw.traits)) raw.traits = [];
+      // chat/undo 不存于此文件，但为防老档残留，归一为空（绝不返回真实聊天数据）
+      if (!Array.isArray(raw.chat)) raw.chat = [];
+      if (!Array.isArray(raw.chatArchive)) raw.chatArchive = [];
+      if (!Array.isArray(raw.undo)) raw.undo = [];
+      return raw;
     },
 
-    // 写入存档
+    // 写入存档（瘦身：剔除 chat/chatArchive/undo，防快照背聊天记录）
     save: function(portrait) {
       var p = this._path();
       if (!p) return false;
-      VFS.writeJSON(p, portrait);
+      var slim = {};
+      Object.keys(portrait || {}).forEach(function(k) {
+        if (k === 'chat' || k === 'chatArchive' || k === 'undo') return;
+        slim[k] = portrait[k];
+      });
+      VFS.writeJSON(p, slim);
       if (GameState.playerData) {
-        GameState.playerData.portrait = portrait;
+        GameState.playerData.portrait = slim;
       }
       return true;
     },
+
+    // 专读专写聊天 + 撤回独立文件（不进 playerData）
+    loadChat: function() {
+      var p = this._chatPath();
+      if (!p) return { chat: [], chatArchive: [], undo: [] };
+      var raw = VFS.readJSON(p) || null;
+      if (!raw) return { chat: [], chatArchive: [], undo: [] };
+      if (!Array.isArray(raw.chat)) raw.chat = [];
+      if (!Array.isArray(raw.chatArchive)) raw.chatArchive = [];
+      if (!Array.isArray(raw.undo)) raw.undo = [];
+      return raw;
+    },
+
+    saveChat: function(doc) {
+      var p = this._chatPath();
+      if (!p) return false;
+      var clean = {
+        chat: Array.isArray(doc.chat) ? doc.chat : [],
+        chatArchive: Array.isArray(doc.chatArchive) ? doc.chatArchive : [],
+        undo: Array.isArray(doc.undo) ? doc.undo : []
+      };
+      VFS.writeJSON(p, clean);
+      return true;
+    },
+
+    // ============================================================
+    // 动作一·讨论：buildDiscussPrompt（system + 玩家原始填写 + 聊天历史）
+    // 正常回复自然语言，绝不输出 JSON、绝不写盘
+    // ============================================================
+    buildDiscussPrompt: function(playerData, chat) {
+      var card = GameState.currentCard;
+      var lines = [];
+      lines.push('你是这个角色的创作搭档，不是审核员。');
+      lines.push('');
+      lines.push('硬规则：');
+      lines.push('1. 正常回复用自然语言，不要输出 JSON、不要重写整份人设、不要要求玩家确认最终版。');
+      lines.push('2. 可以提问、指出矛盾、给 2-3 个具体可选方向，一次最多问 1-2 个问题。');
+      lines.push('3. 玩家说"整理/写进去/保存"时，不要自己写，只回一句"好，我来整理（点『整理成人设』）"。');
+      lines.push('');
+      lines.push('【游戏背景】');
+      lines.push('标题：' + ((card && card.game && card.game.title) || ''));
+      if (card && card.game && card.game.background) lines.push('背景：' + card.game.background);
+      if (card && card.worldbook && card.worldbook.worldSetting) {
+        var ws = card.worldbook.worldSetting;
+        if (ws.description) lines.push('世界设定：' + ws.description);
+      }
+      lines.push('');
+      lines.push('【玩家原始填写】');
+      Object.keys(playerData || {}).forEach(function(k) {
+        if (k === 'inventory' || k === 'portrait') return;
+        var v = playerData[k];
+        if (v == null || v === '') return;
+        lines.push('  ' + k + '：' + (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+      });
+      // 当前属性与剩余点数（一行，让 AI 少提不可行方案）
+      var attrLine = this._attributeStatusLine(playerData);
+      if (attrLine) {
+        lines.push('');
+        lines.push('【属性】' + attrLine);
+      }
+      lines.push('');
+      // 讨论历史由 PortraitChat.buildMessages() 以真实 messages 传递，不在此重复拼接
+      lines.push('请基于以上背景，继续与玩家共创这个角色。');
+      return lines.join('\n');
+    },
+
+    // ============================================================
+    // 动作三·整理：buildExtractPrompt → 输出 patch
+    // ============================================================
+    buildExtractPrompt: function(playerData, chat) {
+      var card = GameState.currentCard;
+      var lines = [];
+      lines.push('你是角色人设整理助手。根据玩家的原始填写和讨论历史，把讨论结果整理成字段级 patch。');
+      lines.push('');
+      lines.push('输出格式（只输出 JSON，不要解释、不要 markdown 代码块）：');
+      lines.push('{');
+      lines.push('  "patch": {');
+      lines.push('    "playerData": { "字段名": "新值" },');
+      lines.push('    "portrait": { "summary": "...", "traits": ["..."] },');
+      lines.push('    "attributes": { "attr_str": 12 }');
+      lines.push('  },');
+      lines.push('  "note": "一句说明改了什么、为什么"');
+      lines.push('}');
+      lines.push('');
+      lines.push('硬规则：');
+      lines.push('1. patch 里只列讨论中明确要改的字段，没提到的不要列。');
+      lines.push('2. playerData 只改卡带声明过的字段；attributes 只能是卡带声明的属性键。');
+      lines.push('3. 数值要合理，不要超出属性范围。');
+      lines.push('4. 没有要改的内容时，patch 设为 {}，note 写"无需改动"。');
+      lines.push('');
+      lines.push('【游戏背景】');
+      lines.push('标题：' + ((card && card.game && card.game.title) || ''));
+      if (card && card.game && card.game.background) lines.push('背景：' + card.game.background);
+      lines.push('');
+      lines.push('【玩家原始填写】');
+      Object.keys(playerData || {}).forEach(function(k) {
+        if (k === 'inventory' || k === 'portrait') return;
+        var v = playerData[k];
+        if (v == null || v === '') return;
+        lines.push('  ' + k + '：' + (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+      });
+      var attrLine = this._attributeStatusLine(playerData);
+      if (attrLine) {
+        lines.push('');
+        lines.push('【属性】' + attrLine);
+      }
+      lines.push('');
+      lines.push('【讨论历史】');
+      (chat || []).forEach(function(m) {
+        lines.push((m.role === 'user' ? '玩家' : '你') + '：' + m.content);
+      });
+      return lines.join('\n');
+    },
+
+    parseExtractResponse: function(text) {
+      if (!text) return null;
+      var s = String(text).trim();
+      var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (m) s = m[1].trim();
+      var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
+      if (ob) s = ob;
+      try {
+        var p = JSON.parse(s);
+        if (!p || typeof p !== 'object') return null;
+        var patch = p.patch && typeof p.patch === 'object' ? p.patch : {};
+        return {
+          patch: {
+            playerData: (patch.playerData && typeof patch.playerData === 'object') ? patch.playerData : {},
+            portrait: (patch.portrait && typeof patch.portrait === 'object') ? patch.portrait : {},
+            attributes: (patch.attributes && typeof patch.attributes === 'object') ? patch.attributes : {}
+          },
+          note: String(p.note || '')
+        };
+      } catch (e) {
+        return null;
+      }
+    },
+
+    // ============================================================
+    // 动作三·patch 合并 + 属性校验 + 撤回记录
+    // ============================================================
+
+    // 收集卡带声明过的 playerData 键（steps[].fields[].key + attributes[].key 派生）
+    _allowedPlayerDataKeys: function(card) {
+      var keys = {};
+      (card && card.steps || []).forEach(function(step) {
+        (step.fields || []).forEach(function(f) {
+          if (f && f.key) keys[String(f.key)] = true;
+        });
+      });
+      (card && card.attributes || []).forEach(function(a) {
+        if (a && a.key) {
+          keys[String(a.key)] = true;
+          keys['attr_' + a.key] = true;
+        }
+      });
+      return keys;
+    },
+
+    // 属性元信息：attrKey → { min, max, poolKey }
+    _attributeMeta: function(card) {
+      var meta = {};
+      (card && card.attributes || []).forEach(function(a) {
+        if (!a || !a.key) return;
+        meta[a.key] = { min: a.min, max: a.max };
+        meta['attr_' + a.key] = { min: a.min, max: a.max };
+      });
+      return meta;
+    },
+
+    // 一行属性状态：力量 5/20 敏捷 8/20 · 剩余点数 5
+    _attributeStatusLine: function(playerData) {
+      var card = GameState.currentCard;
+      if (!card || !card.attributes || !card.attributes.length) return '';
+      var parts = [];
+      card.attributes.forEach(function(a) {
+        var v = playerData['attr_' + a.key];
+        if (v == null) v = playerData[a.key];
+        if (v == null) v = a.init != null ? a.init : 0;
+        parts.push((a.name || a.key) + ' ' + v + '/' + (a.max != null ? a.max : '?'));
+      });
+      var remaining = this._remainingPoints(playerData);
+      if (remaining != null) parts.push('剩余点数 ' + remaining);
+      return parts.join(' ');
+    },
+
+    _remainingPoints: function(playerData) {
+      var card = GameState.currentCard;
+      if (!card || !card.attributePool || card.attributePool.total == null) return null;
+      var pool = card.attributePool;
+      var base = pool.base != null ? pool.base : 0;
+      var allocated = 0;
+      (card.attributes || []).forEach(function(a) {
+        var v = playerData['attr_' + a.key];
+        if (v == null) v = playerData[a.key];
+        if (typeof v !== 'number' || isNaN(v)) return;
+        var fb = a.min != null ? a.min : base;
+        allocated += Math.max(0, v - fb);
+      });
+      return Math.max(0, pool.total - allocated);
+    },
+
+    // 校验属性 patch：单值 clamp min/max → 再算 allocated → 超 pool.total 整包拒绝
+    // 键一律归一为 attr_<key>（裸 x 补前缀，attr_x 保持）；未声明键忽略并警告
+    // 返回 { ok, clamped, warnings, error }
+    validateAttributes: function(attrPatch, playerData) {
+      var card = GameState.currentCard;
+      var meta = this._attributeMeta(card);
+      var pool = (card && card.attributePool) ? card.attributePool : null;
+      var base = (pool && pool.base != null) ? pool.base : 0;
+      var clamped = {};   // 归一后的 attr_<key> → 值
+      var warnings = [];
+
+      // 先逐键归一 + clamp
+      Object.keys(attrPatch || {}).forEach(function(k) {
+        var m = meta[k];
+        if (!m) {
+          warnings.push(k + ' 不是卡带声明的属性，已忽略');
+          return;
+        }
+        // 归一为 attr_<key>
+        var normKey = (k.indexOf('attr_') === 0) ? k : ('attr_' + k);
+        var v = Number(attrPatch[k]);
+        if (isNaN(v)) { warnings.push(k + ' 不是有效数值，已忽略'); return; }
+        if (m.min != null && v < m.min) { warnings.push(k + ' ' + v + ' 低于下限 ' + m.min + '，已收到 ' + m.min); v = m.min; }
+        if (m.max != null && v > m.max) { warnings.push(k + ' ' + v + ' 超出上限 ' + m.max + '，已收到 ' + m.max); v = m.max; }
+        clamped[normKey] = v;
+      });
+
+      // 再算 allocated（用 clamped 值替换原值），超 pool.total 整包拒绝
+      if (pool && pool.total != null) {
+        var allocatedBefore = 0, allocatedAfter = 0;
+        (card.attributes || []).forEach(function(a) {
+          var key = 'attr_' + a.key;
+          var vBefore = playerData[key] != null ? playerData[key] :
+                        (playerData[a.key] != null ? playerData[a.key] : (a.init != null ? a.init : 0));
+          var vAfter = (clamped[key] != null) ? clamped[key] : vBefore;
+          var fb = a.min != null ? a.min : base;
+          if (typeof vBefore === 'number' && !isNaN(vBefore)) allocatedBefore += Math.max(0, vBefore - fb);
+          if (typeof vAfter === 'number' && !isNaN(vAfter)) allocatedAfter += Math.max(0, vAfter - fb);
+        });
+        if (allocatedAfter > pool.total) {
+          var need = allocatedAfter - pool.total;
+          var remain = Math.max(0, pool.total - allocatedBefore);
+          return {
+            ok: false,
+            clamped: clamped,
+            error: '属性点不够：这次改动要多 ' + need + ' 点，当前只剩 ' + remain + ' 点'
+          };
+        }
+      }
+
+      return { ok: true, clamped: clamped, warnings: warnings };
+    },
+
+    // 合并 patch 到 playerData + portrait，只覆盖 patch 里出现的键
+    // 属性键归一为 attr_<key>，迁移历史裸键；before/after 记归一后键
+    // 返回 { ok, before, after, label, error, attrWarnings }；失败时 ok=false 且不写任何字段
+    mergePatch: function(patch, playerData) {
+      var card = GameState.currentCard;
+      var allowed = this._allowedPlayerDataKeys(card);
+      var forbidden = { inventory: true, portrait: true, _openingPrompt: true };
+
+      var pdPatch = (patch && patch.playerData) ? patch.playerData : {};
+      var ptPatch = (patch && patch.portrait) ? patch.portrait : {};
+      var attrPatch = (patch && patch.attributes) ? patch.attributes : {};
+
+      // 1. playerData 键合法性
+      var pdKeys = Object.keys(pdPatch);
+      for (var i = 0; i < pdKeys.length; i++) {
+        var k = pdKeys[i];
+        if (forbidden[k] || k.indexOf('__') === 0) {
+          return { ok: false, error: '字段 ' + k + ' 不允许修改' };
+        }
+        if (!allowed[k]) {
+          return { ok: false, error: '字段 ' + k + ' 不在卡带声明里，已拒绝' };
+        }
+      }
+
+      // 2. 属性 clamp + 池校验（整包拒绝）；clamped 的键已归一为 attr_<key>
+      var attrResult = this.validateAttributes(attrPatch, playerData);
+      if (!attrResult.ok) {
+        return { ok: false, error: attrResult.error };
+      }
+      var normAttrKeys = Object.keys(attrResult.clamped);
+
+      // 3. 构造 before / after（只记被改的键，属性用归一后键）
+      var beforePd = {}, afterPd = {};
+      pdKeys.forEach(function(k) {
+        beforePd[k] = playerData[k];
+        afterPd[k] = pdPatch[k];
+      });
+      normAttrKeys.forEach(function(nk) {
+        var bare = nk.indexOf('attr_') === 0 ? nk.slice(5) : nk;
+        // before 取有效值（attr_ 优先，裸键兜底）
+        var bv = (playerData[nk] != null) ? playerData[nk] : playerData[bare];
+        beforePd[nk] = bv;
+        afterPd[nk] = attrResult.clamped[nk];
+      });
+
+      var beforePt = {}, afterPt = {};
+      Object.keys(ptPatch).forEach(function(k) {
+        var cur = (GameState.playerData && GameState.playerData.portrait) ? GameState.playerData.portrait[k] : undefined;
+        beforePt[k] = cur;
+        afterPt[k] = ptPatch[k];
+      });
+
+      var before = { playerData: beforePd, portrait: beforePt };
+      var after = { playerData: afterPd, portrait: afterPt };
+
+      // 4. 应用到运行时
+      pdKeys.forEach(function(k) { playerData[k] = pdPatch[k]; });
+      // 属性：迁移裸键 → 写归一键 → 删裸键
+      normAttrKeys.forEach(function(nk) {
+        var bare = nk.indexOf('attr_') === 0 ? nk.slice(5) : nk;
+        if (playerData[bare] != null && playerData[nk] == null) {
+          playerData[nk] = playerData[bare];
+        }
+        delete playerData[bare];
+        playerData[nk] = attrResult.clamped[nk];
+      });
+      if (Object.keys(ptPatch).length) {
+        var curPt = (GameState.playerData && GameState.playerData.portrait) ? GameState.playerData.portrait : {};
+        var newPt = {};
+        Object.keys(curPt).forEach(function(k) { newPt[k] = curPt[k]; });
+        Object.keys(ptPatch).forEach(function(k) { newPt[k] = ptPatch[k]; });
+        this.save(newPt);
+      }
+
+      // 5. label + 通知文案（含属性忽略警告）
+      var labels = [];
+      pdKeys.forEach(function(k) { labels.push(k); });
+      normAttrKeys.forEach(function(k) { labels.push(k); });
+      Object.keys(ptPatch).forEach(function(k) { labels.push('人设.' + k); });
+      var label = labels.length ? labels.join('、') : '无改动';
+
+      return { ok: true, before: before, after: after, label: label, attrWarnings: attrResult.warnings || [] };
+    },
+
+    // 记录撤回条目（patch 级 diff，只记被改的键）
+    recordUndo: function(entry) {
+      var doc = this.loadChat();
+      doc.undo.push({
+        id: entry.id || ('undo_' + Date.now() + '_' + Math.floor(Math.random() * 1000)),
+        ts: entry.ts || new Date().toISOString(),
+        label: entry.label || '',
+        patchBefore: entry.patchBefore || {},
+        patchAfter: entry.patchAfter || {}
+      });
+      if (doc.undo.length > 10) doc.undo = doc.undo.slice(doc.undo.length - 10);
+      this.saveChat(doc);
+      return doc.undo[doc.undo.length - 1].id;
+    },
+
+    // 撤回：entryId 省略时撤栈顶；指定非栈顶时级联撤回（从栈顶往下还原 idx+1..末尾，再撤 idx）
+    // 返回 { ok, label, cascaded, error }；cascaded 为级联还原的中间改数
+    undoLast: function(entryId) {
+      var doc = this.loadChat();
+      if (!doc.undo.length) return { ok: false, error: '没有可撤回的记录' };
+      var idx = -1;
+      if (entryId) {
+        for (var i = doc.undo.length - 1; i >= 0; i--) {
+          if (doc.undo[i].id === entryId) { idx = i; break; }
+        }
+      } else {
+        idx = doc.undo.length - 1;
+      }
+      if (idx < 0) return { ok: false, error: '找不到该撤回记录' };
+
+      var self = this;
+      // 还原单条的 patchBefore
+      function revertOne(entry) {
+        if (entry.patchBefore && entry.patchBefore.playerData && GameState.playerData) {
+          Object.keys(entry.patchBefore.playerData).forEach(function(k) {
+            var v = entry.patchBefore.playerData[k];
+            if (v === undefined) delete GameState.playerData[k];
+            else GameState.playerData[k] = v;
+          });
+        }
+        if (entry.patchBefore && entry.patchBefore.portrait && GameState.playerData) {
+          var cur = GameState.playerData.portrait || {};
+          var restored = {};
+          Object.keys(cur).forEach(function(k) { restored[k] = cur[k]; });
+          Object.keys(entry.patchBefore.portrait).forEach(function(k) {
+            var v = entry.patchBefore.portrait[k];
+            if (v === undefined) delete restored[k];
+            else restored[k] = v;
+          });
+          self.save(restored);
+        }
+      }
+
+      var cascaded = 0;
+      var targetLabel = doc.undo[idx].label || '';
+      // 级联：先还原 idx+1..末尾（从栈顶往下），再撤 idx
+      for (var j = doc.undo.length - 1; j > idx; j--) {
+        revertOne(doc.undo[j]);
+        cascaded++;
+      }
+      // 撤 idx 本身
+      revertOne(doc.undo[idx]);
+      // 移除 idx..末尾（已全部还原）
+      doc.undo.splice(idx, doc.undo.length - idx);
+      this.saveChat(doc);
+
+      return { ok: true, label: targetLabel, cascaded: cascaded };
+    },
+
+    // ============================================================
+    // 以下为原有两阶段流程（verbatim 保留）
+    // ============================================================
 
     // ★ 阶段 1：审核 prompt —— 只审核合理性，不生成 summary
     buildAuditPrompt: function(playerData, discussionHistory) {
@@ -120,8 +550,6 @@
       var s = String(text).trim();
       var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (m) s = m[1].trim();
-      // O-8：共享件取第一个「花括号配平」的 JSON 对象（朴素首尾切片会把 JSON 后面
-      // 说明文字里的花括号也缝进来）
       var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
       if (ob) s = ob;
       try {
@@ -152,8 +580,6 @@
       var s = String(text).trim();
       var m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (m) s = m[1].trim();
-      // O-8：共享件取第一个「花括号配平」的 JSON 对象（朴素首尾切片会把 JSON 后面
-      // 说明文字里的花括号也缝进来）
       var ob = (typeof CardDiagnose !== 'undefined' && CardDiagnose.firstJsonObject) ? CardDiagnose.firstJsonObject(s) : null;
       if (ob) s = ob;
       try {
@@ -172,7 +598,6 @@
 
     // 兼容旧版单接口（外部可能还在调）
     parseResponse: function(text) {
-      // 尝试当生成结果解析
       return this.parseGenerateResponse(text);
     },
 

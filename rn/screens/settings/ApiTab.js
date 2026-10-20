@@ -247,7 +247,7 @@ function ApiTab() {
             React.createElement(
               View,
               { style: { width: 180 } },
-              React.createElement(Controls.SetTextInput, { value: cs.baseUrl, onChangeText: function (v) { setField('baseUrl', v); } })
+              React.createElement(Controls.SetTextInput, { value: cs.baseUrl, keyboardType: 'url', autoCapitalize: 'none', autoCorrect: false, onChangeText: function (v) { setField('baseUrl', v); } })
             )),
           React.createElement(Controls.SetRow, { label: 'API Key' },
             React.createElement(

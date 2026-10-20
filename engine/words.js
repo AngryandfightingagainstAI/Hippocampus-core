@@ -6,6 +6,23 @@
 // ============================================================
 
 (function() {
+
+  // ============ 误报豁免：转述 / 回忆 / 假设 ============
+  // 命中以下模式的正文，词族触发一律视为转述或回忆，不登记为"漏调工具"。
+  function _isReportedOrMemory(text) {
+    if (!text) return false;
+    var t = String(text);
+    // 转述：某人说/道/告诉/问…
+    if (/(他|她|它|他们|她们|它们|谁|某人|有人|对方|那人|此人).{0,6}(说|道|告诉|问|回答|喊|叫|嚷|嘀咕|嘟囔|念叨|叹|笑骂)/.test(t)) return true;
+    // 回忆 / 回溯
+    if (/(我|你|他|她|我们|你们).{0,3}(记得|想起|回忆|回想|怀念|记起|依稀|隐约|仿佛|好像|似乎|恍如|恍然)/.test(t)) return true;
+    // 假设 / 条件
+    if (/(如果|要是|假如|假若|倘若|万一|若|假使|设若|譬如|比如)/.test(t)) return true;
+    // 疑问句（不确定语气）
+    if (/吗[？?]|呢[？?]|么[？?]|难道|莫非|是不是/.test(t)) return true;
+    return false;
+  }
+
   var WordFamilies = {
 
     // ============ 受伤 / 流血 ============
@@ -34,7 +51,10 @@
       ],
       weak: [
         '痕迹', '残迹', '印子', '印痕'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 疲劳 / 困倦 ============
@@ -56,7 +76,10 @@
       literary: [
         '倦意', '困意', '睡意',
         '眼皮发沉', '眼皮打架', '四肢灌铅', '眼皮像灌了铅'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 饥饿 / 口渴 ============
@@ -77,7 +100,10 @@
       ],
       literary: [
         '腹中空空', '肚皮贴脊梁', '胃像被掏空'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 物品获取 ============
@@ -96,7 +122,10 @@
       ],
       literary: [
         '落入掌中', '纳入怀中', '收入袖中'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 物品丢失 ============
@@ -116,7 +145,10 @@
       ],
       literary: [
         '烟消云散', '销声匿迹', '杳无踪迹'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 金钱变化 ============
@@ -133,7 +165,10 @@
         '获利', '盈利',
         '剩下', '还剩', '余额', '不够花',
         '钱不够', '缺钱', '没钱', '身无分文', '囊中羞涩'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 关系变化 ============
@@ -147,7 +182,10 @@
         '反感', '厌恶', '讨厌', '疏远', '冷淡', '冷漠', '戒备',
         '警惕', '怀疑', '不信任', '敌意', '敌视', '仇恨',
         '关系变差', '闹翻', '翻脸', '决裂', '绝交'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 天气变化 ============
@@ -169,7 +207,10 @@
         '起风', '刮风', '大风', '狂风', '暴风', '台风',
         '微风', '冷风', '热风',
         '狂风暴雨', '朔风'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ NPC 登场 / 离场 ============
@@ -184,18 +225,240 @@
         '离开', '转身走', '退场',
         '转身离去', '离去', '走远', '远去',
         '退了出去', '退开', '抽身', '告辞'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
     },
 
     // ============ 成就 / 元层意图 ============
     achievement: {
       tool: 'add_achievement',
+      expectedTool: 'add_achievement',
       label: '成就',
       core: [
         '应该加', '记一下', '记下来', '记录下来', '添加', '加到',
         '加个', '加一条', '应该改成', '应该是', '不该再',
         '以后别', '不要再', '移除', '删掉'
-      ]
+      ],
+      exempt: function(text, words) {
+        return _isReportedOrMemory(text);
+      }
+    },
+
+    // ============ 事件触发 ============
+    event: {
+      tool: 'trigger_event',
+      expectedTool: 'trigger_event',
+      label: '事件',
+      core: [
+        '触发了', '发生了', '事件', '剧情事件',
+        '意外发生', '突发事件', '变故', '事端',
+        '出事了', '闹出', '惹出'
+      ],
+      extended: [
+        '引爆', '掀起', '引发', '激起', '酿成',
+        '事态升级', '局面失控'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "事件"作为普通词（如"公共事件"）不触发
+        if (words.length === 1 && words[0] === '事件' && !/触发|发生|引发|引爆|掀起/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 任务完成 / 接取 ============
+    task: {
+      tool: 'complete_task',
+      expectedTool: 'complete_task',
+      label: '任务',
+      core: [
+        '任务完成', '完成了任务', '任务做完', '交差',
+        '接到任务', '接了个任务', '领到任务', '接受委托',
+        '委托', '差事', '活儿'
+      ],
+      extended: [
+        '任务失败', '任务放弃', '放弃任务',
+        '交付', '复命', '销差'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "任务"作为普通词（如"历史任务"）不触发
+        if (words.length === 1 && words[0] === '任务' && !/完成|接到|领到|接受|放弃|失败|做完|交差|销差|委托|复命/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 结局达成 ============
+    ending: {
+      tool: 'trigger_ending',
+      expectedTool: 'trigger_ending',
+      label: '结局',
+      core: [
+        '结局', '落幕', '终局', '收官',
+        '故事结束', '一切都结束了', '尘埃落定',
+        '大结局', '圆满结局', '悲惨结局'
+      ],
+      extended: [
+        '尾声', '终章', '曲终人散', '盖棺定论'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "结局"作为讨论/假设不触发
+        if (/(如果|要是|假如|假设).{0,6}结局/.test(text)) return true;
+        if (/什么结局|怎样的结局|什么样的结局/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 剧情节点进入 / 完成 ============
+    node: {
+      tool: 'enter_node',
+      expectedTool: 'enter_node',
+      label: '剧情节点',
+      core: [
+        '进入节点', '到达节点', '剧情节点',
+        '节点完成', '完成节点', '节点开启',
+        '里程碑', '转折点', '关键节点'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "节点"作为网络/技术术语不触发
+        if (/网络节点|关节点|淋巴节点|节点电压/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 伏笔埋设 / 揭示 ============
+    foreshadow: {
+      tool: 'bury_foreshadow',
+      expectedTool: 'bury_foreshadow',
+      label: '伏笔',
+      core: [
+        '埋下伏笔', '埋伏笔', '伏笔',
+        '呼应前文', '前后呼应', '回收伏笔',
+        '揭示', '揭晓', '真相大白'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "伏笔"作为写作讨论不触发
+        if (/伏笔.{0,4}(手法|技巧|写法|大师)/.test(text)) return true;
+        // 单纯"揭示/揭晓"需配合真相类词
+        if ((words.indexOf('揭示') >= 0 || words.indexOf('揭晓') >= 0) && !/真相|秘密|谜底|谜团/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 商店 / 交易 ============
+    shop: {
+      tool: 'open_shop',
+      expectedTool: 'open_shop',
+      label: '商店交易',
+      core: [
+        '开商店', '打开商店', '进入商店', '逛商店',
+        '买了', '买下', '购入', '入手',
+        '卖了', '卖出', '出售', '转手',
+        '交易', '买卖', '生意'
+      ],
+      extended: [
+        '讨价还价', '砍价', '讲价', '结账', '买单'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "商店"作为地点名不触发
+        if (words.length === 1 && words[0] === '商店' && !/开|打|进|逛/.test(text)) return true;
+        // "生意"作为普通词不触发
+        if (words.length === 1 && words[0] === '生意' && !/做|谈|成|黄/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 状态卡变更 ============
+    status: {
+      tool: 'update_status',
+      expectedTool: 'update_status',
+      label: '状态卡',
+      core: [
+        '状态更新', '更新状态', '状态变更', '状态改变',
+        '内心独白', '心声', '心理活动'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "状态"泛称不触发
+        if (words.length === 1 && words[0] === '状态' && !/更新|变更|改变|设置/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 信息层发送 / 广播 ============
+    info: {
+      tool: 'info_send',
+      expectedTool: 'info_send',
+      label: '信息',
+      core: [
+        '收到消息', '发来消息', '收到信息', '发来信息',
+        '通知', '通报', '告知', '传达',
+        '广播', '播报', '散布消息', '放出风声'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "信息"作为泛称不触发
+        if (words.length === 1 && words[0] === '信息' && !/收到|发来|通知|通报|告知|传达|广播|播报/.test(text)) return true;
+        // "通知"作为动词泛称需配合消息类
+        if (words.length === 1 && words[0] === '通知' && !/消息|信息|大家|众人/.test(text)) return true;
+        return false;
+      }
+    },
+
+    // ============ 时间推进 ============
+    // 注：时间推进不走工具，而是 AI 输出【时间】块。expectedTool 用伪标记 '__time_block__'，
+    //   story.js 判定时检查正文是否含【时间】块，不含且命中时间词则引擎自动推进 gameTime。
+    time: {
+      tool: '__time_block__',
+      expectedTool: '__time_block__',
+      label: '时间推进',
+      core: [
+        '第二天', '第三天', '三天后', '两天后', '一天后',
+        '次日', '翌日', '隔日', '次日清晨',
+        '入夜', '清晨', '黎明', '拂晓', '黄昏', '傍晚',
+        '午夜', '深夜', '半夜', '三更',
+        '过了一会', '过了一会儿', '不久', '片刻后',
+        '几个时辰后', '一个时辰后',
+        '一周后', '一个月后', '一年后',
+        '时间流逝', '时光飞逝'
+      ],
+      extended: [
+        '斗转星移', '物换星移', '春去秋来', '寒来暑往'
+      ],
+      exempt: function(text, words) {
+        // 回忆/转述中的时间词不触发推进
+        if (_isReportedOrMemory(text)) return true;
+        // "我记得那天"不是时间推进
+        if (/我记得.{0,4}(那天|那天晚上|那天清晨|那天傍晚)/.test(text)) return true;
+        // "第二天"在假设句中不触发
+        if (/(如果|要是|假如|假若|倘若|万一).{0,8}第二天/.test(text)) return true;
+        // "入夜/清晨"作为场景描写但已有【时间】块的由 story.js 处理，这里只做纯文本豁免
+        return false;
+      }
+    },
+
+    // ============ 技能习得 ============
+    skill: {
+      tool: 'modify_entry',
+      expectedTool: 'modify_entry',
+      label: '技能',
+      core: [
+        '学会了', '掌握了', '习得', '练成了',
+        '技能提升', '技能升级', '熟练度提升',
+        '领悟了', '参悟', '悟出'
+      ],
+      exempt: function(text, words) {
+        if (_isReportedOrMemory(text)) return true;
+        // "学会"泛称不触发（需配合具体技能名）
+        if (words.length === 1 && words[0] === '学会了' && !/刀法|剑法|拳法|内功|法术|术|技|艺/.test(text)) return true;
+        return false;
+      }
     }
 
   };
@@ -210,7 +473,7 @@
     var self = this;
 
     Object.keys(this).forEach(function(key) {
-      if (key === 'detect' || key === 'checkMissing') return;
+      if (key === 'detect' || key === 'checkMissing' || key === 'analyze') return;
       var family = self[key];
       if (!family || !family.core) return;
 
@@ -291,6 +554,100 @@
     });
 
     return missing;
+  };
+
+  // ============ 新判定函数（P70 · T1） ============
+  // 输入：AI 正文文本 + toolResults（已执行的工具结果数组）+ opts（可选，含 hasTimeBlock）
+  // 输出：[{ kind, expectedTool, hit, snippet, exempt, toolCalled, typeKey }]
+  //   kind: 词族名
+  //   expectedTool: 期望工具名（time 族为 '__time_block__'，表示应输出【时间】块而非调工具）
+  //   hit: 命中的词列表
+  //   snippet: 命中词周围的正文片段（前 10 后 10 字）
+  //   exempt: 是否误报豁免（true = 不登记）
+  //   toolCalled: 期望工具是否已被调用（time 族由调用方据 hasTimeBlock 判定）
+  //   typeKey: 工具结果的 type 字段值（用于 toolResults 匹配）
+  // 纯逻辑、可单测，不调 AI、不碰 DOM。
+  WordFamilies.analyze = function(text, toolResults, opts) {
+    opts = opts || {};
+    var hits = this.detect(text);
+    if (!hits.length) return [];
+
+    var out = [];
+    var self = this;
+
+    // typeKey 映射：词族 → 工具结果 r.type 的值
+    function typeKeyFor(kind) {
+      switch (kind) {
+        case 'injury': case 'money': return 'hud';
+        case 'fatigue': case 'hunger': return 'sidebar';
+        case 'acquire': case 'loss': return 'item';
+        case 'relation': return 'relation';
+        case 'weather': return 'weather';
+        case 'npc': return 'npc_state';
+        case 'achievement': return 'achievement';
+        case 'event': return 'event';
+        case 'task': return 'task';
+        case 'ending': return 'ending';
+        case 'node': return 'node';
+        case 'foreshadow': return 'node';   // 伏笔走 story_nodes
+        case 'shop': return 'shop';
+        case 'status': return 'status';
+        case 'info': return 'info';
+        case 'skill': return 'entry';
+        case 'time': return '__time_block__';
+        default: return kind;
+      }
+    }
+
+    hits.forEach(function(h) {
+      var family = self[h.family];
+      var expectedTool = (family && family.expectedTool) || h.tool || '';
+      var typeKey = typeKeyFor(h.family);
+
+      // 误报豁免
+      var exempt = false;
+      if (family && typeof family.exempt === 'function') {
+        try { exempt = !!family.exempt(text, h.matched); } catch (e) { exempt = false; }
+      }
+
+      // 工具是否已调用
+      var toolCalled = false;
+      if (h.family === 'time') {
+        // 时间族：调用方传 hasTimeBlock 表示正文是否含【时间】块
+        toolCalled = !!opts.hasTimeBlock;
+      } else if (toolResults && toolResults.length) {
+        for (var i = 0; i < toolResults.length; i++) {
+          var r = toolResults[i];
+          if (!r || !r.ok) continue;
+          if (r.type === typeKey) { toolCalled = true; break; }
+        }
+      }
+
+      // 截取命中词周围的片段
+      var snippet = '';
+      var firstWord = h.matched[0] || '';
+      if (firstWord) {
+        var idx = String(text).indexOf(firstWord);
+        if (idx >= 0) {
+          var start = Math.max(0, idx - 10);
+          var end = Math.min(String(text).length, idx + firstWord.length + 10);
+          snippet = String(text).slice(start, end);
+        }
+      }
+
+      out.push({
+        kind: h.family,
+        label: (family && family.label) || h.family,
+        expectedTool: expectedTool,
+        hit: h.matched.slice(),
+        snippet: snippet,
+        exempt: exempt,
+        toolCalled: toolCalled,
+        typeKey: typeKey
+      });
+    });
+
+    return out;
   };
 
   if (typeof window !== 'undefined') window.WordFamilies = WordFamilies;

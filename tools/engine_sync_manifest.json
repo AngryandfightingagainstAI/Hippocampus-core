@@ -2,17 +2,17 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-19T12:45:03Z",
+  "recordedAt": "2026-10-20T16:31:26Z",
   "heads": {
     "rn": null,
     "desktop": null
   },
   "counts": {
-    "mirror": 65,
+    "mirror": 66,
     "mirrorEol": 22,
     "fork": 17,
-    "unsharedDesktop": 123,
-    "unsharedRn": 159
+    "unsharedDesktop": 128,
+    "unsharedRn": 156
   },
   "mirror": [
     "engine/achievements.js",
@@ -49,6 +49,7 @@
     "engine/npc_runtime.js",
     "engine/outputs.js",
     "engine/portrait.js",
+    "engine/portrait_chat.js",
     "engine/proposal_semantic_check.js",
     "engine/proposal_validator.js",
     "engine/proposals.js",
@@ -138,8 +139,8 @@
     },
     "engine/core/storage.js": {
       "rn": "4777A5C488743AE4E80D74A32A510A8B",
-      "desktop": "2DB0861986A2090C9A9AB8A24584C2EF",
-      "diffLines": 251
+      "desktop": "811CE7151C3AFBB2D74DB608A3F6531E",
+      "diffLines": 253
     },
     "engine/npc_deduction.js": {
       "rn": "22041C70992B34910641D8A5778545D2",
