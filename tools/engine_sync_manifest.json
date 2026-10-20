@@ -2,16 +2,16 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-20T16:31:26Z",
+  "recordedAt": "2026-10-20T17:21:44Z",
   "heads": {
     "rn": null,
     "desktop": null
   },
   "counts": {
-    "mirror": 66,
-    "mirrorEol": 22,
-    "fork": 17,
-    "unsharedDesktop": 128,
+    "mirror": 68,
+    "mirrorEol": 23,
+    "fork": 16,
+    "unsharedDesktop": 129,
     "unsharedRn": 156
   },
   "mirror": [
@@ -24,6 +24,7 @@
     "engine/core/api_client.js",
     "engine/core/card_validator.js",
     "engine/core/cards_demo.js",
+    "engine/core/prompt_builder.js",
     "engine/core/tool_executor.js",
     "engine/creation_quiz.js",
     "engine/destiny.js",
@@ -50,6 +51,7 @@
     "engine/outputs.js",
     "engine/portrait.js",
     "engine/portrait_chat.js",
+    "engine/prompt_inspect.js",
     "engine/proposal_semantic_check.js",
     "engine/proposal_validator.js",
     "engine/proposals.js",
@@ -89,6 +91,7 @@
     "engine/card_diagnose.js",
     "engine/core/card_validator.js",
     "engine/core/cards_demo.js",
+    "engine/core/prompt_builder.js",
     "engine/dice.js",
     "engine/dice_history.js",
     "engine/endings.js",
@@ -131,11 +134,6 @@
       "rn": "E59DF6A01FBBF772FAAE143588C0296C",
       "desktop": "28C06930941317AC16D6512DCC79A770",
       "diffLines": 249
-    },
-    "engine/core/prompt_builder.js": {
-      "rn": "7F27B6F4F7B1AADA6DE42D10C009A59B",
-      "desktop": "D367E0BB320091DD532D3ACDDFF40649",
-      "diffLines": 587
     },
     "engine/core/storage.js": {
       "rn": "4777A5C488743AE4E80D74A32A510A8B",

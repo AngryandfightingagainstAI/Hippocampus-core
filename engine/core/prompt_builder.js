@@ -4,6 +4,7 @@
 // PromptBuilder 组装每轮 prompt：静态规则 / 实体索引 / 动态状态快照。
 // 消费 GameState、Storage、Alias、getDiceConfig 及各子系统的可选接口。
 // ============================================================
+// 平台依赖：⚠ 中间态：A 形代码 / B 依赖（裸调 Storage / GameState / Alias / getDiceConfig，单独搬 RN 无法运行）
 
 var GM_DEFAULTS = {
   engineRules: [
@@ -20,10 +21,10 @@ var GM_DEFAULTS = {
     '玩家主体归玩家：说了什么 / 想了什么 / 感受到什么 / 决定了什么 / 下一步一定会做什么，这五件事都出自玩家本人。只有两种情况你代玩家落笔：玩家输入明确要求，或引擎已产生确定状态。玩家输入按 OOC 行动指令理解（与【用户指令识别】的 OOC 口径一致）。',
     // P11·S3：NPC 自主细则（原仅靠可被清空的 cardStyle 部分覆盖）。
     'NPC 可以拒绝、误解、不信、忽略玩家、改变计划、与他人行动、产生玩家不知道的信息、在玩家离开后继续行动。可以行动 ≠ 必须行动：允许不行动、等待、观察、犹豫。',
-  // P14·S1：玩家陈述（Claim）≠ 世界事实（Fact）。原系统里「玩家说自己是皇家骑士」
-  //   与「引擎确认玩家是皇家骑士」在数据上无法区分，AI 会把玩家的话直接写成既定事实。
-  //   本条只约束「怎么说」，不判断真假（真假交给 NPC 的知识与证据）。
-  '玩家说出来的话是「声称」，世界事实另有来源。玩家可以撒谎、吹牛、试探、开玩笑，也可以说真话——真假由 NPC 和后续证据裁决。所以在叙述里，玩家说的「我是 X / 我有 Y / 我做过 Z」以玩家本人的说法出现（他说 / 他自称 / 他称）；当作事实叙述的只有三种：引擎工具已确认的状态、已发生的既成事件、检定与调查得到的结果。'
+    // P14·S1：玩家陈述（Claim）≠ 世界事实（Fact）。原系统里「玩家说自己是皇家骑士」与
+    //   「引擎确认玩家是皇家骑士」在数据上无法区分，AI 会把玩家的话直接写成既定事实。
+    //   本条只约束「怎么说」，不判断真假（真假交给 NPC 的知识与证据）。
+    '玩家说出来的话是「声称」，世界事实另有来源。玩家可以撒谎、吹牛、试探、开玩笑，也可以说真话——真假由 NPC 和后续证据裁决。所以在叙述里，玩家说的「我是 X / 我有 Y / 我做过 Z」以玩家本人的说法出现（他说 / 他自称 / 他称）；当作事实叙述的只有三种：引擎工具已确认的状态、已发生的既成事件、检定与调查得到的结果。'
   ],
   promptRules: [
     'AI 的角色是 DM：主持世界的人。世界的逻辑优先于玩家的期待。',
@@ -47,11 +48,13 @@ var GM_DEFAULTS = {
 // ============================================================
 // ★ P4 · prompt 预算刹车的降级阶梯。
 //   档序固定、每档只改渲染方式不改数据 ⇒ 同一输入连跑两次结果逐字一致。
-// P10·B1：删掉原第 3 档 'names'。理由：NpcRuntime.formatSceneBrief/formatFollowBrief
-//   本来就直接返回「甲、乙、丙」名字串（npc_runtime.js:822-838），而 _toNameString 只认
-//   `·` 开头的条目行 ⇒ 该档对真实数据是空档，只删掉一行「想让某人上镜头」提示。
+// P13·S3：删掉原第 3 档 'names'（与 RN 的 P10·B1 对齐）。理由：NpcRuntime.formatSceneBrief/
+//   formatFollowBrief 本来就直接返回「甲、乙、丙」名字串（两仓同源 npc_runtime.js），而
+//   _toNameString 只认 `·` 开头的条目行 ⇒ 该档对**真实数据**是空档，只删掉一行
+//   「想让某人上镜头」提示。P12 时判成「不是空档」，是因为当时桌面冒烟把 brief 假件写成
+//   bigLines（带 `·` 的条目行），是假形态；P13·S3 已把假件改成生产形态。
 //   另一选项（把两个 formatter 改成结构化如 `· 名字（位置）`）会给未降级的正常 prompt
-//   增内容，与 B2「降 token」相反，且要动两仓同源件 npc_runtime.js ⇒ 取删档。
+//   增内容，与「降 token」相反，且要动两仓同源件 npc_runtime.js ⇒ 取删档。
 //   影响：降级阶梯由 7 档变 6 档；档序 id 序列见本数组。
 var DEGRADE_STEPS = [
   { id: 'recent1', note: '产出物发酵 / 骰子历史 / 成就：只留最近 1 条' },
@@ -79,6 +82,17 @@ function _deductionOn() {
 }
 
 var PromptBuilder = {
+  // P70-T2：上下文查看器分块记录（纯内存态，不进存档/prompt）。
+  //   只记引用，不改任何拼接输出——输出文本一个字符都不动。
+  _piBlock(id, text) {
+    try {
+      if (typeof GameState !== 'undefined' && GameState) {
+        if (!GameState._lastPromptBlocks) GameState._lastPromptBlocks = {};
+        GameState._lastPromptBlocks[id] = text;
+      }
+    } catch (e) {}
+  },
+
   buildStatic() {
     const card = GameState.currentCard;
     const g = Storage.getGlobal();
@@ -228,10 +242,6 @@ var PromptBuilder = {
     lines.push('位置：set_location(locationId, reason?) / list_destinations(scope?)（scope: all/children/siblings）');
     lines.push('NPC 管理：add_keyword(id, keyword) / npc_enter(id) / npc_leave(id, to?)（to 可选 "dormant"|"offstage"，默认 dormant）');
     lines.push('NPC 知识：npc_knows(id, text, source?, sourceNote?, origin?, unverified?)（source: witness/told/rumor/public/deduced/misconception/manual/legacy，默认 deduced；玩家本人告诉 NPC 的事用 origin:"player" + unverified:true，表示「玩家这么说过」而非「已确认的事实」）');
-    // P9·S1：信息层（手机）工具协议 4 行，逐字搬自桌面 engine/core/prompt_builder.js:191-194。
-    //   位置对齐桌面：npc_knows 与 request_deduction 之间。
-    // P10·B2⑤：info_send / info_broadcast 在本静态协议段声明一次，第四部分信息层块
-    //   另有「（你可用 info_send 发讯息…）」的当轮指路——属语境指路非协议声明，可接受。
     lines.push('手机讯息：info_send(to, text)（给某 NPC 或玩家发一条讯息，剧情外，玩家在手机里看到）');
     lines.push('手机广播：info_broadcast(title, body, opts)（publicity: 暗中/半公开/公开/轰动；scope: 当事人/家庭/势力/城市/世界）');
     lines.push('手机查询：info_read(kind, limit)（查看你已经发过、玩家看过的讯息与广播，避免重复发送）');
@@ -335,13 +345,15 @@ var PromptBuilder = {
     }
 
     lines.push('');
-    return lines.join('\n');
+    const __out = lines.join('\n');
+    this._piBlock('static', __out);
+    return __out;
   },
 
   buildSemiStatic() {
     if (GameState._cachedStaticDynamic) return GameState._cachedStaticDynamic;
     const card = GameState.currentCard;
-    if (!card) return '';
+    if (!card) { this._piBlock('semiStatic', ''); this._piBlock('entity', ''); return ''; }
 
     const lines = [];
     lines.push('════════════════════════════════════════');
@@ -354,6 +366,7 @@ var PromptBuilder = {
       const pt = Portrait.formatForPrompt(portrait);
       if (pt) { lines.push(pt); lines.push(''); }
     }
+
     // P67：开局问卷结论（分院 / 魔杖 / 守护神 一类）。引擎判定，不是模型推测，
     //   写正文时作为既成事实引用；没有问卷的卡带这里一行不出现。
     try {
@@ -366,6 +379,10 @@ var PromptBuilder = {
     } catch (e) {}
 
     const entityIdx = this.buildEntityIndex();
+    // P70-T2：semiStatic 块 = 不含实体索引的部分，与 entity 块互斥（避免查看器双算）。
+    //   join 只为取记录快照，不改动 lines 与最终输出。
+    this._piBlock('semiStatic', lines.join('\n'));
+    this._piBlock('entity', entityIdx || '');
     if (entityIdx) lines.push(entityIdx);
 
     const result = lines.join('\n');
@@ -379,34 +396,55 @@ var PromptBuilder = {
     const wb = card.worldbook || {};
     const LIMIT = 40;
     const lines = [];
+    // P70-T2：世界书命中采集——每次真正重建时清空（buildSemiStatic 缓存命中
+    //   不会走到这，旧记录与缓存文本一致，仍然有效）。
+    try {
+      if (typeof GameState !== 'undefined' && GameState) {
+        GameState._lastEntityHits = [];
+        GameState._lastEntityClipped = {};
+      }
+    } catch (e) {}
 
-    const fmtList = function(arr, nameKey) {
+    const fmtList = function(arr, nameKey, groupId) {
       if (!Array.isArray(arr) || !arr.length) return null;
       const shown = arr.slice(0, LIMIT).map(function(x) {
         const n = x[nameKey] || x.name || x.label || x.id || '?';
         return n + '(' + (x.id || '?') + ')';
       });
+      // P70-T2：只记已注入条目；被 LIMIT 截掉的条数记进 clipped（不进 hits）。
+      try {
+        if (typeof GameState !== 'undefined' && GameState) {
+          const hits = GameState._lastEntityHits = GameState._lastEntityHits || [];
+          arr.slice(0, LIMIT).forEach(function(x) {
+            const n = x[nameKey] || x.name || x.label || x.id || '?';
+            const entry = n + '(' + (x.id || '?') + ')';
+            hits.push({ group: groupId, key: x.id || '?', name: n, chars: entry.length, clipped: false });
+          });
+          const cc = GameState._lastEntityClipped = GameState._lastEntityClipped || {};
+          cc[groupId] = arr.length > LIMIT ? arr.length - LIMIT : 0;
+        }
+      } catch (e) {}
       let s = shown.join(' · ');
       if (arr.length > LIMIT) s += ' …等 ' + arr.length + ' 个';
       return s;
     };
 
-    const npcStr = fmtList(wb.npcs, 'name');
+    const npcStr = fmtList(wb.npcs, 'name', 'npcs');
     if (npcStr) lines.push('· NPC：' + npcStr);
-    const facStr = fmtList(wb.factions, 'name');
+    const facStr = fmtList(wb.factions, 'name', 'factions');
     if (facStr) lines.push('· 势力：' + facStr);
     const nodeArr = Object.keys(wb.mapNodes || {}).map(function(k) { return wb.mapNodes[k]; });
-    const nodeStr = fmtList(nodeArr, 'name');
+    const nodeStr = fmtList(nodeArr, 'name', 'mapNodes');
     if (nodeStr) lines.push('· 地点：' + nodeStr);
-    const itemStr = fmtList(wb.items, 'name');
+    const itemStr = fmtList(wb.items, 'name', 'items');
     if (itemStr) lines.push('· 物品：' + itemStr);
-    const skillStr = fmtList(wb.skills, 'name');
+    const skillStr = fmtList(wb.skills, 'name', 'skills');
     if (skillStr) lines.push('· 技能：' + skillStr);
     if (wb.hasRaces && Array.isArray(wb.races) && wb.races.length) {
-      const raceStr = fmtList(wb.races, 'name');
+      const raceStr = fmtList(wb.races, 'name', 'races');
       if (raceStr) lines.push('· 种族：' + raceStr);
     }
-    const occStr = fmtList(wb.occupations, 'name');
+    const occStr = fmtList(wb.occupations, 'name', 'occupations');
     if (occStr) lines.push('· 职业：' + occStr);
 
     const tl = (wb.timeline && Array.isArray(wb.timeline.official)) ? wb.timeline.official : [];
@@ -567,14 +605,19 @@ var PromptBuilder = {
       }
     } catch (e) {}
     lines.push('>>> （需要详细角色信息时调 query_player）');
-    const hudLine = GameState.currentState.hud.map(h => h.key + '=' + (h.current != null ? h.current : '?') + (h.max ? '/' + h.max : '')).join(' | ');
+    // ★ 老存档兜底：`GameState.load()` 在「存档里有 currentState」时原样采纳（gamestate.js:77），
+    //   早年存档可能缺 hud / sidebar / panels。以前这里直接 .map 会抛
+    //   `Cannot read properties of undefined (reading 'map')`，而 callAI 把异常吞成
+    //   「这一轮什么都没发生」——玩家侧表现为卡住不出字，极难查。缺字段按空处理即可。
+    const _st = GameState.currentState || {};
+    const hudLine = (_st.hud || []).map(h => h.key + '=' + (h.current != null ? h.current : '?') + (h.max ? '/' + h.max : '')).join(' | ');
     lines.push('>>> HUD：' + hudLine);
-    const sbLine = GameState.currentState.sidebar.map(s => {
+    const sbLine = (_st.sidebar || []).map(s => {
       const seg = GameState.getSegmentText(s);
       return s.key + '=' + (s.current != null ? s.current : '?') + (s.max ? '/' + s.max : '') + (seg ? '[' + seg.slice(0, 12) + ']' : '');
     }).join(' | ');
     lines.push('>>> Sidebar：' + sbLine);
-    Object.values(GameState.currentState.panels).forEach(p => {
+    Object.values(_st.panels || {}).forEach(p => {
       if (!p.entries || !p.entries.length) return;
       const ls = p.entries.map(e => {
         if (e.type === 'number' || e.type === 'relation') {
@@ -615,7 +658,7 @@ var PromptBuilder = {
       }
     }
 
-    // ★ NPC 三层舞台（【镜头内】必须保留）。P10·B1：原 'names' 档已删（对真实数据是空档）。
+    // ★ NPC 三层舞台（【镜头内】必须保留）。P13·S3：原 'names' 档已删（对真实数据是空档）。
     if (typeof NpcRuntime !== 'undefined') {
       var focusBrief = NpcRuntime.formatFocusBrief();
       var sceneBrief = NpcRuntime.formatSceneBrief();
@@ -720,7 +763,7 @@ var PromptBuilder = {
         if (active.npcs.length) lines.push('>>> 相关NPC：' + active.npcs.join('、'));
         if (active.unresolved.length) lines.push('>>> 未完成：' + active.unresolved.join('；'));
       }
-      // 有摘要时提示还能去搜原文；摘要被降到 0 时这一句必须留着，别让 AI 无路可走
+      // 有摘要时提示还能去搜原文（对齐 RN P4；压缩后的原文都在 fullText/chunks 里）
       if (sums.length > 0 || on('sum0')) {
         lines.push('>>> （更早的事可调 query_log({keyword})）');
       }
@@ -732,6 +775,7 @@ var PromptBuilder = {
       // P10·B2③：同上，query_* 只在【工具协议】声明一次。
       lines.push('>>> （详情见【工具协议】查询类）');
     }
+
     // ★ P65：工具留痕（10 轮 TTL）+ 定期关键词自检。
     //   两段都是「有才出」：没有痕迹就不出一行，避免模型把空块当成暗示。
     try {
@@ -742,6 +786,7 @@ var PromptBuilder = {
         if (checkBlock) lines.push(checkBlock);
       }
     } catch (e) {}
+
     lines.push('');
     lines.push('════════════════════════════════════════');
     lines.push('【系统状态结束】现在开始写剧情。你的输出 = 【正文】+【时间】+【选项】。上面这些是参考。');
@@ -755,11 +800,10 @@ var PromptBuilder = {
   buildDynamic() {
     const budget = this._getBudget();
     const maxLevel = DEGRADE_STEPS.length;
-    // P9·S4：系统通知块在 _buildDynamicLines 里 forEach 后立刻清空，而刹车会多次
-    //   重渲染（level 0 → 1 → …）。若不回填，只要降级触发，本轮「玩家 X 进入新状态」
-    //   这类通知就会从 prompt 消失（唯一入队点 engine/story.js:252）。故每次重渲染前
-    //   把快照回填；渲染原语本身仍负责清空，保持单次消费语义。
-    //   （反向搬自桌面 engine/core/prompt_builder.js:668-673）
+    // ★ 随刹车一并移植的缺陷修复：系统通知块在 _buildDynamicLines 里 forEach 后立刻清空，
+    //   而刹车会多次重渲染（level 0 → 1 → …）。若不回填，只要降级触发，本轮
+    //   「玩家 X 进入新状态」这类通知就会从 prompt 消失（唯一入队点 engine/story.js:252）。
+    //   故每次重渲染前把快照回填；渲染原语本身仍负责清空，保持单次消费语义。
     const canLog = (typeof GameState !== 'undefined' && GameState);
     const notices = canLog ? GameState._pendingSystemNotices.slice() : [];
     const render = (lv) => {
@@ -778,6 +822,7 @@ var PromptBuilder = {
         // P9·S14：预算口径 = 第四部分（状态快照）估算，供侧栏「状态快照」显示
         GameState._lastPromptEstimate = this.estimateTokens(text);
         GameState._lastPromptChars = text.length;
+        this._piBlock('dynamic', text);
       }
       return text;
     }
@@ -803,6 +848,7 @@ var PromptBuilder = {
       // P9·S14：预算口径 = 第四部分（状态快照）估算，供侧栏「状态快照」显示
       GameState._lastPromptEstimate = this.estimateTokens(text);
       GameState._lastPromptChars = text.length;
+      this._piBlock('dynamic', text);
     }
     return text;
   },
@@ -826,6 +872,11 @@ var PromptBuilder = {
   // ---------- P4 降级原语（纯文本、确定性） ----------
   _splitLines(text) { return String(text == null ? '' : text).split('\n'); },
   _isItemLine(l) { return /^\s*[·\-*]/.test(l); },
+
+  // P47：以下三处（_isTailLine / _keepFirstItem 的块尾保留 / _clipItemLines 的块尾整段保留）
+  //   自手机侧 P9·S12 回移对齐桌面。此前桌面缺这三处：多条目块降级时，第二条目行之后的
+  //   「>>> （…）」提示与信息层「（默认只写在手机里、不进正文）」「>>> 【信息层结束】」
+  //   会被裁掉，AI 失去「这不是正文」的线索。两仓行为一致性由批内守卫 P47 锁死。
 
   // 只留第一条：保留头部（首个条目行之前的行）+ 第一条目行及其后续非空续行
   _keepFirstItem(text) {
@@ -876,6 +927,7 @@ var PromptBuilder = {
     }
     return out.join('\n');
   },
+
 
   // 数条目行条数（无条目行则按非空行数兜底）
   _countItems(text) {
@@ -959,11 +1011,8 @@ if (typeof window !== 'undefined') {
   window.GM_DEFAULTS = GM_DEFAULTS;
   window.PromptBuilder = PromptBuilder;
 }
-// P9·S8：RN（Hermes 无 window）下把 GM_DEFAULTS 挂 globalThis，
-// 供 GmTab.js 的 globalThis.GM_DEFAULTS 读取（引擎层规则只读块）。
-if (typeof globalThis !== 'undefined') {
-  globalThis.GM_DEFAULTS = GM_DEFAULTS;
-}
+// S8：RN（Hermes）无 window，GM_DEFAULTS 需同时挂 globalThis（GmTab 只读块消费）
+globalThis.GM_DEFAULTS = GM_DEFAULTS;
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = PromptBuilder;
   module.exports.GM_DEFAULTS = GM_DEFAULTS;

@@ -448,8 +448,11 @@ var StoryLoop = {
       let hasRealUser = toSend.some(function(m) {
         return m && m.role === 'user' && !String(m.content || '').startsWith('【系统 ·');
       });
+      // P70-T2：本轮引擎附加文本（extra 块口径），history 块不含这些
+      var __extraParts = [];
       if (!hasRealUser) {
         toSend = toSend.concat([{ role: 'user', content: '请继续游戏。' }]);
+        __extraParts.push('请继续游戏。');
       }
 
       if (this._regenContext) {
@@ -461,14 +464,18 @@ var StoryLoop = {
         tmp += '请重新输出【正文】+【时间】+【选项】，避开上面提到的问题。\n';
         toSend = toSend.concat([{ role: 'user', content: tmp }]);
         this._regenContext = null;
+        __extraParts.push(tmp);
       }
 
       // ★ 把 dynamic 内容拼接到最后一条 user message 前面
       //    不新增 system message，兼容所有 API（包括严格 chat_template）
       //    前面的 static+semiStatic + 历史消息全都不变，仍能吃前缀缓存
       var __dynamic = PromptBuilder.buildDynamic();
+      // P70-T2：拼接前先留最后一条 user 的原文引用（history 块按原文计，避免与 dynamic 双算）
+      var __lastUserRaw = null;
       if (toSend.length > 0 && toSend[toSend.length - 1].role === 'user') {
         var __lastUserMsg = toSend[toSend.length - 1];
+        __lastUserRaw = __lastUserMsg.content;
         toSend[toSend.length - 1] = {
           role: 'user',
           content: '【系统状态快照 · 供参考，非玩家输入】\n' + __dynamic + '\n\n【玩家输入】\n' + __lastUserMsg.content
@@ -478,9 +485,55 @@ var StoryLoop = {
           role: 'user',
           content: '【系统状态快照 · 供参考，非玩家输入】\n' + __dynamic + '\n\n请根据以上状态继续推进剧情。'
         });
+        __extraParts.push('请根据以上状态继续推进剧情。');
       }
 
       try { PromptBuilder.updateEstimate(toSend.map(function(m){return m.content || '';}).join('\n')); } catch (e) {}
+
+      // ---------- P70-T2 · 上下文查看器采集（纯内存态，不进存档/prompt） ----------
+      // 口径（阶段 0 已核实）：system 消息 = static+semiStatic（dynamic 在最后一条 user 里），
+      // blocks 一律取 prompt_builder 记下的引用，不在采集点重调 buildDynamic()/buildSystem()（有副作用）。
+      try {
+        GameState._lastPromptMessages = toSend;
+        GameState._lastPromptExtraText = __extraParts.join('\n');
+        if (typeof PromptInspect !== 'undefined' && PromptInspect && typeof PromptInspect.build === 'function') {
+          var __isExtraText = function (c) {
+            c = String(c == null ? '' : c);
+            return c === '请继续游戏。' || c === '请根据以上状态继续推进剧情。' || c.indexOf('【系统提示 · 仅本次生效】') === 0;
+          };
+          var __hist = [];
+          for (var __i = 1; __i < toSend.length - 1; __i++) {
+            if (__isExtraText(toSend[__i].content)) continue;
+            __hist.push(toSend[__i].content || '');
+          }
+          if (__lastUserRaw !== null && !__isExtraText(__lastUserRaw)) {
+            __hist.push(__lastUserRaw);
+          }
+          var __pb = GameState._lastPromptBlocks || {};
+          var __round = null;
+          try { __round = (typeof Platform !== 'undefined' && Platform.ui && Platform.ui._currentRoundNum) ? Platform.ui._currentRoundNum() : null; } catch (e2) {}
+          GameState._lastPromptInspect = PromptInspect.build({
+            round: (typeof __round === 'number' && isFinite(__round)) ? __round : null,
+            blocks: [
+              { id: 'static', label: '系统骨架', text: __pb.static || '' },
+              { id: 'semiStatic', label: '卡带设定', text: __pb.semiStatic || '' },
+              { id: 'entity', label: '世界书索引', text: __pb.entity || '' },
+              { id: 'dynamic', label: '状态快照', text: __pb.dynamic || '' },
+              { id: 'history', label: '历史对话', text: __hist.join('\n') },
+              { id: 'extra', label: '本次附加', text: GameState._lastPromptExtraText || '' }
+            ],
+            messages: toSend,
+            entityHits: GameState._lastEntityHits || [],
+            entityClipped: GameState._lastEntityClipped || {},
+            trimLog: GameState._lastTrimLog || [],
+            level: GameState._lastTrimmedLevel || 0,
+            budget: (GameState._lastPromptBudget || {}),
+            estimateTokens: function (s) { return PromptBuilder.estimateTokens(s); }
+          });
+          // P70-T2：RN 探针（_audit/tools/probe_t2_rn.js）从 logcat 抓这行验证面板数字
+          try { console.log('[T2] inspect blocks=' + GameState._lastPromptInspect.blocks.length + ' total=' + GameState._lastPromptInspect.total.tokens); } catch (e2) {}
+        }
+      } catch (e) { try { console.warn('[PromptInspect] 采集失败：', e); } catch (e2) {} }
 
       // P31（补齐 RN 的 P5·S6-5）：主调用显式带上当前配置的 max_tokens，不再吃 ApiClient 的 2048 兜底。
       // 思考模型的 reasoning_content 与正文共用同一个 completion 预算，

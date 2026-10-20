@@ -72,6 +72,18 @@ function readPrompt() {
   } catch (e) { return null; }
 }
 
+// P70-T2：上下文查看器（与桌面 ui_core.js renderPromptInspectHtml 同源读数）。
+//   snap 由 story.js 采集（PromptInspect.build），这里只读不算。
+function readInspect() {
+  try { return GameState._lastPromptInspect || null; } catch (e) { return null; }
+}
+function readPiOpen() {
+  try {
+    var g = Storage.getGlobal();
+    return !!(g && g.ui && g.ui.piOpen);
+  } catch (e) { return false; }
+}
+
 // P33·①：原叙事屏顶栏的横滑状态条（HUD / 天气 / 节日 / 游戏时间 / 累计 token）
 //   整条下线，数据改由本抽屉「数值」区显示；读数逻辑从 StoryScreen 原样搬来。
 function readHud() {
@@ -122,6 +134,23 @@ function SidebarDrawer() {
 
   var sidebar = readSidebar();
   var prompt = readPrompt();
+  // P70-T2：上下文查看器（piOpen 与桌面 Storage.ui.piOpen 共键；tick 只为强制重渲染）
+  var inspect = readInspect();
+  var piOpen = readPiOpen();
+  var piTickState = React.useState(0);
+  var piTick = piTickState[0]; var piBump = piTickState[1];
+  var piWbState = React.useState(false);
+  var piWbOpen = piWbState[0]; var setPiWbOpen = piWbState[1];
+  function piToggle() {
+    var open = !readPiOpen();
+    try {
+      var g = Storage.getGlobal();
+      if (!g.ui) g.ui = {};
+      g.ui.piOpen = open;
+      Storage.setGlobal(g);
+    } catch (e) {}
+    piBump(piTick + 1);
+  }
 
   function barColor(s, pct) {
     if (s.color && s.color !== 'blue') {
@@ -289,6 +318,99 @@ function SidebarDrawer() {
                         </Text>
                       ) : null}
                     </View>
+                  </View>
+                ) : null}
+                {/* P70-T2：上下文查看器（AI 这轮看到什么）。折叠不渲染 body；展开态读 _lastPromptInspect。 */}
+                <TouchableOpacity
+                  testID="pi-toggle"
+                  style={styles.itemPrompt}
+                  activeOpacity={0.7}
+                  onPress={piToggle}
+                >
+                  <Text style={styles.icon}>{'👁'}</Text>
+                  <View style={styles.body}>
+                    <View style={styles.itemHead}>
+                      <Text style={styles.name}>{'上下文（AI 这轮看到什么）'}</Text>
+                      <Text style={styles.val}>{piOpen ? '▾' : '▸'}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+                {piOpen ? (
+                  <View testID="pi-body" style={{ paddingHorizontal: 14, paddingVertical: 6 }}>
+                    {inspect ? (
+                      <View>
+                        <Text style={styles.desc}>{'第 ' + (inspect.round != null ? inspect.round : '?') + ' 轮发送内容：'}</Text>
+                        {inspect.blocks.map(function (b) {
+                          var maxTk = 0;
+                          inspect.blocks.forEach(function (x) { if (x.tokens > maxTk) maxTk = x.tokens; });
+                          var w = (b.tokens > 0 && maxTk > 0) ? Math.max(2, Math.round(b.tokens / maxTk * 100)) : 0;
+                          return (
+                            <View key={'pi' + b.id} testID={'pi-row-' + b.id} style={{ marginVertical: 4 }}>
+                              <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                                <Text style={styles.desc}>{String(b.label != null ? b.label : b.id)}</Text>
+                                <Text style={styles.desc}>{b.tokens + ' tok · ' + b.pct + '%'}</Text>
+                              </View>
+                              <View style={styles.track}>
+                                <View style={{ height: 3, width: w + '%', backgroundColor: c.accent }} />
+                              </View>
+                            </View>
+                          );
+                        })}
+                        <Text testID="pi-total" style={[styles.desc, { fontWeight: 'bold' }]}>{'合计 ' + inspect.total.tokens + ' tok · 估算'}</Text>
+                        <Text testID="pi-budget" style={styles.desc}>
+                          {inspect.budget.enabled === false
+                            ? '预算刹车已关闭'
+                            : '上限 ' + inspect.budget.maxTokens + ' tok · 本轮档位 ' + inspect.budget.level +
+                              ((inspect.budget.enabled !== false && inspect.budget.overBudget) ? '（已降到底仍超上限）' : '')}
+                        </Text>
+                        {inspect.budget.steps && inspect.budget.steps.length ? (
+                          inspect.budget.steps.map(function (s) {
+                            // 省 0 的档位写「无可裁内容」而不是「省 0」（与桌面同口径）
+                            var savedTxt = (s.saved > 0) ? ('省 ' + s.saved) : '无可裁内容';
+                            return (
+                              <Text key={'pis' + s.section} testID={'pi-step-' + s.section} style={styles.desc}>
+                                {'↓ ' + s.section + '：' + s.before + ' → ' + s.after + ' tok（' + savedTxt + '）'}
+                              </Text>
+                            );
+                          })
+                        ) : (
+                          <Text testID="pi-step-none" style={styles.desc}>{'本轮未触发降级'}</Text>
+                        )}
+                        <TouchableOpacity
+                          testID="pi-wb-toggle"
+                          activeOpacity={0.7}
+                          onPress={function () { setPiWbOpen(!piWbOpen); }}
+                          style={{ paddingVertical: 4 }}
+                        >
+                          <Text style={styles.desc}>{(piWbOpen ? '▾' : '▸') + ' 世界书命中明细（点开）'}</Text>
+                        </TouchableOpacity>
+                        {piWbOpen ? (
+                          <View testID="pi-wb-list">
+                            {inspect.worldbook.hits.length ? inspect.worldbook.hits.map(function (h, i) {
+                              return (
+                                <Text key={'piw' + i} style={[styles.desc, h.clipped ? { opacity: 0.6 } : null]}>
+                                  {h.group + ' · ' + h.name + ' · ' + h.chars + ' chars' + (h.clipped ? '（未注入）' : '')}
+                                </Text>
+                              );
+                            }) : <Text style={styles.desc}>{'本轮没有世界书条目注入'}</Text>}
+                            {Object.keys(inspect.worldbook.clipped || {}).map(function (k) {
+                              return (
+                                <Text key={'pic' + k} style={[styles.desc, { opacity: 0.6 }]}>
+                                  {k + ' · 另有 ' + inspect.worldbook.clipped[k] + ' 条未注入（受 LIMIT 限制）'}
+                                </Text>
+                              );
+                            })}
+                          </View>
+                        ) : null}
+                        <View testID="pi-note" style={{ marginTop: 6 }}>
+                          {inspect.notes.map(function (n, i) {
+                            return <Text key={'pin' + i} style={styles.desc}>{'· ' + n}</Text>;
+                          })}
+                        </View>
+                      </View>
+                    ) : (
+                      <Text testID="pi-empty" style={styles.desc}>{'还没有发过请求：先玩一轮。'}</Text>
+                    )}
                   </View>
                 ) : null}
                 {sidebar.length ? sidebar.map(function (s, i) { return renderItem(s, i, false); })

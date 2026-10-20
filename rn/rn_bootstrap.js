@@ -119,6 +119,8 @@ load('ToolExecutor',   function () { return require('../engine/core/tool_executo
 load('ApiClient',      function () { return require('../engine/core/api_client.js'); });
 load('ApiManager',     function () { return require('../engine/api_manager.js'); });
 load('PromptBuilder',  function () { return require('../engine/core/prompt_builder.js'); });
+// P70-T2：上下文查看器数据层（与桌面 prompt_inspect.js 逐字节同源，mirror）
+load('PromptInspect',  function () { return require('../engine/prompt_inspect.js'); });
 load('Platform',       function () { return require('../platform/platform_adapter.js'); });
 // 2-5b：Platform 槽位挂载后、业务层之前，RN 实装就地浅合并进搬运对象。
 // 搬运文件零改动；require 缓存（shop.js 式捕获）/ window.Platform /
