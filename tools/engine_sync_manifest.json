@@ -2,7 +2,7 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-21T02:15:13Z",
+  "recordedAt": "2026-10-21T02:49:48Z",
   "heads": {
     "rn": null,
     "desktop": null
@@ -12,7 +12,7 @@
     "mirrorEol": 24,
     "fork": 16,
     "unsharedDesktop": 132,
-    "unsharedRn": 157
+    "unsharedRn": 158
   },
   "mirror": [
     "engine/achievements.js",
@@ -133,9 +133,9 @@
       "diffLines": 456
     },
     "engine/core/gamestate.js": {
-      "rn": "564C85508E62DA763700C33917E9093D",
-      "desktop": "2A1D33F4D211C2909E049F708C6B3A86",
-      "diffLines": 290
+      "rn": "F07CFA32E9CDEFC99B86E390FDA46872",
+      "desktop": "993F6331FB29A677F071AC216AF4D4F9",
+      "diffLines": 297
     },
     "engine/core/storage.js": {
       "rn": "4777A5C488743AE4E80D74A32A510A8B",

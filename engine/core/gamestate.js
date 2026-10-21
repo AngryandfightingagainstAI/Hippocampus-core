@@ -9,6 +9,9 @@ var GameState = {
   currentCardId: null, currentSaveId: null,
   // P72：消息树（老档按 chatHistory 迁移生成；树是主线导出源，与 chat 分片并存）
   messageTree: null,
+  // P72·W0-a：快照/日志轮号轴（全局单调，只增不减；显示轴走 MessageTree.currentRound，
+  // 两轴解耦——切分支/回退后主线变短，显示轴跟着变，快照轴不回跳，快照与日志不互相错位）
+  _roundSeq: 0,
   _sessionStart: 0, _sessionToken: 0,
   _gameTime: null, _totalTokens: 0, _lastUsage: null,
   // P17·A 缓存用量：_totalCachedTokens = 累计命中缓存的输入 token，
@@ -54,6 +57,9 @@ var GameState = {
         }
       }
     } catch (eTree) { console.warn('[MessageTree] 装载失败，保持无树态：', eTree); }
+    // P72·W0-a：快照轴载档恢复（树分片记 roundSeq；老档/无树档从 0 起，行为同旧口径起点）
+    this._roundSeq = (this.messageTree && typeof this.messageTree.roundSeq === 'number')
+      ? this.messageTree.roundSeq : 0;
     this._sessionToken = Date.now();
     this._totalTokens = 0;
     this._lastUsage = null;
@@ -172,7 +178,8 @@ var GameState = {
       if (pruned[i] !== msgs[i]) return Object.assign({}, n, { msg: pruned[i] });
       return n;
     });
-    return { v: tree.v, seq: tree.seq, nodes: out, activeLeafId: tree.activeLeafId };
+    // P72·W0-a：树分片随身带快照轴 roundSeq（内存树不挂此字段，落盘/载档走这里与 loadFromSave）
+    return { v: tree.v, seq: tree.seq, nodes: out, activeLeafId: tree.activeLeafId, roundSeq: this._roundSeq };
   },
 
   invalidateCache() { this._cacheVersion++; this._cachedStaticDynamic = null; },

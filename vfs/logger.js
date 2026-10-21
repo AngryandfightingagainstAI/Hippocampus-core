@@ -273,6 +273,10 @@
         newChunks.push({
           msgFrom: roundOf[bi],
           msgTo: roundOf[blockEnd - 1],
+          // P72·W0-a：本批的快照轴参考区间（story.js 压缩时传入；老档/估算缺省 null，
+          //   消费方按缺失处理，老字段 msgFrom/msgTo 保持不动——老档兼容）
+          roundSeqFrom: (opts.roundSeqFrom != null ? opts.roundSeqFrom : null),
+          roundSeqTo: (opts.roundSeqTo != null ? opts.roundSeqTo : null),
           text: txt
         });
         dialogue += pick;

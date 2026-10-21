@@ -240,6 +240,7 @@ var StoryLoop = {
     if (diceResult) {
       Platform.ui.appendHint('（你的选择：' + t + '）');
       MessageTree.append('action', { role: 'user', content: t });
+      GameState._roundSeq++;   // P72·W0-a：骰子轮也是玩家真行动，快照轴 +1（fb/info 不加）
       const fb = ToolExecutor.formatForHistory([diceResult]);
       if (fb) MessageTree.append('fb', { role: 'user', content: fb });
       const uiLine = ToolExecutor.formatDiceForUI(diceResult);
@@ -263,6 +264,7 @@ var StoryLoop = {
     if (searchResult) {
       Platform.ui.appendHint('（你的选择：' + t + '）');
       MessageTree.append('action', { role: 'user', content: t });
+      GameState._roundSeq++;   // P72·W0-a：搜索轮也是玩家真行动，快照轴 +1（fb/info 不加）
       const fb = ToolExecutor.formatForHistory([searchResult]);
       if (fb) MessageTree.append('fb', { role: 'user', content: fb });
       if (typeof ToolTrace !== 'undefined') {
@@ -295,6 +297,8 @@ var StoryLoop = {
       Platform.ui.appendHint('（检测到元层意图：' + _intent.keywords.join('、') + '）');
     }
     MessageTree.append('action', { role: 'user', content: _content });
+    GameState._roundSeq++;   // P72·W0-a：玩家真行动入队后快照轴 +1（唯一递增类点；
+                              //   不进 message_tree.js 的 append——那里 info/fb 也会走）
     await this.callAI();
   },
 
@@ -646,7 +650,9 @@ var StoryLoop = {
 
         const lastAssistant = [...GameState.chatHistory].reverse().find(m => m.role === 'assistant');
         if (lastAssistant) {
-          lastAssistant.meta = { reasoning: reasoning, searches: searches, usage: usage, ts: Date.now() };
+          // P72·W0-a：meta 随身带本轮快照轴 roundSeq——renderRowActions 的回退实参用它
+          //   （显示轴标签照旧用 roundNum；老档旧章无 meta 时回落显示轴，口径同旧版）
+          lastAssistant.meta = { reasoning: reasoning, searches: searches, usage: usage, ts: Date.now(), roundSeq: (typeof GameState._roundSeq === 'number' ? GameState._roundSeq : 0) };
         }
 
         const clean = ToolExecutor.strip(content);
@@ -1009,12 +1015,21 @@ var StoryLoop = {
       if (isRealUserMsg(GameState.chatHistory[i])) batchMsgFrom++;
     }
 
+    // P72·W0-a：本批的快照轴参考区间。seqTo=压缩当时的 _roundSeq（最新轮）；
+    //   本批覆盖轮 = seqTo − 保留段真玩家数 − 本批真玩家数 + 1 … seqTo − 保留段真玩家数。
+    //   切分支/回退后为估算参考值——归档精确对齐走 W0-b 的 msgIds，这里只给日志页参考。
+    const seqTo = (typeof GameState._roundSeq === 'number') ? GameState._roundSeq : 0;
+    const batchRealUsers = toCompress.filter(isRealUserMsg).length;
+    const keepRealUsers = rest.slice(keepFrom).filter(isRealUserMsg).length;
+    const seqFrom = Math.max(0, seqTo - keepRealUsers - batchRealUsers + 1);
     const logData = await Logger.compress({
         cardId: GameState.currentCardId,
         saveId: GameState.currentSaveId,
         gameDate: GameState._gameTime,
         startGameDate: GameState._lastCompressGameTime || snapTime,
         msgFrom: batchMsgFrom,
+        roundSeqFrom: seqFrom,
+        roundSeqTo: seqTo,
         messages: toCompress
       });
     if (!logData) {
