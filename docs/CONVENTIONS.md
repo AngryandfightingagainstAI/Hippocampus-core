@@ -82,11 +82,11 @@ node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF）：**逐字节相同 48 个**、**仅行尾不同 24 个**、**真差异 15 个**，
+最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF）：**逐字节相同 49 个**、**仅行尾不同 23 个**、**真差异 15 个**，
 合计 85 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（48 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（49 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -121,6 +121,7 @@ engine/proposals.js
 engine/state_guard.js
 engine/style_guard.js
 engine/lore_trigger.js
+engine/message_tree.js
 engine/story.js
 engine/tool_trace.js
 engine/words.js
@@ -156,7 +157,6 @@ engine/dice.js
 engine/dice_history.js
 engine/endings.js
 engine/events.js
-engine/message_tree.js
 engine/proposal_semantic_check.js
 engine/proposal_validator.js
 engine/runtime_repair.js
