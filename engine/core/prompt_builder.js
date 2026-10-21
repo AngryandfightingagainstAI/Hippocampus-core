@@ -93,6 +93,16 @@ var PromptBuilder = {
     } catch (e) {}
   },
 
+  // P72·W8/W10：把玩家填的长文本压成一行可用长度（超了截断加省略号）。
+  //   空串 / 非字符串一律返回 ''（⇒ 该块不出现，prompt 与改动前逐字相同）。
+  _clipText(v, max) {
+    if (typeof v !== 'string') return '';
+    const s = v.replace(/\s+/g, ' ').trim();
+    if (!s) return '';
+    const n = (typeof max === 'number' && max > 0) ? max : 300;
+    return s.length > n ? (s.slice(0, n - 1) + '…') : s;
+  },
+
   buildStatic() {
     const card = GameState.currentCard;
     const g = Storage.getGlobal();
@@ -375,6 +385,34 @@ var PromptBuilder = {
         const qlist = Object.keys(qz).map(function (k) { return qz[k]; });
         const qblock = CreationQuiz.promptBlock(qlist);
         if (qblock) { lines.push(qblock); lines.push(""); }
+      }
+    } catch (e) {}
+
+    // P72·W8：长程记忆三件套之二（要点 / 摘要）与 W10 的文风要求。
+    //   三块都放在 semiStatic（一局不变、吃前缀缓存），不塞 dynamic——
+    //   dynamic 每轮都变，放进去会让前缀缓存从头失效。
+    try {
+      const _g = (typeof Storage !== 'undefined' && Storage.getGlobal) ? (Storage.getGlobal() || {}) : {};
+      const _st = (_g.settings && _g.settings.story) || {};
+      const _sty = (_g.settings && _g.settings.style) || {};
+      const _ess = this._clipText(_st.essentials, 300);
+      const _noteStyle = this._clipText(_sty.instruction, 500);
+      const _sum = this._clipText((GameState.playerData && GameState.playerData.storySummary) || '', 400);
+      const _sumAt = (GameState.playerData && GameState.playerData.storySummaryAt) || 0;
+      if (_ess) {
+        const blk = '【剧情要点 · 常驻】\n' + _ess;
+        lines.push(blk); lines.push('');
+        this._piBlock('essentials', blk);
+      }
+      if (_sum) {
+        const blk = '【前情摘要】' + (_sumAt ? '（到第 ' + _sumAt + ' 轮）' : '') + '\n' + _sum;
+        lines.push(blk); lines.push('');
+        this._piBlock('summary', blk);
+      }
+      if (_noteStyle) {
+        const blk = '【文风要求】\n' + _noteStyle;
+        lines.push(blk); lines.push('');
+        this._piBlock('style', blk);
       }
     } catch (e) {}
 

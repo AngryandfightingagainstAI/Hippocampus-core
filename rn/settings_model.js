@@ -176,6 +176,12 @@ function loadGeneralState() {
     strictness: (g.gm && g.gm.strictness) || 'normal',
     // P72·W3：反说教闸门档位（auto / warn / off，缺省 auto，与桌面 renderGeneralInto 同口径）
     styleGuard: (s.style && s.style.guard) || 'auto',
+    // P72·W8/W10：长程记忆与文风（三块都进 semiStatic，留空就一个字都不注入）
+    storyEssentials: (s.story && s.story.essentials) || '',
+    storyAuthorNote: (s.story && s.story.authorNote) || '',
+    storySummaryOff: !!(s.story && s.story.summaryOff),
+    storySummaryEvery: (s.story && s.story.summaryEvery) || 8,
+    styleInstruction: (s.style && s.style.instruction) || '',
     proposalCheck: {
       enabled: !!pc.enabled,
       profileId: pc.profileId || null,
@@ -210,6 +216,14 @@ function saveGeneralState(st) {
     g.gm.strictness = st.strictness;
     g.settings.style = g.settings.style || {};
     g.settings.style.guard = (st.styleGuard === 'warn' || st.styleGuard === 'off') ? st.styleGuard : 'auto';
+    // P72·W8/W10：三块长文本 + 摘要开关/频率（与桌面 saveMemoryStyle 同口径，超长截断）
+    g.settings.story = g.settings.story || {};
+    g.settings.story.essentials = String(st.storyEssentials || '').slice(0, 300);
+    g.settings.story.authorNote = String(st.storyAuthorNote || '').slice(0, 300);
+    g.settings.story.summaryOff = !!st.storySummaryOff;
+    var every = parseInt(st.storySummaryEvery, 10);
+    g.settings.story.summaryEvery = (every >= 2 && every <= 40) ? every : 8;
+    g.settings.style.instruction = String(st.styleInstruction || '').slice(0, 500);
     g.proposalCheck = g.proposalCheck || {};
     g.proposalCheck.enabled = !!st.proposalCheck.enabled;
     g.proposalCheck.profileId = st.proposalCheck.profileId || null;

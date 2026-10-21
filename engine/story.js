@@ -500,6 +500,27 @@ var StoryLoop = {
         __extraParts.push('请根据以上状态继续推进剧情。');
       }
 
+      // P72·W8：作者注（叙述要求）——放在最后一条 user 的尾部，是「最近最强位」，
+      //   与头部的 dynamic 不冲突。空 / 非字符串 ⇒ 一个字符都不加（prompt 逐字不变）。
+      var __authorNote = '';
+      try {
+        var __gNote = (typeof Storage !== 'undefined' && Storage.getGlobal) ? (Storage.getGlobal() || {}) : {};
+        var __noteRaw = (__gNote.settings && __gNote.settings.story && __gNote.settings.story.authorNote) || '';
+        __authorNote = PromptBuilder._clipText(__noteRaw, 300);
+      } catch (e) {}
+      if (__authorNote) {
+        var __tail = '\n\n【作者注 · 叙述要求】\n' + __authorNote;
+        if (toSend.length > 0 && toSend[toSend.length - 1].role === 'user') {
+          toSend[toSend.length - 1] = {
+            role: 'user',
+            content: toSend[toSend.length - 1].content + __tail
+          };
+        } else {
+          toSend.push({ role: 'user', content: '请继续游戏。' + __tail });
+        }
+        __extraParts.push('【作者注 · 叙述要求】' + __authorNote);
+      }
+
       try { PromptBuilder.updateEstimate(toSend.map(function(m){return m.content || '';}).join('\n')); } catch (e) {}
 
       // ---------- P70-T2 · 上下文查看器采集（纯内存态，不进存档/prompt） ----------
@@ -530,6 +551,9 @@ var StoryLoop = {
               { id: 'static', label: '系统骨架', text: __pb.static || '' },
               { id: 'semiStatic', label: '卡带设定', text: __pb.semiStatic || '' },
               { id: 'entity', label: '世界书索引', text: __pb.entity || '' },
+              { id: 'essentials', label: '剧情要点', text: __pb.essentials || '' },
+              { id: 'summary', label: '前情摘要', text: __pb.summary || '' },
+              { id: 'style', label: '文风要求', text: __pb.style || '' },
               { id: 'dynamic', label: '状态快照', text: __pb.dynamic || '' },
               { id: 'history', label: '历史对话', text: __hist.join('\n') },
               { id: 'extra', label: '本次附加', text: GameState._lastPromptExtraText || '' }
@@ -1171,6 +1195,64 @@ var StoryLoop = {
     Platform.ui.renderTopbar();
     Platform.ui.renderSidebarExpanded();
     this._styleCheckAfterRender(story, roundNum);
+    this._maybeUpdateSummary(roundNum);
+  },
+
+  /**
+   * P72·W8：长程记忆的自动摘要（Story Summary）。
+   *
+   * 每 settings.story.summaryEvery 轮（默认 8）在一轮**回复完成后**发一次独立小请求，
+   * 把最近若干轮压成 150-250 字，写回 playerData.storySummary / storySummaryAt。
+   * 失败只 appendHint，不打断这一轮；开关 settings.story.summaryOff=true 时整段跳过。
+   *
+   * @returns {Promise<boolean>} 是否真的更新了（便于测试断言；不关心时可不 await）
+   */
+  async _maybeUpdateSummary(roundNum) {
+    try {
+      var g = (typeof Storage !== 'undefined' && Storage.getGlobal) ? (Storage.getGlobal() || {}) : {};
+      var st = (g.settings && g.settings.story) || {};
+      if (st.summaryOff) return false;
+      var every = (typeof st.summaryEvery === 'number' && st.summaryEvery >= 2) ? Math.floor(st.summaryEvery) : 8;
+      var pd = GameState.playerData || {};
+      var lastAt = (typeof pd.storySummaryAt === 'number') ? pd.storySummaryAt : 0;
+      if (!(roundNum > 0) || roundNum - lastAt < every) return false;
+      if (typeof ApiClient === 'undefined' || !ApiClient || typeof ApiClient.chat !== 'function') return false;
+
+      // 只喂最近的对话文本（不含 system）：太长的历史对「摘要」没帮助，还烧 token
+      var tailLines = [];
+      var hist = GameState.chatHistory || [];
+      for (var i = Math.max(0, hist.length - every * 2); i < hist.length; i++) {
+        var m = hist[i];
+        if (!m || m.role === 'system') continue;
+        var c = String(m.content || '').slice(0, 1200);
+        tailLines.push((m.role === 'assistant' ? 'GM：' : '玩家：') + c);
+      }
+      if (tailLines.length < 2) return false;
+      var prev = (typeof pd.storySummary === 'string') ? pd.storySummary : '';
+      var sys = '你是剧情摘要器。把下面这段跑团记录压成简洁的前情摘要。'
+        + '只输出摘要正文（150-250 字，中文），不要标题、不要解释、不要 markdown。'
+        + '保留：玩家是谁、当前在哪、正在做什么、未解决的悬念、与哪些人建立了关系。'
+        + (prev ? ' 旧的摘要可以合并进来（不要丢掉仍然有效的信息）。' : '');
+      var user = (prev ? '=== 旧摘要 ===\n' + prev + '\n\n' : '') + '=== 最近的记录 ===\n' + tailLines.join('\n');
+      var resp = await ApiClient.chat(
+        [{ role: 'system', content: sys }, { role: 'user', content: user }],
+        { max_tokens: 400, temperature: 0.2 }
+      );
+      var txt = (typeof resp === 'string') ? resp : ((resp && (resp.content || resp.text)) || '');
+      txt = String(txt || '').replace(/\s+/g, ' ').trim();
+      if (!txt) { if (Platform.ui && Platform.ui.appendHint) Platform.ui.appendHint('（摘要没更新，不影响继续）'); return false; }
+      if (txt.length > 400) txt = txt.slice(0, 399) + '…';
+      GameState.playerData = GameState.playerData || {};
+      GameState.playerData.storySummary = txt;
+      GameState.playerData.storySummaryAt = roundNum;
+      if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.renderSidebarExpanded) {
+        try { Platform.ui.renderSidebarExpanded(); } catch (e2) {}
+      }
+      return true;
+    } catch (e) {
+      try { if (Platform.ui && Platform.ui.appendHint) Platform.ui.appendHint('（摘要没更新，不影响继续）'); } catch (e2) {}
+      return false;
+    }
   },
 
   /**

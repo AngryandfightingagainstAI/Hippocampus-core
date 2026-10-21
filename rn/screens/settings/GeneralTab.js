@@ -28,6 +28,15 @@ var Model = require('../../settings_model.js');
 var Controls = require('../../components/settings/controls.js');
 var ColorTab = require('./ColorTab.js').ColorTab;
 
+// P72·W10：文风预设（与桌面 ui_settings.js 的五个按钮逐字一致）
+var STYLE_PRESETS = {
+  '冷峻克制': '用冷峻、克制的笔法：短句为主，少形容词，情绪靠动作与环境细节透出，不写内心独白。',
+  '古典白描': '用古典白描的笔法：以动作、器物、光影写场景，语言干净不堆砌，避免现代口语与现代词。',
+  '黑色幽默': '用黑色幽默的笔法：荒诞与冷静并置，苦处用轻描淡写带过，别解释笑点。',
+  '快节奏短句': '节奏要快：多用短句与对话推进，少铺陈环境，每段落都要有新信息或新动作。',
+  '日系轻小说': '用日系轻小说的笔法：对话密度高、语气鲜活，适度使用拟声与心理碎念，但不要长篇说理。'
+};
+
 function GeneralTab() {
   var themeApi = useTheme();
   var tk = themeApi.tokens;
@@ -301,6 +310,65 @@ function GeneralTab() {
           value: gs.strictness,
           options: Model.STRICTNESS_OPTIONS,
           onChange: function (v) { setState({ strictness: v }); }
+        })
+      ),
+
+      React.createElement(
+        Controls.SetCard,
+        { title: '长程记忆与文风' },
+        React.createElement(
+          Controls.SetNote,
+          { first: true },
+          '这三块会写进系统提示的「一局不变」区（吃前缀缓存），留空就完全不注入。修改后从下一轮开始生效。'
+        ),
+        React.createElement(Controls.SetTextInput, {
+          label: '剧情要点（常驻，≤300 字）',
+          multiline: true,
+          rows: 3,
+          value: gs.storyEssentials,
+          placeholder: '例：主角是旧港的船匠，欠了一笔赌债；当前目标是找到失踪的妹妹。',
+          onChangeText: function (v) { setState({ storyEssentials: String(v || '').slice(0, 300) }); }
+        }),
+        React.createElement(Controls.SetTextInput, {
+          label: '作者注（叙述要求，≤300 字）',
+          multiline: true,
+          rows: 3,
+          value: gs.storyAuthorNote,
+          placeholder: '例：别写内心独白；每轮末尾给 3 个选项；不要替玩家做决定。',
+          onChangeText: function (v) { setState({ storyAuthorNote: String(v || '').slice(0, 300) }); }
+        }),
+        React.createElement(Controls.SetSwitchRow, {
+          label: '关闭自动摘要',
+          value: !!gs.storySummaryOff,
+          onValueChange: function (v) { setState({ storySummaryOff: !!v }); }
+        }),
+        React.createElement(Controls.SetStepper, {
+          label: '自动摘要频率（每 N 轮）',
+          value: gs.storySummaryEvery,
+          min: 2,
+          max: 40,
+          step: 1,
+          onChange: function (v) { setState({ storySummaryEvery: v }); }
+        }),
+        React.createElement(Controls.SetTextInput, {
+          label: '文风要求（≤500 字）',
+          multiline: true,
+          rows: 3,
+          value: gs.styleInstruction,
+          placeholder: '例：用冷峻、克制的笔法：短句为主，少形容词。',
+          onChangeText: function (v) { setState({ styleInstruction: String(v || '').slice(0, 500) }); }
+        }),
+        React.createElement(Controls.SetChips, {
+          label: '文风预设（点一下填入）',
+          options: [
+            { value: '冷峻克制', label: '冷峻克制' },
+            { value: '古典白描', label: '古典白描' },
+            { value: '黑色幽默', label: '黑色幽默' },
+            { value: '快节奏短句', label: '快节奏短句' },
+            { value: '日系轻小说', label: '日系轻小说' }
+          ],
+          value: '',
+          onChange: function (v) { setState({ styleInstruction: String(STYLE_PRESETS[v] || '').slice(0, 500) }); }
         })
       ),
 
