@@ -652,7 +652,9 @@ var StoryLoop = {
         if (lastAssistant) {
           // P72·W0-a：meta 随身带本轮快照轴 roundSeq——renderRowActions 的回退实参用它
           //   （显示轴标签照旧用 roundNum；老档旧章无 meta 时回落显示轴，口径同旧版）
-          lastAssistant.meta = { reasoning: reasoning, searches: searches, usage: usage, ts: Date.now(), roundSeq: (typeof GameState._roundSeq === 'number' ? GameState._roundSeq : 0) };
+          // P72·W1：再带树节点 id——四件套「‹i/n› 兄弟版本 / 重新生成（仅 activeLeaf 章）」
+          //   的定位键。老章 meta 被剥时分支控件不渲染（回落旧显示）。
+          lastAssistant.meta = { reasoning: reasoning, searches: searches, usage: usage, ts: Date.now(), roundSeq: (typeof GameState._roundSeq === 'number' ? GameState._roundSeq : 0), nodeId: (assistantNode && assistantNode.id) ? assistantNode.id : null };
         }
 
         const clean = ToolExecutor.strip(content);

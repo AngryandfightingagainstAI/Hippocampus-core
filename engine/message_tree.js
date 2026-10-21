@@ -256,6 +256,11 @@
     return mainline().map(function (n) { return n.id; });
   };
 
+  // P72·W1：按 id 拿节点数据（UI 层定位父 / 兄弟用）。节点不在树上返回 null。
+  MessageTree.byId = function (id) {
+    return nodeById(id) || null;
+  };
+
   MessageTree.children = function (id) {
     var t = tree();
     if (!t) return [];

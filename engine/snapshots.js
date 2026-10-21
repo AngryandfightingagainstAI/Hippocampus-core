@@ -191,6 +191,38 @@
       return snaps;
     },
 
+    // ============ P72·W1（D3 拆分口径）：快照恢复公共段 ============
+    // rollbackTo（截断式）与 restoreOnly（分支切换式，W1 起走分支的
+    // onSwitchBranch / onRollbackClick 用）共用。只恢复数据面，不碰
+    // chatHistory / 树 / 快照文件。
+    _applySnapData: function(snap) {
+      GameState.playerData = snap.playerData || {};
+      GameState.currentState = snap.currentState || null;
+      GameState._gameTime = snap.gameTime || null;
+      GameState._pendingSystemNotices = snap.pendingNotices || [];
+      // P72·W0-a：快照轴恢复到目标值（老快照缺 roundSeq 时回落 round，两值同源同数）
+      GameState._roundSeq = (snap.roundSeq != null ? snap.roundSeq : snap.round) || 0;
+      // 恢复各系统运行时状态
+      if (snap.systems) {
+        this._putSystemData(snap.systems);
+      } else if (snap.npcRuntime && typeof NpcRuntime !== 'undefined' && NpcRuntime.setRuntime) {
+        // 兼容旧快照：只有 npcRuntime 字段、没有 systems 字段
+        NpcRuntime.setRuntime(snap.npcRuntime);
+      }
+    },
+
+    // P72·W1：只恢复不截断——分支切换专用。恢复快照的全部数据面，但
+    //   不 slice chatHistory、不 truncateToCount、不删后续快照
+    //   （旧分支全保留，‹i/n› /「回到这里」随时可切回）。
+    //   返回形与 rollbackTo 对齐：ok / round / snap / cut(=-1) / cutBy / lostMsgIds(=null)。
+    restoreOnly: function(round) {
+      var snap = VFS.readJSON(this._path(round));
+      if (!snap) return { ok: false, reason: '快照不存在' };
+      this._applySnapData(snap);
+      try { GameState.invalidateCache(); } catch (e) {}
+      return { ok: true, round: round, snap: snap, cut: -1, cutBy: 'restore-only', lostMsgIds: null };
+    },
+
     // ============ 回退到某轮开始前 ============
     rollbackTo: function(round) {
       var snap = VFS.readJSON(this._path(round));
@@ -202,13 +234,8 @@
       var cut = this._cutIndex(snap);
       if (cut.cut < 0) return { ok: false, reason: cut.reason, split: true };
 
-      // 1. 恢复基础数据
-      GameState.playerData = snap.playerData || {};
-      GameState.currentState = snap.currentState || null;
-      GameState._gameTime = snap.gameTime || null;
-      GameState._pendingSystemNotices = snap.pendingNotices || [];
-      // P72·W0-a：快照轴恢复到目标值（老快照缺 roundSeq 时回落 round，两值同源同数）
-      GameState._roundSeq = (snap.roundSeq != null ? snap.roundSeq : snap.round) || 0;
+      // 1.+3. 恢复数据面（P72·W1：抽成 _applySnapData 与 restoreOnly 共用，D3 拆分口径）
+      this._applySnapData(snap);
 
       // 2. 截断历史（按锚点算出的切点，不再是「当时的下标」）
       GameState.chatHistory = (GameState.chatHistory || []).slice(0, cut.cut);
@@ -221,14 +248,6 @@
         var _ids = MessageTree.mainlineIds();
         if (_ids) lostMsgIds = _ids.slice(cut.cut);
         MessageTree.truncateToCount(cut.cut);
-      }
-
-      // 3. 恢复各系统运行时状态
-      if (snap.systems) {
-        this._putSystemData(snap.systems);
-      } else if (snap.npcRuntime && typeof NpcRuntime !== 'undefined' && NpcRuntime.setRuntime) {
-        // 兼容旧快照：只有 npcRuntime 字段、没有 systems 字段
-        NpcRuntime.setRuntime(snap.npcRuntime);
       }
 
       // 4. 删除之后的所有快照
