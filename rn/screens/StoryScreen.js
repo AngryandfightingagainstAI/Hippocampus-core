@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // 战役 4 · 批次 4-3：叙事页 StoryScreen（B 类，RN 组件）
 // RN 独有。订阅 story_store（A 类）渲染叙事流，替代 Electron 侧
 // ui_core 对 #story-area 的全部 DOM 拼装；engine/story.js 一行不改。
@@ -133,6 +133,28 @@ function StoryScreen() {
     var sv = scrollRef.current;
     if (sv) requestAnimationFrame(function () { try { sv.scrollToEnd({ animated: false }); } catch (e) {} });
   }, [feed.length, loading]);
+
+  // P72·W1-b：系统返回键 = 撤销上一步（叙事页且上一轮存在 → 不退出 App，
+  // 走 snapshot_actions.undoLastStep 与桌面 undoLastStep 同语义的分支切线，
+  // toast「已回到上一轮」）。已是最早一轮 / 正在生成（undoLastStep 返回
+  // false）→ 回落默认行为：双击退出（「再按一次退出」）。
+  React.useEffect(function () {
+    var lastBack = 0;
+    var handler = function () {
+      if (SnapshotActions.undoLastStep()) return true;   // 已撤销：拦截返回键
+      var now = Date.now();
+      if (now - lastBack > 2000) {
+        lastBack = now;
+        if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.toast) {
+          Platform.ui.toast('再按一次退出', { type: 'info' });
+        }
+        return true;                                     // 首次：提示后拦截，等第二次
+      }
+      return false;                                      // 2 秒内再按：放行默认退出
+    };
+    RN.BackHandler.addEventListener('hardwareBackPress', handler);
+    return function () { RN.BackHandler.removeEventListener('hardwareBackPress', handler); };
+  }, []);
 
   function gameClock() {
     try { return GameState.formatGameTime() || ''; } catch (e) { return ''; }

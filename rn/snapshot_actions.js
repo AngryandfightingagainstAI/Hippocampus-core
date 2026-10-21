@@ -111,8 +111,86 @@ async function rollbackToRound(round) {
   return true;
 }
 
+// P72·W1-b：撤销上一步（Android 返回键入口，StoryScreen 的 BackHandler 调用）。
+// 桌面锚点：engine/ui_snapshot.js undoLastStep（顶栏按钮 / Ctrl+Z 共调）。
+// 一键退回当前主线最新一轮：切 activeLeaf 到本轮 action 节点的父（= 上一轮
+// story 末尾）+ restoreOnly 恢复该轮开始前快照 + 非破坏归档被撤线段；
+// 节点 / 日志 / 后续快照全保留。定位按主线末真 action 对 messageId
+// （快照轴显示轴双免疫）。↩ 回到这里（rollbackToRound）/ ‹i/n›（未来批）/
+// 撤销上一步是三个不同动作——本函数只管退回一轮，内部步骤与桌面同语义。
+// 无树老档回落 rollbackLast + 非破坏归档（W0-b 口径，不用物理删日志）。
+function undoLastStep() {
+  if (typeof StoryLoop !== 'undefined' && StoryLoop && StoryLoop.busy) {
+    Platform.ui.toast('AI 正在生成，稍等', { type: 'warn' });
+    return false;
+  }
+  if (typeof GameState !== 'undefined' && GameState.messageTree &&
+      typeof MessageTree !== 'undefined' && typeof MessageTree.byId === 'function') {
+    var line = MessageTree.mainlineIds();
+    var actionNd = null;
+    if (line) {
+      for (var i = line.length - 1; i >= 0; i--) {
+        var nd = MessageTree.byId(line[i]);
+        if (nd && nd.kind === 'action' && String((nd.msg && nd.msg.content) || '').indexOf('【系统 ·') !== 0) { actionNd = nd; break; }
+      }
+    }
+    // list() 只回 {round,timestamp,reason} 摘要（P54 契约，不许改）——
+    // messageId 得逐轮 peek 读全量来对；从最新往旧找，正常首轮即中。
+    var snap = null;
+    if (actionNd) {
+      var rounds = Snapshots.list().map(function (s) { return s.round; });
+      for (var ri = rounds.length - 1; ri >= 0; ri--) {
+        var sp = Snapshots.peek(rounds[ri]);
+        if (sp && sp.messageId === actionNd.id) { snap = sp; break; }
+      }
+    }
+    if (snap) {
+      var parentNd = MessageTree.byId(actionNd.parentId);
+      if (!parentNd || parentNd.kind !== 'story') {
+        Platform.ui.toast('已是最早一轮，没有可撤销的轮次', { type: 'info' });
+        return false;
+      }
+      if (!MessageTree.setActiveLeaf(actionNd.parentId)) {
+        Platform.ui.toast('撤销失败：分支切换失败', { type: 'error' });
+        return false;
+      }
+      var rr = Snapshots.restoreOnly(snap.round);
+      if (!rr.ok) { Platform.ui.toast('撤销失败：' + rr.reason, { type: 'error' }); return false; }
+      try {
+        var cutIdx = line.indexOf(actionNd.id);
+        if (cutIdx >= 0 && typeof Logger !== 'undefined' && GameState.currentCardId && GameState.currentSaveId) {
+          var tailIds = line.slice(cutIdx);
+          var archived = Logger.archiveAfter(GameState.currentCardId, GameState.currentSaveId, tailIds);
+          if (archived > 0) Platform.ui.appendHint('（已归档撤销前的日志 ' + archived + ' 块）');
+        }
+      } catch (e) { /* 归档失败不阻断撤销（同桌面 _branchStepBack） */ }
+      Platform.ui.renderTopbar();
+      Platform.ui.renderSidebarExpanded();
+      replayStory();
+      Platform.ui.toast('已回到上一轮', { type: 'info' });
+      Platform.ui.appendHint('（被撤分支保留，可随时切回）');
+      return true;
+    }
+    // 快照没对上（老档快照缺 messageId / 快照丢失）：走下面旧口径
+  }
+  var r = Snapshots.rollbackLast();
+  if (!r.ok) { Platform.ui.toast('撤销失败：' + r.reason, { type: 'error' }); return false; }
+  try {
+    if (typeof Logger !== 'undefined' && GameState.currentCardId && GameState.currentSaveId && r.lostMsgIds) {
+      var archived2 = Logger.archiveAfter(GameState.currentCardId, GameState.currentSaveId, r.lostMsgIds);
+      if (archived2 > 0) Platform.ui.appendHint('（已归档撤销前的日志 ' + archived2 + ' 块）');
+    }
+  } catch (e) { /* 归档失败不阻断撤销 */ }
+  Platform.ui.renderTopbar();
+  Platform.ui.renderSidebarExpanded();
+  replayStory();
+  Platform.ui.toast('已回到上一轮', { type: 'info' });
+  return true;
+}
+
 module.exports = {
   regenerate: regenerate,
   rollbackToRound: rollbackToRound,
+  undoLastStep: undoLastStep,
   lastAssistantText: lastAssistantText
 };
