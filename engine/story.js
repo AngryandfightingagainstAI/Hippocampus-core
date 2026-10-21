@@ -1170,6 +1170,55 @@ var StoryLoop = {
     Platform.ui.appendStory(story, options, timeDelta, toolResults, roundNum, meta);
     Platform.ui.renderTopbar();
     Platform.ui.renderSidebarExpanded();
+    this._styleCheckAfterRender(story, roundNum);
+  },
+
+  /**
+   * P72·W3：反说教闸门的渲染后检查（抽成独立方法是为了能被单测直接夹住——
+   * parseAndRender 太大，喂不动一整套假件）。
+   *
+   * 命中 fail 且本轮还没重写过 ⇒ 自动重写一次（走「重新生成」同一条路径：
+   * 有树切分支、无树截断 + 非破坏归档，旧版本不会凭空消失）。
+   * 每轮只重试一次：GameState._styleRetriedRound 记账，避免模型不改就被无限重跑。
+   * 不往 prompt 里注入文风指令：P70-T2 的「prompt 逐字不变」门禁会直接红。
+   *
+   * @returns {{verdict:string, retried:boolean, hint:string}} 便于测试断言
+   */
+  _styleCheckAfterRender(story, roundNum) {
+    var out = { verdict: 'ok', retried: false, hint: '' };
+    try {
+      if (typeof StyleGuard === 'undefined' || !StyleGuard || typeof StyleGuard.analyze !== 'function') return out;
+      if (typeof StyleGuard.shouldAutoRewrite === 'function' && StyleGuard.shouldAutoRewrite(story)) {
+        var res = StyleGuard.analyze(story);
+        out.verdict = res.verdict;
+        var key = 'r' + roundNum;
+        if (GameState._styleRetriedRound !== key) {
+          GameState._styleRetriedRound = key;
+          var comment = StyleGuard.buildRetryComment(res.hits);
+          var did = false;
+          if (typeof UI_Snapshot !== 'undefined' && UI_Snapshot && typeof UI_Snapshot.autoRegenerate === 'function') {
+            did = UI_Snapshot.autoRegenerate(comment) === true;
+          } else if (typeof SnapshotActions !== 'undefined' && SnapshotActions && typeof SnapshotActions.autoRegenerate === 'function') {
+            did = SnapshotActions.autoRegenerate(comment) === true;
+          }
+          out.retried = did;
+          out.hint = did ? '（这段说教味偏重，已自动重写一次）'
+                         : '（这段说教味偏重，可点「重新生成」让它重写）';
+        } else {
+          // 本轮已经重写过一次但判分还是 fail —— 不再自动重跑，交给玩家决定
+          out.hint = '（这段仍有点说教味，可点「重新生成」或「改这句」调整）';
+        }
+        if (out.hint) Platform.ui.appendHint(out.hint);
+        return out;
+      }
+      if (typeof StyleGuard.mode === 'function' && StyleGuard.mode() === 'warn') {
+        var res2 = StyleGuard.analyze(story);
+        out.verdict = res2.verdict;
+        out.hint = StyleGuard.hintText(res2.verdict) || '';
+        if (out.hint) Platform.ui.appendHint(out.hint);
+      }
+    } catch (e) { console.warn('[StyleGuard] 检查失败：', e); }
+    return out;
   }
 };
 
@@ -1628,6 +1677,76 @@ var CreateFlow = {
     defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); });
     return CreationQuiz.scoreAll(defs, picks);
   },
+
+  // ===== P72·W5：都不像我 → 自己写 =====
+  // 口径：本地词表先映射（确定、可解释、永远同一答案同一结论）；本地没把握才允许
+  //   一次 AI 归类（8 秒超时）；两者都失败 ⇒ 这条不算作答（不投票、不影响结论）。
+  //   原文一律留在 this.data['__custom_<qid>'] 里，摘要页/结果页要显示"我写了什么"。
+  quizCustoms(quizId) {
+    const v = this.data['__custom_' + quizId];
+    return (v && typeof v === 'object') ? v : {};
+  },
+  async pickQuizCustom(quizId, qi) {
+    const defs = this.quizDefs(this.current());
+    const q = defs.filter(d => d.id === quizId)[0];
+    if (!q) return;
+    let text = null;
+    try {
+      text = await Platform.ui.promptAsync('都不像我？用你自己的话说一句',
+        { placeholder: '例：我不太会说话，但答应的事一定做到', okText: '就这样', maxLength: 120 });
+    } catch (e) { text = null; }
+    if (text == null) return;
+    const t = String(text).trim();
+    if (!t) return;
+    const bag = this.quizCustoms(quizId);
+    bag[qi] = t;
+    this.data['__custom_' + quizId] = bag;
+
+    // ① 本地确定性映射（与手点选项等价）
+    let outcome = null;
+    if (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.mapCustom === 'function') {
+      outcome = CreationQuiz.mapCustom(t, q.outcomes);
+    }
+    // ② 本地没命中才问 AI（问不到就当中性：不投票）
+    if (!outcome) outcome = await this._classifyQuizCustomByAI(t, q);
+    if (outcome) {
+      const arr = this.quizPicks(quizId).slice();
+      while (arr.length < qi) arr.push('');
+      arr[qi] = outcome;
+      this.data['__picks_' + quizId] = arr;
+      Platform.ui.toast('按你的说法，这条算「' + (CreationQuiz.suggestLabel(t, q.outcomes) || outcome) + '」', { type: 'success' });
+    } else {
+      Platform.ui.toast('这句没有被识别成某个结论：不参与判卷（不影响结果）', { type: 'warn' });
+    }
+    this._saveDraft();
+    this.render();
+  },
+  // 让 AI 只做「翻译」：把玩家的一句话翻译成作者声明的某个结论 id。
+  // 返回值一定是 outcomes 里真实存在的 id 或 null —— 模型乱答/超时/没 Key 一律 null。
+  async _classifyQuizCustomByAI(text, q) {
+    try {
+      if (typeof ApiClient === 'undefined' || !ApiClient || typeof ApiClient.chat !== 'function') return null;
+      const outs = (q.outcomes || []).map(o => ({ id: o.id, name: o.name, desc: o.desc || '' }));
+      if (!outs.length) return null;
+      const sys = '你是「开局问卷」的归类器。玩家用一句话描述自己，你要判断这最接近下面哪一个结论。'
+        + '只能从给定 id 里挑一个，不许发明。只输出一行 JSON：{"outcome":"<id>"}。\n'
+        + '可选结论：\n' + outs.map(o => '- ' + o.id + '：' + o.name + (o.desc ? '（' + o.desc + '）' : '')).join('\n');
+      const call = ApiClient.chat([
+        { role: 'system', content: sys },
+        { role: 'user', content: '玩家说：' + text }
+      ], { temperature: 0, maxTokens: 60 });
+      const timeout = new Promise(res => setTimeout(() => res(null), 8000));
+      const resp = await Promise.race([call, timeout]);
+      if (!resp) return null;
+      let content = '';
+      if (typeof resp === 'string') content = resp;
+      else if (resp.content) content = resp.content;
+      else if (resp.choices && resp.choices[0] && resp.choices[0].message) content = resp.choices[0].message.content;
+      const m = String(content || '').match(/"outcome"\s*:\s*"([^"]+)"/);
+      const id = m ? m[1] : '';
+      return (outs.filter(o => o.id === id)[0]) ? id : null;
+    } catch (e) { return null; }
+  },
   renderQuizSet(step) {
     const defs = this.quizDefs(step);
     if (!defs.length) return '<p class="muted">（这份问卷没有可用题目：检查卡带 steps[].quizzes 的 outcomes / questions）</p>';
@@ -1648,6 +1767,16 @@ var CreateFlow = {
           html += '<button class="cf-option cf-quiz-opt' + sel + '" onclick="CreateFlow.pickQuizOption(' + jsAttr(q.id) + ',' + qi + ',' + jsAttr(o.outcome) + ')">' +
             '<div class="opt-name">' + escapeHtml(o.text) + '</div></button>';
         });
+        // P72·W5：都不像我 → 自己写（写的话先本地映射，映射不上才问一次 AI）
+        const customTxt = this.quizCustoms(q.id)[qi];
+        html += '<button class="cf-option cf-quiz-opt cf-quiz-custom" onclick="CreateFlow.pickQuizCustom(' + jsAttr(q.id) + ',' + qi + ')">' +
+          '<div class="opt-name">都不像我 → 自己写</div></button>';
+        if (customTxt) {
+          const sug = (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.suggestLabel === 'function')
+            ? CreationQuiz.suggestLabel(customTxt, q.outcomes) : '';
+          html += '<div class="cf-quiz-custom-note">你写的是：' + escapeHtml(customTxt) +
+            (sug ? '（→ ' + escapeHtml(sug) + '）' : '（没识别成某个结论，不参与判卷）') + '</div>';
+        }
         html += '</div></div>';
       });
       if (res && res.answered === res.total) {
@@ -1656,6 +1785,18 @@ var CreateFlow = {
           (res.desc ? '<div class="cf-quiz-result-desc">' + escapeHtml(res.desc) + '</div>' : '') + '</div>';
       } else if (res) {
         html += '<div class="cf-quiz-result muted">（还差 ' + (res.total - res.answered) + ' 题）</div>';
+      }
+      // 自写答案汇总（只说"你写了什么 → 被认成什么"，不参与算分）
+      const customs = this.quizCustoms(q.id);
+      const cKeys = Object.keys(customs);
+      if (cKeys.length) {
+        html += '<div class="cf-quiz-custom-sum">你自写的 ' + cKeys.length + ' 条：' +
+          cKeys.map(k => {
+            const txt = customs[k];
+            const sug = (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.suggestLabel === 'function')
+              ? CreationQuiz.suggestLabel(txt, q.outcomes) : '';
+            return '<span class="cf-quiz-custom-item">' + escapeHtml(txt) + ' → ' + (sug ? escapeHtml(sug) : '未识别') + '</span>';
+          }).join(' ') + '</div>';
       }
       html += '</div>';
     });

@@ -174,6 +174,8 @@ function loadGeneralState() {
     outputsEnabled: !!(s.outputs && s.outputs.enabled === true),
     backgroundEnabled: !(s.background && s.background.enabled === false),
     strictness: (g.gm && g.gm.strictness) || 'normal',
+    // P72·W3：反说教闸门档位（auto / warn / off，缺省 auto，与桌面 renderGeneralInto 同口径）
+    styleGuard: (s.style && s.style.guard) || 'auto',
     proposalCheck: {
       enabled: !!pc.enabled,
       profileId: pc.profileId || null,
@@ -206,6 +208,8 @@ function saveGeneralState(st) {
     g.settings.background = { enabled: !!(st.backgroundEnabled !== false) };
     g.gm = g.gm || {};
     g.gm.strictness = st.strictness;
+    g.settings.style = g.settings.style || {};
+    g.settings.style.guard = (st.styleGuard === 'warn' || st.styleGuard === 'off') ? st.styleGuard : 'auto';
     g.proposalCheck = g.proposalCheck || {};
     g.proposalCheck.enabled = !!st.proposalCheck.enabled;
     g.proposalCheck.profileId = st.proposalCheck.profileId || null;

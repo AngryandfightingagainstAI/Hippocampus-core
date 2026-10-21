@@ -294,7 +294,11 @@
         'streamStartLive', 'streamAppendReasoning', 'streamFinishLive',
         // P54·第10条：外部 AI 通道的「复制提示词 → 粘贴回复」（桌面转发 UI.requestExternalReply；
         // RN 由 rn_platform.js 覆盖；两边都没实装时引擎侧 typeof 守卫会退回直连）
-        'requestExternalReply'
+        'requestExternalReply',
+        // P72·W5：问卷「都不像我 → 自己写」要弹一次文本输入（桌面实现在 engine/ui_prompt.js；
+        // RN 由 rn_platform.js 用 OverlayHost 的 PromptModal 覆盖）。没登记的话
+        // Platform.ui.promptAsync 会被转发壳吞掉、运行时直接崩。
+        'promptAsync'
       ];
       var ui = {};
       NAMES.forEach(function(name) {

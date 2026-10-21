@@ -23,7 +23,82 @@ var CardValidator = {
     // P24·④：结局「开局即满足」静态自查（只报 warnings，不拦导入）
     const warnings = this.auditEndingsAtStart(card);
     for (const m of moved) warnings.push(m);
+    // P72·W4：NPC 口吻（voice）自查 —— 全可选段，只报 warnings，绝不拦导入
+    for (const m of this.auditNpcVoices(card)) warnings.push(m);
     return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
+  },
+
+  // ============ P72·W4 · NPC 口吻（voice）============
+  // 卡带可选段：worldbook.npcs[].voice = { style, examples[], taboo[], catchphrase[] }
+  //   style       一句话风格描述（≤120 字）
+  //   examples    参考台词，≤3 条（每条 ≤60 字）
+  //   taboo       禁忌/绝不说的话，≤6 条
+  //   catchphrase 口头禅，≤4 条
+  // 设计：voice 是「锦上添花」，缺了、写歪了都不该拦导入 —— 只把问题报成 warning，
+  //   运行期由 normalizeVoice() 再兜一次（截断超长、丢掉非字符串项）。
+  auditNpcVoices(card) {
+    const out = [];
+    const npcs = (card && card.worldbook && Array.isArray(card.worldbook.npcs)) ? card.worldbook.npcs : [];
+    for (const def of npcs) {
+      if (!def || typeof def !== 'object') continue;
+      const v = def.voice;
+      if (v === undefined || v === null) continue;
+      const who = def.name || def.id || '(未命名)';
+      if (typeof v !== 'object' || Array.isArray(v)) {
+        out.push('NPC「' + who + '」的 voice 必须是对象，已忽略整段');
+        continue;
+      }
+      if (v.style != null && typeof v.style !== 'string') {
+        out.push('NPC「' + who + '」的 voice.style 必须是字符串，已忽略');
+      } else if (typeof v.style === 'string' && v.style.length > 120) {
+        out.push('NPC「' + who + '」的 voice.style 超过 120 字，注入时会被截断');
+      }
+      for (const key of ['examples', 'taboo', 'catchphrase']) {
+        const arr = v[key];
+        if (arr == null) continue;
+        if (!Array.isArray(arr)) {
+          out.push('NPC「' + who + '」的 voice.' + key + ' 必须是数组，已忽略');
+          continue;
+        }
+        if (key === 'examples' && arr.length > 3) {
+          out.push('NPC「' + who + '」的 voice.examples 有 ' + arr.length + ' 条，只取前 3 条');
+        }
+        if (key === 'taboo' && arr.length > 6) {
+          out.push('NPC「' + who + '」的 voice.taboo 有 ' + arr.length + ' 条，只取前 6 条');
+        }
+        if (key === 'catchphrase' && arr.length > 4) {
+          out.push('NPC「' + who + '」的 voice.catchphrase 有 ' + arr.length + ' 条，只取前 4 条');
+        }
+      }
+    }
+    return out;
+  },
+
+  // 运行期兜底：把 voice 归一成「可直接拼进提示词」的形状；没有 voice 返回 null。
+  normalizeVoice(raw) {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+    const str = (s, max) => {
+      if (typeof s !== 'string') return '';
+      const t = s.replace(/\s+/g, ' ').trim();
+      return t.length > max ? t.slice(0, max) + '…' : t;
+    };
+    const list = (arr, maxN, maxLen) => {
+      if (!Array.isArray(arr)) return [];
+      const out = [];
+      for (const it of arr) {
+        if (typeof it !== 'string') continue;
+        const t = str(it, maxLen);
+        if (t) out.push(t);
+        if (out.length >= maxN) break;
+      }
+      return out;
+    };
+    const style = str(raw.style, 120);
+    const examples = list(raw.examples, 3, 60);
+    const taboo = list(raw.taboo, 6, 40);
+    const catchphrase = list(raw.catchphrase, 4, 40);
+    if (!style && !examples.length && !taboo.length && !catchphrase.length) return null;
+    return { style: style, examples: examples, taboo: taboo, catchphrase: catchphrase };
   },
 
   // ============ P43 · 兼容字段归一（让文档承诺成真） ============

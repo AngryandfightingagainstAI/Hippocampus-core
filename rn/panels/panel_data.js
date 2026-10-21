@@ -644,7 +644,9 @@ function computeNpc() {
         name: d.name || k,
         weight: d.weight || 0,
         keywords: d.keywords || [],
-        desc: d.desc || ''
+        desc: d.desc || '',
+        // P72·W4：口吻说明书原样带出来，由面板决定怎么排版（没有就是 undefined）
+        voice: d.voice
       };
     }
 

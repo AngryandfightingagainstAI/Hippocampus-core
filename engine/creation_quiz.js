@@ -194,6 +194,82 @@
     return changed;
   }
 
+  // ============================================================
+  // P72·W5：玩家自写答案（「都不像我 → 自己写」）
+  // ============================================================
+  // 设计口径：
+  //   1) 先走**本地确定性**映射（CUSTOM_LEXICON 近义扩展 + 与结论名/标签的字面重合），
+  //      命中就把这条答案当成选了这个结论 —— 与手点选项完全等价，算分口径一致。
+  //   2) 本地没命中才允许**一次** AI 归类（story.js 侧调用，8 秒超时）；
+  //      没配 Key / 超时 / 模型乱答 ⇒ 回落 null：这条不算作答、不投票、不影响结论。
+  //   3) AI 永远不参与算分 —— 只负责把「人话」翻成「结论 id」，投不投票由本地决定。
+  // 为什么用字面重合而不是向量：离线可用、可解释、玩家能预期（同一条答案永远同一个结论）。
+  var CUSTOM_LEXICON = [
+    ['勇敢', '勇', '胆大', '冒险', '冲在前', '不怕'],
+    ['怯', '胆小', '退缩', '怕事', '谨慎过头'],
+    ['冷静', '理智', '沉着', '不动声色', '克制'],
+    ['热情', '热络', '自来熟', '爱说话', '话多'],
+    ['冷淡', '冷', '疏离', '不爱说话', '沉默'],
+    ['善良', '心软', '照顾别人', '温柔'],
+    ['精明', '算计', '务实', '利益', '不吃亏'],
+    ['野', '狠', '不择手段', '有野心', '强势'],
+    ['忠诚', '讲义气', '守规矩', '本分'],
+    ['叛逆', '不守规矩', '讨厌约束', '我行我素'],
+    ['书', '学习', '知识', '聪明', '脑子好'],
+    ['动手', '实干', '能打', '身体 ', '力气']
+  ];
+
+  function _norm(s) { return _s(s).toLowerCase().replace(/\s+/g, ''); }
+
+  // 把自写文本扩成「可比对的词云」：原文 + 命中近义族的整族词
+  function _expand(text) {
+    var t = _s(text);
+    var bags = [t];
+    CUSTOM_LEXICON.forEach(function (group) {
+      var hit = group.some(function (w) { return t.indexOf(w) >= 0; });
+      if (hit) bags = bags.concat(group);
+    });
+    return _norm(bags.join(' '));
+  }
+
+  // 本地映射：返回结论 id 或 null。
+  //   打分 = 结论名/描述/标签与「词云」的字面重合（2 字以上片段才计），最高分 > 0 且唯一才认。
+  function mapCustom(text, outcomes) {
+    var bag = _expand(text);
+    if (!bag) return null;
+    var best = null, bestScore = 0, tie = false;
+    (outcomes || []).forEach(function (o) {
+      if (!o || !o.id) return;
+      var fields = [o.name, o.desc].concat(Array.isArray(o.tags) ? o.tags : []);
+      var score = 0;
+      fields.forEach(function (f) {
+        var s = _norm(f);
+        if (!s) return;
+        // 整段命中（作者写的结论名被玩家直接说出来）权重更高
+        if (s.length >= 2 && bag.indexOf(s) >= 0) score += Math.min(4, s.length);
+        else {
+          // 否则按 2 字滑窗找重合
+          for (var i = 0; i + 2 <= s.length; i++) {
+            var bi = s.substr(i, 2);
+            if (bag.indexOf(bi) >= 0) score += 1;
+          }
+        }
+      });
+      if (score > bestScore) { bestScore = score; best = o.id; tie = false; }
+      else if (score === bestScore && score > 0) tie = true;
+    });
+    if (!best || bestScore <= 0 || tie) return null;
+    return best;
+  }
+
+  // 给结果页用的人类标签：命中返回结论名，未命中返回空串
+  function suggestLabel(text, outcomes) {
+    var id = mapCustom(text, outcomes);
+    if (!id) return '';
+    var hit = (outcomes || []).filter(function (o) { return o && o.id === id; })[0];
+    return hit ? _s(hit.name || hit.id) : '';
+  }
+
   function facts(results) {
     return (results || []).map(function (r) {
       return r.resultName + '：' + r.name + (r.desc ? '（' + r.desc + '）' : '');
@@ -221,6 +297,9 @@
     facts: facts,
     promptBlock: promptBlock,
     totalQuestions: totalQuestions,
+    mapCustom: mapCustom,
+    suggestLabel: suggestLabel,
+    CUSTOM_LEXICON: CUSTOM_LEXICON,
     MAX_QUIZZES: MAX_QUIZZES,
     MAX_QUESTIONS: MAX_QUESTIONS,
     MAX_OPTS: MAX_OPTS

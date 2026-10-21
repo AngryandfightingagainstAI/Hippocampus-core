@@ -95,6 +95,16 @@ async function regenerate() {
     }
   );
   if (comment === null) return false;
+  return await runRegenerate(String(comment).trim());
+}
+
+/**
+ * 已经拿到 comment 之后的重跑主体（regenerate / P72·W3 autoRegenerate 共用）。
+ * 有树档走分支（节点保留可切回），无树老档走截断 + 非破坏归档。
+ */
+async function runRegenerate(comment) {
+  if (typeof StoryLoop === 'undefined' || !StoryLoop) return false;
+  if (StoryLoop.busy) { Platform.ui.toast('AI 正在生成，稍等', { type: 'warn' }); return false; }
 
   var rejectedText = lastAssistantText();
   // P72·W1 对齐桌面：有树档改走分支——被否决的输出节点保留（‹i/n› 可切回），
@@ -123,6 +133,24 @@ async function regenerate() {
   replayStory();
   StoryLoop.retryLast();
   return true;
+}
+
+/**
+ * P72·W3：反说教自动重写 —— 不弹意见框，直接带一句重写要求重跑这一轮。
+ * 由 engine/story.js 在检测到 StyleGuard.verdict==='fail' 时调用
+ * （每轮只调一次，StoryLoop 侧用 GameState._styleRetriedRound 防循环）。
+ */
+function autoRegenerate(comment) {
+  try {
+    if (typeof StoryLoop === 'undefined' || !StoryLoop) return false;
+    if (StoryLoop.busy) return false;
+    var p = runRegenerate(String(comment == null ? '' : comment));
+    if (p && typeof p.then === 'function') p["catch"](function () {});
+    return true;
+  } catch (e) {
+    console.warn('[StyleGuard] 自动重写失败：', e);
+    return false;
+  }
 }
 
 // 回到第 round 轮开始前（ui_snapshot.onRollbackClick）
@@ -301,6 +329,7 @@ async function editAction(nodeId) {
 
 module.exports = {
   regenerate: regenerate,
+  autoRegenerate: autoRegenerate,
   rollbackToRound: rollbackToRound,
   undoLastStep: undoLastStep,
   editAction: editAction,

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // 战役 P5 · 新建存档（创角）屏（B 类，RN 组件）
 // RN 独有。与桌面 engine/story.js CreateFlow 同契约：
 //   逻辑/数据全在 A 类模块 rn/create_flow_model.js（池、跳过、草稿、
@@ -217,6 +217,35 @@ function CreateScreen() {
     setData(next);
     CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
   }
+  // P72·W5：都不像我 → 自己写（和桌面 CreateFlow.pickQuizCustom 同口径：
+  //   先本地词表映射（确定性）；映射不上才问一次 AI；都失败 ⇒ 这条不投票、不影响结论）
+  function onCustomQuiz(stepObj, quiz, qi) {
+    var Q = (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz : null;
+    if (!Q) return;
+    Platform.ui.promptAsync('都不像我？用你自己的话说一句', {
+      placeholder: '例：我不太会说话，但答应的事一定做到',
+      okText: '就这样',
+      maxLength: 120
+    }).then(function (text) {
+      var t = (text == null) ? '' : String(text).trim();
+      if (!t) return;
+      var bag = Object.assign({}, (data && data['__custom_' + quiz.id]) || {});
+      bag[qi] = t;
+      var outcome = Q.mapCustom ? Q.mapCustom(t, quiz.outcomes) : null;
+      var next = Object.assign({}, data);
+      next['__custom_' + quiz.id] = bag;
+      if (outcome) {
+        CF.setQuizPick(next, quiz.id, qi, outcome);
+        setData(next);
+        CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+        Platform.ui.toast('按你的说法，这条算「' + (Q.suggestLabel(t, quiz.outcomes) || outcome) + '」', { type: 'success' });
+      } else {
+        setData(next);
+        CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+        Platform.ui.toast('这句没被识别成某个结论：不参与判卷（不影响结果）', { type: 'warn' });
+      }
+    }).catch(function () { /* 取消/异常：什么都不动 */ });
+  }
   function keyPatch(stepObj, oid) {
     var p = {};
     p[stepObj.key || stepObj.id] = oid;
@@ -377,6 +406,9 @@ function CreateScreen() {
       optionNameSelected: { color: c.seal, fontWeight: '600' },
       optionDesc: { fontSize: f.xs, color: c.muted, marginTop: 4, lineHeight: Math.round(f.xs * 1.6) },
       quizHint: { fontSize: f.sm, color: c.muted, textAlign: 'center', letterSpacing: 2, marginBottom: 12 },
+    // P72·W5：自写答案的按钮（虚线感用浅底 + 斜体文案替代）与回显
+    optionCustom: { borderStyle: 'dashed', backgroundColor: c.bg },
+    customNote: { fontSize: f.xs, color: c.muted, lineHeight: Math.round(f.xs * 1.6), marginTop: 6, marginBottom: 2 },
   // P67 开局问卷：一套问卷一块，题与选项纵向排，结论在块底
   quizSet: { marginBottom: 22 },
   quizSetTitle: { fontSize: f.md, color: c.text, letterSpacing: 1, marginBottom: 6 },
@@ -727,6 +759,17 @@ function CreateScreen() {
     if (!defs.length) {
       return <Text style={styles.unknown}>{'（这份问卷没有可用题目：检查卡带 steps[].quizzes）'}</Text>;
     }
+    // P72·W5：自写答案的读取与建议标签
+    function customOf(quizId, qi) {
+      var bag = (data && data['__custom_' + quizId]) || {};
+      return bag[qi] || '';
+    }
+    function suggestOf(quiz, qi) {
+      var t = customOf(quiz.id, qi);
+      if (!t) return '';
+      var Q = (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz : null;
+      return (Q && Q.suggestLabel) ? Q.suggestLabel(t, quiz.outcomes) : '';
+    }
     var results = CF.quizResults(s, data);
     var byId = {};
     results.forEach(function (r) { byId[r.quizId] = r; });
@@ -757,6 +800,19 @@ function CreateScreen() {
                         </TouchableOpacity>
                       );
                     })}
+                    {/* P72·W5：都不像我 → 自己写 */}
+                    <TouchableOpacity
+                      style={[styles.option, styles.optionCustom]}
+                      activeOpacity={0.6}
+                      onPress={function () { onCustomQuiz(s, q, qi); }}
+                    >
+                      <Text style={styles.optionName}>{'都不像我 → 自己写'}</Text>
+                    </TouchableOpacity>
+                    {customOf(q.id, qi) ? (
+                      <Text style={styles.customNote}>
+                        {'你写的是：' + customOf(q.id, qi) + (suggestOf(q, qi) ? '（→ ' + suggestOf(q, qi) + '）' : '（没识别成某个结论，不参与判卷）')}
+                      </Text>
+                    ) : null}
                   </View>
                 );
               })}

@@ -144,6 +144,15 @@ function NpcPanel(props) {
   function renderNpc(npcId) {
     var def = view.npcs[npcId] || { id: npcId, name: npcId };
     var rt = view.runtime[npcId]; // 可能 null
+    // P72·W4：口吻参考 —— 卡带写了 voice 才显示（和桌面 ui_npc.js 同口径）
+    var voice = null;
+    try {
+      if (typeof CardValidator !== 'undefined' && CardValidator && typeof CardValidator.normalizeVoice === 'function') {
+        voice = CardValidator.normalizeVoice(def.voice);
+      } else if (def.voice && typeof def.voice === 'object') {
+        voice = def.voice;
+      }
+    } catch (e) { voice = null; }
     return (
       <View key={npcId} style={styles.card}>
         <View style={styles.headRow}>
@@ -156,6 +165,15 @@ function NpcPanel(props) {
             <Text style={styles.updateBtnText}>{'更新'}</Text>
           </TouchableOpacity>
         </View>
+        {voice ? (
+          <View>
+            <Text style={styles.subHead}>{'口吻参考'}</Text>
+            {voice.style ? <Text style={styles.listItem}>{'风格：' + voice.style}</Text> : null}
+            {voice.examples && voice.examples.length ? <Text style={styles.listItem}>{'例句：' + voice.examples.join(' / ')}</Text> : null}
+            {voice.taboo && voice.taboo.length ? <Text style={styles.listItem}>{'禁忌：' + voice.taboo.join(' / ')}</Text> : null}
+            {voice.catchphrase && voice.catchphrase.length ? <Text style={styles.listItem}>{'口头禅：' + voice.catchphrase.join(' / ')}</Text> : null}
+          </View>
+        ) : null}
         {!rt ? (
           <Text style={styles.muted}>{view.noRuntimeText}</Text>
         ) : (

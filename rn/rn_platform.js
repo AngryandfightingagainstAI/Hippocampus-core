@@ -202,7 +202,12 @@ var UI_NAMES = [
   //   而 rn_bootstrap 把 globalThis.UI 指到 Platform.ui 本身 ⇒ 自递归，
   //   真机点「发送」立刻 Maximum call stack size exceeded（native stack depth），
   //   提示词弹窗一次都出不来。登记进壳名单独有覆盖、并再由 bridgeStory 换成真实现。
-  'requestExternalReply'
+  'requestExternalReply',
+  // P72·W5：问卷「都不像我 → 自己写」要一次单行文本输入。桌面实现在
+  //   engine/ui_prompt.js（UI.promptAsync），RN 必须在这里登记 + 覆盖，
+  //   否则退回 base 的自动代理会转发裸 globalThis.UI[name] ⇒ 自递归
+  //   （P60 的 requestExternalReply 就是这么炸的）。
+  'promptAsync'
 ];
 
 var MAX_RECORDS = 300;
@@ -505,6 +510,25 @@ function bridgeStory(ui) {
         placeholder: '把 AI 回的正文 / JSON 粘到这里',
         copyText: formatExternalPrompt(messages),
         copyLabel: '提示词（点右边「复制」给任意 AI）'
+      }
+    );
+  });
+
+  // P72·W5：单行文本输入（问卷「都不像我 → 自己写」）。复用 OverlayHost.PromptModal，
+  //   返回 Promise<string|null>：取消 ⇒ null，引擎按「什么都不动」处理。
+  //   options 与桌面 UI.promptAsync(message, defaultValue, {placeholder, okText, maxLength}) 同形。
+  wrapRet('promptAsync', function (message, defaultValue, options) {
+    var o = options || {};
+    return StoryStore.promptOpen(
+      String(message == null ? '' : message),
+      String(defaultValue == null ? '' : defaultValue),
+      {
+        multiline: false,
+        okText: o.okText || '确定',
+        cancelText: o.cancelText || '取消',
+        placeholder: o.placeholder || '',
+        maxLength: (typeof o.maxLength === 'number' && o.maxLength > 0) ? o.maxLength : 200,
+        password: !!o.password
       }
     );
   });

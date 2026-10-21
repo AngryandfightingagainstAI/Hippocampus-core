@@ -683,6 +683,15 @@ var PromptBuilder = {
       }
     }
 
+    // ★ P72·W4：NPC 口吻参考（voice）—— 只给「在场」的 NPC，最多 2 个、每个 ≤200 字。
+    //   为什么只在在场时注入：voice 是写作辅助，全量注入会白烧 token（世界书已经很长了）。
+    //   为什么限 2 个：三个以上同时给口吻，模型会把风格串味（实测比不给更差）。
+    //   卡带没写 voice ⇒ 这一段完全不出现，prompt 逐字与加这个功能之前一致（T2 门禁）。
+    var _voiceBlock = this.buildNpcVoiceBlock();
+    if (_voiceBlock) {
+      lines.push(_voiceBlock);
+    }
+
     // ★ 节点系统（降级档 count1：压成一行计数）
     if (typeof StoryNodes !== 'undefined') {
       var nodeLine = StoryNodes.formatForPrompt();
@@ -792,6 +801,87 @@ var PromptBuilder = {
     lines.push('【系统状态结束】现在开始写剧情。你的输出 = 【正文】+【时间】+【选项】。上面这些是参考。');
     lines.push('════════════════════════════════════════');
     return lines.join('\n');
+  },
+
+  // ★ P72·W4：NPC 口吻参考块。
+  // 取「当前在场」的 NPC（先镜头内、再现场舞台），命中卡带里写了 voice 的才注入；
+  // 一个都没有则返回 ''（⇒ prompt 与加这个功能之前逐字一致，T2 的 before/after 门禁靠这条）。
+  // 每个 NPC 最多 200 字（风格 40 + 例句 60 + 禁忌/口头禅各 40 合计上限内部再裁）。
+  buildNpcVoiceBlock() {
+    var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
+    var npcs = (card && card.worldbook && Array.isArray(card.worldbook.npcs)) ? card.worldbook.npcs : [];
+    if (!npcs.length) return '';
+
+    // 1) 先按「在场」筛（NpcRuntime 有 getFocus/getScene 才用，纯逻辑环境直接跳过）
+    var presentIds = [];
+    var defsById = {};
+    npcs.forEach(function (d) {
+      if (!d || typeof d !== 'object') return;
+      var key = d.id || d.name;
+      if (key) defsById[key] = d;
+    });
+    if (typeof NpcRuntime !== 'undefined' && NpcRuntime) {
+      var pushAll = function (list) {
+        (list || []).forEach(function (d) {
+          if (!d) return;
+          var k = d.id || d.name;
+          if (k && presentIds.indexOf(k) < 0) presentIds.push(k);
+        });
+      };
+      try { if (typeof NpcRuntime.getFocus === 'function') pushAll(NpcRuntime.getFocus()); } catch (e) {}
+      try { if (typeof NpcRuntime.getScene === 'function') pushAll(NpcRuntime.getScene()); } catch (e) {}
+    }
+
+    // 2) 兜底：在场名单为空时，按「玩家这一句里点了名」的 NPC 注入（常见于第一次见面）
+    if (!presentIds.length) {
+      var lastUser = '';
+      try {
+        var hist = (GameState && GameState.chatHistory) || [];
+        for (var i = hist.length - 1; i >= 0; i--) {
+          if (hist[i] && hist[i].role === 'user') { lastUser = String(hist[i].content || ''); break; }
+        }
+      } catch (e2) {}
+      if (lastUser) {
+        npcs.forEach(function (d) {
+          if (!d || typeof d !== 'object') return;
+          var names = [d.name].concat(Array.isArray(d.aliases) ? d.aliases : []).filter(Boolean);
+          for (var j = 0; j < names.length; j++) {
+            if (lastUser.indexOf(names[j]) >= 0) {
+              var k = d.id || d.name;
+              if (k && presentIds.indexOf(k) < 0) presentIds.push(k);
+              break;
+            }
+          }
+        });
+      }
+    }
+    if (!presentIds.length) return '';
+
+    var norm = function (raw) {
+      if (typeof CardValidator !== 'undefined' && CardValidator && typeof CardValidator.normalizeVoice === 'function') {
+        return CardValidator.normalizeVoice(raw);
+      }
+      return (raw && typeof raw === 'object') ? raw : null;
+    };
+
+    var out = [];
+    var used = 0;
+    for (var k = 0; k < presentIds.length && used < 2; k++) {
+      var def = defsById[presentIds[k]];
+      if (!def) continue;
+      var v = norm(def.voice);
+      if (!v) continue;
+      var rows = ['>>> 【口吻参考 · ' + (def.name || def.id) + '】'];
+      if (v.style) rows.push('风格：' + v.style);
+      if (v.examples && v.examples.length) rows.push('例句：' + v.examples.join(' / '));
+      if (v.taboo && v.taboo.length) rows.push('禁忌：' + v.taboo.join(' / '));
+      if (v.catchphrase && v.catchphrase.length) rows.push('口头禅：' + v.catchphrase.join(' / '));
+      var block = rows.join('\n');
+      if (block.length > 200) block = block.slice(0, 200) + '…';
+      out.push(block);
+      used++;
+    }
+    return out.length ? out.join('\n') : '';
   },
 
   // ★ P4：预算刹车入口。under budget ⇒ 与旧版逐字一致（level 0）。

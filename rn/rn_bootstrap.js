@@ -199,6 +199,9 @@ load('Audit',                 function () { return require('../engine/audit.js')
 load('Avatar',                function () { return require('../engine/avatar.js'); });
 // H6 G9: RN 侧 UI_Portrait 实现（修 engine/story.js:650 调用缺口）
 load('UI_Portrait',           function () { return require('./ui_portrait_rn.js'); });
+// P72·W3：反说教闸门 —— story.js 渲染后调 StyleGuard.analyze，
+//   必须排在 StoryLoop 之前，否则 typeof StyleGuard === 'undefined' 会静默跳过检查。
+load('StyleGuard',            function () { return require('../engine/style_guard.js'); });
 load('StoryLoop',             function () { return require('../engine/story.js'); }, 'CreateFlow');
 
 // ============================================================

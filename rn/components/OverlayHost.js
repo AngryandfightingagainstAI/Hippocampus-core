@@ -275,6 +275,7 @@ function PromptModal(props) {
                   secureTextEntry={!!opts.password}
                   multiline={false}
                   numberOfLines={1}
+                  maxLength={opts.maxLength || undefined}
                   autoFocus
                 />
               )}

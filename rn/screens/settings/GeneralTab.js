@@ -306,6 +306,26 @@ function GeneralTab() {
 
       React.createElement(
         Controls.SetCard,
+        { title: '文风闸门（反说教）' },
+        React.createElement(
+          Controls.SetNote,
+          { first: true },
+          'AI 容易在段落里冒出「记住……」「原来……才是最重要的」这类说教句。开启后本轮正文会被打分，命中重说教就自动重写一次（被否决的版本进旧分支，可切回）。检查是本机启发式，不额外调模型。'
+        ),
+        React.createElement(Controls.SetSelect, {
+          label: '处理方式',
+          value: gs.styleGuard,
+          options: [
+            { value: 'auto', label: '自动重写一次（推荐）' },
+            { value: 'warn', label: '只提示，不动正文' },
+            { value: 'off', label: '关闭检查' }
+          ],
+          onChange: function (v) { setState({ styleGuard: v }); }
+        })
+      ),
+
+      React.createElement(
+        Controls.SetCard,
         { title: '思考过程展示' },
         React.createElement(Controls.SetSwitchRow, {
           label: '显示 AI 思维链（需要模型支持）',
