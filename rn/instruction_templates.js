@@ -184,8 +184,9 @@ function part1() {
     '    // mapNode.type 可选：universe / galaxy / solar_system / planet / continent / country / province / city / district / street / community / building / floor / room / custom',
     '',
     '    "timeline": { "official": [], "fanFuture": [], "playerLine": [] },',
-    '    // official：玩家进入之前，这个世界历史上发生过什么',
-    '    // fanFuture：玩家进入之后，原作会怎么走（同人卡带必填，写到台词级；原创卡带留空）',
+    '    // official：玩家进入之前，这个世界历史上发生过什么（只写原作/设定明确交代过的事实）',
+    '    // fanFuture：玩家进入之后世界默认会怎么走（同人卡带建议写，写到台词级；原创卡带留空）',
+    '    //   它是「默认走向」不是铁轨：玩家改了剧情，引擎会顺着玩家走，不会强行拉回这条线',
     '    // playerLine：玩家自己的支线，运行时引擎自动累积，卡带留空',
     '',
     '    // ★ 节点/伏笔系统（可选，默认关闭，需全局开关启用）',
@@ -256,7 +257,6 @@ function part1() {
     '    "currency": { "currencies": [], "purchasingPower": "", "exchangeRates": [], "allowBarter": false, "allowSell": false },',
     '    "hasRaces": false, "races": [], "occupations": []',
     '  }',
-    
     '  // ── 兼容 / 保留字段（正常写作留空即可，但不要省略） ──',
     '  //   npcs         兼容字段：NPC 一律写在 worldbook.npcs 里；',
     '  //                顶层 npcs 只是兼容写法：导入时会自动并入 worldbook.npcs（游戏里只认 worldbook.npcs）。',
@@ -269,6 +269,8 @@ function part1() {
     '',
   ].join('\n');
 }
+
+
 
 function part2() {
   return [
@@ -295,6 +297,8 @@ function part2() {
   ].join('\n');
 }
 
+
+
 function part3() {
   return [
     '═══════════════════════════════════════',
@@ -318,6 +322,8 @@ function part3() {
   ].join('\n');
 }
 
+
+
 function part4() {
   return [
     '═══════════════════════════════════════',
@@ -332,6 +338,9 @@ function part4() {
     '- worldbook.npcs 至少 3 个，不设上限（按题材定；每个 NPC 都要有独立目标/动机，不要围着玩家转的工具人）',
     '  · 重要 NPC 建议写 voice（可选）：{ "style": "说话方式一句话", "examples": ["参考台词≤3 条"], "taboo": ["绝不说的话"], "catchphrase": ["口头禅"] }。',
     '    引擎只会在这个 NPC 在场时把 voice 注入给 AI（最多 2 个 NPC），用来稳住语气；不写也完全正常，别为了凑字段硬编。',
+    '  · NPC 的反应基调写进 ooc/to 或 goals，别写成"专业身份"：职业是医生/心理咨询师/神职/拯救者，不等于他会对每一句话做心理分析；',
+    '    他要按自己的性格、和玩家的关系、当下在做什么来决定「回应 / 敷衍 / 听不懂 / 懒得理 / 继续手头的事」——',
+    '    卡带里可以点名他的回避方式（例如"被问到私事就换话题""不接玩笑"），这比"他很善良很会安慰人"有用得多。',
     '- worldbook.factions 0-4 个（题材没有势力结构就留 []）',
     '- worldbook.lore 可选：想要「提到才想起来」的设定（地名、组织、法器、某段旧事）就写进来，',
     '  每条 { "id", "name", "keys": ["至少2字的触发词"], "text": "≤2000字讲清楚一件事" }；',
@@ -360,6 +369,8 @@ function part4() {
     '4. 用户反馈问题，只改相关字段',
   ].join('\n');
 }
+
+
 
 function part5() {
   return [
@@ -557,7 +568,6 @@ function part5() {
     '',
     'AI 工具（游戏中自动可用）：',
     '· output_publish({name, title?, content?, desc?, type?, keywords?, audience?}) —— 发布产出物',
-
     '· output_stir({outputId, npcId, action}) —— 记录一次 NPC 引动（action 自由，npcId 由引擎给候选池）',
     '· output_settle({id, verdict}) —— 主动定论（少见）',
     '· query_outputs() —— 查询发酵中的产出物',
@@ -595,10 +605,11 @@ function part5() {
     '· 不填 destiny → 没有天命系统，创角时无天命面板',
     '· 填 "destiny": { "enabled": false } → 显式关闭',
     '· 填完整内容 → 创角时出现「掷天命」：掷 N 组 → 玩家挑一组 → 属性写入创角数据',
-
     '',
   ].join('\n');
 }
+
+
 
 function part6() {
   return [
@@ -677,7 +688,7 @@ function part6() {
     '三条线：official（过去）/ fanFuture（原作未来）/ playerLine（玩家支线）。',
     '',
     '★ 原创卡带：official 写 3-5 条历史事件，fanFuture 留空，playerLine 留空。',
-    '★ 同人卡带：official 写"进入之前原作发生过什么"，fanFuture 必填且写到台词级。',
+    '★ 同人卡带：official 写"进入之前原作发生过什么"，fanFuture 必填且写到台词级（默认走向，玩家改了就顺延）。',
     '',
     '"timeline": {',
     '  "official": [',
@@ -714,15 +725,21 @@ function part6() {
     '· fanFuture 每条：id, time, event, narrative, keyLines, outcome, branchPoints, tags',
     '· playerLine 由引擎运行时自动累积，卡带作者留空',
     '',
-    '★ fanFuture 是"原作的未来"，不是"作者编的可能走向"。',
-    '  它是给 AI 的导航线：玩家跟着主线走时，AI 知道该演什么，不会胡编原作剧情。',
-    '  玩家岔开主线时，AI 跟着玩家走，这条线暂时不用。',
+    '★ fanFuture 是"原作的未来"，不是"作者编的可能走向"，但它只是【默认走向】，不是铁轨。',
+    '  没有玩家干预时，世界按这条线走——AI 因此知道该演什么，不会胡编原作剧情。',
+    '  玩家一旦改变它，剧情就顺着玩家这次的行动和已经产生的后果继续发展；',
+    '  不要为了回到这条线强行纠正、把人物拉回原位、或者让已经发生的事"重新回到轨道"。',
     '',
     '★ fanFuture 的写作标准（重要）：',
     '· keyLines 必须写原作会说出的具体台词，写到句子级',
     '· narrative 要写清"怎么发生的"——地点、在场的谁、事情经过',
     '· outcome 写这条线的结局走向（玩家不插手时）',
-    '· branchPoints 写"玩家可以在哪里插手"（插手不改变结局，但改变玩家和人物的关系）',
+    '· branchPoints 写"玩家可以在哪里插手，插手之后这条线会分岔去哪"；不要写成"插手也改变不了结局"',
+    '',
+    '★ 区分原作事实与同人推断（生成既有 IP 的卡带时必须分开写）：',
+    '· official 只写原作明确交代过的过去（有出处、对得上原文）；',
+    '· fanFuture 里，原作明确给出的后续可以直写；自己补的合理推测要在 event 开头标「（推断）」；',
+    '· 拿不准的不要写成既成事实，放进 branchPoints 当"可能走向"，或者干脆不写。',
     '',
     '★ 什么算"同人卡带"：',
     '· 玩家进入的世界基于某个已有的 IP（动漫/小说/游戏/影视）',
@@ -802,6 +819,8 @@ function part6() {
     '',
   ].join('\n');
 }
+
+
 
 function getInstructionTemplate() {
   return part1() + '\n' + part2() + '\n' + part3() + '\n' + part4() + '\n' + part5() + '\n' + part6();

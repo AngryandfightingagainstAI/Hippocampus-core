@@ -380,7 +380,7 @@ function runB2() {
     afterText.indexOf('【黑暗内容处理协议】') >= 0);
   check('B2m 去重后静态段仍保留 promptRules 两条（感官锚点 / 对话功能）',
     afterText.indexOf('【感官锚点】每轮至少一个具体感官细节') >= 0 &&
-    afterText.indexOf('【对话功能】每句对话必须有战术目的') >= 0);
+    afterText.indexOf('【对话功能】对话不必句句有用') >= 0);
   check('B2n info_send 静态声明 + 第四部分指路各 1（可接受，见报告⑤）',
     countOf(full, 'info_send') >= 1);
 }

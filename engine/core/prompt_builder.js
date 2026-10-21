@@ -24,7 +24,13 @@ var GM_DEFAULTS = {
     // P14·S1：玩家陈述（Claim）≠ 世界事实（Fact）。原系统里「玩家说自己是皇家骑士」与
     //   「引擎确认玩家是皇家骑士」在数据上无法区分，AI 会把玩家的话直接写成既定事实。
     //   本条只约束「怎么说」，不判断真假（真假交给 NPC 的知识与证据）。
-    '玩家说出来的话是「声称」，世界事实另有来源。玩家可以撒谎、吹牛、试探、开玩笑，也可以说真话——真假由 NPC 和后续证据裁决。所以在叙述里，玩家说的「我是 X / 我有 Y / 我做过 Z」以玩家本人的说法出现（他说 / 他自称 / 他称）；当作事实叙述的只有三种：引擎工具已确认的状态、已发生的既成事件、检定与调查得到的结果。'
+    '玩家说出来的话是「声称」，世界事实另有来源。玩家可以撒谎、吹牛、试探、开玩笑，也可以说真话——真假由 NPC 和后续证据裁决。所以在叙述里，玩家说的「我是 X / 我有 Y / 我做过 Z」以玩家本人的说法出现（他说 / 他自称 / 他称）；当作事实叙述的只有三种：引擎工具已确认的状态、已发生的既成事件、检定与调查得到的结果。',
+    // P73·S1：普通反应优先。反馈里最刺眼的一条是「随口一句吐槽被当成心理创伤/需要被拯救」——
+    //   根因不是缺规则，而是缺「什么时候不该升级」的默认值：模型默认把每次互动当剧情事件。
+    //   这条与下面 promptRules 的【对话功能】【裂痕原则】改写配套，缺一条回退一半。
+    '多数互动是普通的，不需要深刻解读：NPC 可以只答一句、开个玩笑、耸耸肩、继续手头的事、略过这个话题、或者干脆没听清。只有情境里有具体依据（他看见了什么、你实际做了什么、你们之间发生过什么）才升级成追问或介入；不得只凭一句话判断玩家处在什么心理状态，也不得把玩笑、吐槽、黑色幽默当成创伤、求救或求救信号。',
+    // P73·S2：身份标签不构成自动介入的理由（医生/心理咨询/神职/拯救者最容易触发「路过也要救」）。
+    'NPC 的职业与身份标签（医生、心理咨询、神职、拯救者、导师……）不构成自动介入的理由。要不要管、管到哪一步，由这个人的性格、此刻的立场与当下的情境决定；他也可以装作没看见。'
   ],
   promptRules: [
     'AI 的角色是 DM：主持世界的人。世界的逻辑优先于玩家的期待。',
@@ -33,8 +39,9 @@ var GM_DEFAULTS = {
     '人设卡管气质，引擎管底线。',
     '【感官锚点】每轮至少一个具体感官细节（温度、光线、气味、声音、触感）。场景先有质感再有事件。',
     '【质感优先】先有温度、气味、光线、声音，再有剧情。场景的核心任务是"让世界存在"，剧情随后自然发生。',
-    '【对话功能】每句对话必须有战术目的——挑衅/试探/转移/封口/制造空白/暴露信息。信息在角逐中流动。',
-    '【裂痕原则】角色说的话是线索，不是结论。言行矛盾时，行为给出答案。玩家的陈述同样是线索，它的真假由 NPC 与后续证据裁决。',
+    '【对话功能】对话不必句句有用：打招呼、敷衍、闲扯、开玩笑、答非所问都算正常对话。只有当一方确实在试探、压价、封口、转移话题时，信息才在角逐中流动。',
+    '【裂痕原则】玩家的陈述和角色说的话一样，都是线索，不是结论。言行矛盾时以行为为准；但不要替玩家做心理诊断——玩家没明说的想法、情绪、动机都不是事实，也不是你能看见的东西。',
+    '【戏剧节制】不要为了戏剧性强行安排关系跃迁、配对、救赎、误会升级或正面冲突。剧情往前走的动力是角色自己的动机和已经发生的事实，不是"这一轮该有个高潮"。',
     '【行为驱动力】角色行为的来处是性格内核或当前情境刺激——剧情跟在角色身后走。',
     '【事件自治】事件发生不以玩家在场或知情为前提。玩家可选择介入/旁观/离开。',
     // P11·S1：以下两条原在默认 gm.cardStyle 内，玩家可清空 ⇒ 上提为引擎级（不受用户配置影响）。
@@ -450,6 +457,29 @@ var PromptBuilder = {
     } catch (e) {}
 
     const entityIdx = this.buildEntityIndex();
+    // P73·S3：原作后续（同人卡带填的 worldbook.timeline.fanFuture）。
+    //   以前这份数据只进卡带指令、从不进 prompt —— AI 完全看不到"原作会怎么走"，
+    //   于是同人卡带只能靠模型自己瞎编，或反过来靠卡带把同人推断硬写进 official 当既成事实。
+    //   现在把它作为**默认走向**注入，并明确两条边界：①玩家改变后顺延，不拉回原点；
+    //   ②与已发生的事实冲突时以事实为准。空 fanFuture（原创卡带）一个字符都不加。
+    try {
+      const _ff = (card.worldbook && card.worldbook.timeline && card.worldbook.timeline.fanFuture) || null;
+      if (Array.isArray(_ff) && _ff.length) {
+        const _shown = _ff.slice(0, 3).map(function (ev) {
+          const _t = (ev && ev.time) || '?';
+          const _e = String((ev && (ev.event || ev.narrative)) || '').replace(/\s+/g, ' ').slice(0, 40);
+          return _t + ' ' + _e;
+        });
+        const _blk = '【原作后续 · 默认走向（不是铁轨）】\n'
+          + _shown.join('\n')
+          + '\n（没有玩家干预时，世界按这条线走；玩家一旦改变它，剧情就顺着玩家的行动和后果往前发展，'
+          + '不要为了回到这条线而强行纠正。与已经发生的事实冲突时，以事实为准。'
+          + '这些是原作/同人推断的走向，不是玩家已经确认的信息——NPC 不知道它。）';
+        lines.push(_blk); lines.push('');
+        this._piBlock('fanFuture', _blk);
+      }
+    } catch (eFf) {}
+
     // P70-T2：semiStatic 块 = 不含实体索引的部分，与 entity 块互斥（避免查看器双算）。
     //   join 只为取记录快照，不改动 lines 与最终输出。
     this._piBlock('semiStatic', lines.join('\n'));
@@ -550,14 +580,24 @@ var PromptBuilder = {
     lines.push('');
     lines.push('>>> 当前时间：' + GameState.formatGameTime());
     // ★ 时间感：明确告诉 AI 今天/昨天/明天是什么
+    //   P73·S4：以前这里把一个月硬算成 30 天，「3 月 1 日的昨天」会算成 2 月 30 日，
+    //   而 advanceTime() 早就按 card.calendar.mode 区分 real（公历，有大小月/闰年）与
+    //   fictional（每月 30 天）。两处口径不一致 ⇒ 同人卡带（real）里 AI 会写出不存在的日期。
+    //   现在统一走同一个换算函数。
     if (GameState._gameTime) {
       var t = GameState._gameTime;
-      var p2 = function(n) { return String(n).padStart(2, '0'); };
+      var _md = function (y, m) {
+        return (typeof GameState._monthDays === 'function') ? GameState._monthDays(y, m) : 30;
+      };
+      var _shiftDay = function (d) {
+        var out = { year: d.year, month: d.month, day: d.day };
+        if (out.day < 1) { out.month -= 1; if (out.month < 1) { out.year -= 1; out.month = 12; } out.day = _md(out.year, out.month); }
+        if (out.day > _md(out.year, out.month)) { out.day = 1; out.month += 1; if (out.month > 12) { out.year += 1; out.month = 1; } }
+        return out;
+      };
       var todayStr = t.year + '年' + t.month + '月' + t.day + '日';
-      var yestT = { year: t.year, month: t.month, day: t.day - 1 };
-      if (yestT.day < 1) { yestT.month -= 1; yestT.day = 30; if (yestT.month < 1) { yestT.year -= 1; yestT.month = 12; } }
-      var tomT = { year: t.year, month: t.month, day: t.day + 1 };
-      if (tomT.day > 30) { tomT.month += 1; tomT.day = 1; if (tomT.month > 12) { tomT.year += 1; tomT.month = 1; } }
+      var yestT = _shiftDay({ year: t.year, month: t.month, day: t.day - 1 });
+      var tomT = _shiftDay({ year: t.year, month: t.month, day: t.day + 1 });
       var yestStr = yestT.year + '年' + yestT.month + '月' + yestT.day + '日';
       var tomStr = tomT.year + '年' + tomT.month + '月' + tomT.day + '日';
       lines.push('>>> 今天是 ' + todayStr + '，昨天是 ' + yestStr + '，明天是 ' + tomStr);

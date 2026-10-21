@@ -669,7 +669,12 @@
       t.minute += mins;
       while (t.minute >= 60) { t.minute -= 60; t.hour++; }
       while (t.hour >= 24) { t.hour -= 24; t.day++; }
-      while (t.day > 30) { t.day -= 30; t.month++; }
+      // P73·S4：跟 GameState 走同一套月天数口径（real = 公历大小月/闰年，fictional = 30 天），
+      //   以前这里写死 30 天，同人卡带的事件预告时间会跟主角时间差出一天。
+      var _md = (typeof GameState !== 'undefined' && GameState && typeof GameState._monthDays === 'function')
+        ? GameState._monthDays : function () { return 30; };
+      var guard = 0;
+      while (t.day > _md(t.year, t.month) && guard < 1000) { t.day -= _md(t.year, t.month); t.month++; guard++; }
       while (t.month > 12) { t.month -= 12; t.year++; }
       var p = function(n) { return String(n).padStart(2, '0'); };
       return t.year + '-' + p(t.month) + '-' + p(t.day) + ' ' + p(t.hour) + ':' + p(t.minute);

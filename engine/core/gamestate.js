@@ -226,6 +226,17 @@ var GameState = {
     return days[month - 1] || 30;
   },
 
+  // P73·S4：按月天数口径的唯一入口。
+  //   calendar.mode === 'real' ⇒ 公历真实天数（大小月 + 闰年）；
+  //   其它（默认 fictional）⇒ 每月 30 天的虚构历法。
+  //   prompt 的「昨天/明天」、事件预告的时间换算、开局日期归一化都走这里，
+  //   避免三处各自写死 30 天，出现「2 月 30 日」这种不存在的日期。
+  _monthDays(year, month) {
+    const card = this.currentCard;
+    const isReal = !!(card && card.calendar && card.calendar.mode === 'real');
+    return isReal ? this._daysInMonth(year, month) : 30;
+  },
+
   _buildInitialGameTime(card, playerData) {
     // 1. 年份：era.startYear > era.period[0] > birth_year+11 > eraRange[0] > 1990
     let startYear = null;
@@ -277,6 +288,13 @@ var GameState = {
     if (!(day >= 1 && day <= 31)) day = 1;
     if (!(hour >= 0 && hour <= 23)) hour = 8;
     if (!(minute >= 0 && minute <= 59)) minute = 0;
+
+    // P73·S4：按历法把日号收进合法范围。
+    //   以前只校验 1-31，于是 fictional（每月 30 天）卡带写 day: 31、或 real 卡带写 2 月 30 日都能存进去，
+    //   结果开局那一刻时间就是非法的，advanceTime 第一次进月就会跳掉一天。
+    const calendarMode = (card.calendar && card.calendar.mode === 'real') ? 'real' : 'fictional';
+    const monthDays = calendarMode === 'real' ? this._daysInMonth(startYear, month) : 30;
+    if (day > monthDays) day = monthDays;
 
     return { year: startYear, month: month, day: day, hour: hour, minute: minute };
   },

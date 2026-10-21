@@ -23,6 +23,8 @@ var CardValidator = {
     // P24·④：结局「开局即满足」静态自查（只报 warnings，不拦导入）
     const warnings = this.auditEndingsAtStart(card);
     for (const m of moved) warnings.push(m);
+    // P73·S3：时间线（同人未来是不是被写成铁轨）只报 warnings，不拦导入
+    for (const m of this.auditTimeline(card)) warnings.push(m);
     // P72·W4：NPC 口吻（voice）自查 —— 全可选段，只报 warnings，绝不拦导入
     for (const m of this.auditNpcVoices(card)) warnings.push(m);
     // P72·W9：worldbook.lore（世界书关键词触发）——可选字段，同样只警告不拦导入
@@ -54,8 +56,35 @@ var CardValidator = {
     }
   },
 
-  auditNpcVoices(card) {
+  // P73·S3：时间线自查（worldbook.timeline）。
+  //   运行时 fanFuture 只是「默认走向」（prompt 里明确写了非强制），但卡带作者很容易
+  //   把它写成铁轨（"必须""一定""不可改变"），或者反过来把同人推断当原作事实塞进 official。
+  //   这两种都会让 AI 在玩家改变剧情后强行纠正。只报 warning，不拦导入。
+  auditTimeline(card) {
     const out = [];
+    try {
+      const tl = (card && card.worldbook && card.worldbook.timeline) || null;
+      if (!tl || typeof tl !== 'object') return out;
+      const ff = Array.isArray(tl.fanFuture) ? tl.fanFuture : [];
+      const off = Array.isArray(tl.official) ? tl.official : [];
+      if (ff.length && !off.length) {
+        out.push('worldbook.timeline.fanFuture 有内容但 official 为空：同人卡带通常要先写"玩家进入之前发生过什么"，否则 AI 分不清原作事实与后续推断');
+      }
+      const HARD = /(必须|一定要|必然|不可改变|不能改变|注定|铁律|务必)/;
+      let hardHit = 0;
+      ff.forEach(function (ev) {
+        if (!ev || typeof ev !== 'object') return;
+        const blob = String(ev.event || '') + ' ' + String(ev.narrative || '') + ' ' + String(ev.outcome || '');
+        if (HARD.test(blob)) hardHit++;
+      });
+      if (hardHit) {
+        out.push('worldbook.timeline.fanFuture 有 ' + hardHit + ' 条写成"必然/必须"：它是默认走向而不是铁轨，玩家改了就顺着玩家的行动发展（建议改成中性叙述）');
+      }
+    } catch (e) {}
+    return out;
+  },
+
+  auditNpcVoices(card) {    const out = [];
     const npcs = (card && card.worldbook && Array.isArray(card.worldbook.npcs)) ? card.worldbook.npcs : [];
     for (const def of npcs) {
       if (!def || typeof def !== 'object') continue;
