@@ -19,6 +19,43 @@
 
 var HomeModel = require('./home_model.js');
 
+// P72·D6 的引擎底座：消息树（planRounds / splitAssistant / parseOptions）。
+// bootstrap 会把 engine/message_tree.js 挂成全局 MessageTree；但 Node smoke、
+// 早启动时序、以及"只 require 本文件"的调用方那里可能还没挂上——这里兜一层
+// require。两者都拿不到才退回旧的两两配对，并打一条警告：
+// 绝不能静默重放出空剧情（真机上的表现就是"点继续，只剩一条提示"）。
+var _MessageTree = null;
+function resolveMessageTree() {
+  if (_MessageTree) return _MessageTree;
+  if (typeof MessageTree !== 'undefined' && MessageTree && MessageTree.planRounds) {
+    _MessageTree = MessageTree;
+    return _MessageTree;
+  }
+  try { _MessageTree = require('../engine/message_tree.js'); } catch (e) { _MessageTree = null; }
+  return _MessageTree;
+}
+
+// 兜底配对：`[system, user, assistant, …]` 两两成对（P72 之前的旧口径）。
+// 只用于 MessageTree 完全拿不到的降级路径——插了合成 user 时会串轮，
+// 所以命中这条路径必须警告，便于现场定位。
+function legacyPlan(history) {
+  var out = [];
+  for (var i = 1; i + 1 < history.length; i += 2) {
+    var u = history[i], a = history[i + 1];
+    if (!a || a.role !== 'assistant') continue;
+    var opening = (i === 1);
+    out.push({
+      round: out.length + 1,
+      hint: (u && u.role === 'user') ? (opening ? '（游戏开始）' : ('（' + String(u.content || '') + '）')) : null,
+      content: a.content,
+      meta: a.meta || null,
+      index: i + 1,
+      playerNodeId: null
+    });
+  }
+  return out;
+}
+
 // nav_store 是纯 JS（无 React/RN 依赖），直连同实例（与 rn_platform 同款 try/catch）；
 // 拿不到时 routeMissingStep 返回 false，continueLast 的返回值不受影响。
 var NavStore = null;
@@ -107,9 +144,16 @@ async function continueLast() {
 function replayHistory() {
   Platform.ui.clearStory();
   var messages = GameState.chatHistory || [];
-  var plan = (typeof MessageTree !== 'undefined' && MessageTree.planRounds)
-    ? MessageTree.planRounds(messages)
-    : [];
+  var mt = resolveMessageTree();
+  var plan;
+  if (mt && mt.planRounds) {
+    plan = mt.planRounds(messages);
+  } else {
+    // 降级路径：MessageTree 完全拿不到（理论上不该发生，bootstrap 会挂全局）。
+    // 用旧的两两配对顶上并警告，避免"继续游戏后只剩一条提示"这种静默空屏。
+    try { console.warn('[P72] MessageTree 未加载，重放退回旧配对（合成 user 会串轮）'); } catch (e0) {}
+    plan = legacyPlan(messages);
+  }
   for (var k = 0; k < plan.length; k++) {
     var it = plan[k];
     var roundNum = it.round;
@@ -117,12 +161,12 @@ function replayHistory() {
     if (it.hint) Platform.ui.appendHint(it.hint, it.playerNodeId);
     var story = it.content, options = [];
     var clean = ToolExecutor.strip(it.content);
-    var sp = (typeof MessageTree !== 'undefined' && MessageTree.splitAssistant)
-      ? MessageTree.splitAssistant(clean)
+    var sp = mt && mt.splitAssistant
+      ? mt.splitAssistant(clean)
       : { story: clean, optionsRaw: '', bodyHit: false, optHit: false };
     if (sp.bodyHit) story = sp.story;
-    if (sp.optHit && typeof MessageTree.parseOptions === 'function') {
-      options = MessageTree.parseOptions(sp.optionsRaw);
+    if (sp.optHit && mt && typeof mt.parseOptions === 'function') {
+      options = mt.parseOptions(sp.optionsRaw);
     }
     StoryLoop.currentOptions = options;
     Platform.ui.renderChapterHead(roundNum);

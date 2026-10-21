@@ -33,8 +33,18 @@
     // P72·W0-a：快照轮号改读全局单调轴 _roundSeq（玩家真行动入队时 +1，见 story.js
     //   sendAction 三处；切分支/截断都不回跳）。旧口径（数主线真玩家）继续当显示轴
     //   用——在 ui_core._currentRoundNum，与本函数解耦。
+    //
+    // ★ P72 复核补：_roundSeq 只有在 story.js 入队过真玩家行动后才存在；
+    //   e2e 直调 push()、老存档恢复中、以及任何"先进聊天历史再压快照"的调用方
+    //   都会看到 undefined/0——此时必须回落到旧口径（数主线真玩家输入），
+    //   否则 push() 直接 return false，表现为"快照全丢、回到这里点了没反应"。
     _currentRound: function() {
-      return (typeof GameState._roundSeq === 'number') ? GameState._roundSeq : 0;
+      if (typeof GameState._roundSeq === 'number' && GameState._roundSeq > 0) {
+        return GameState._roundSeq;
+      }
+      return (GameState.chatHistory || []).filter(function (m) {
+        return m.role === 'user' && !String(m.content || '').startsWith('【系统 ·');
+      }).length;
     },
 
     // ---------- ★ P54·§四 F1：跨压缩回退的切点 ----------

@@ -215,7 +215,9 @@ H.run('F1-9 源码哨兵：两仓 snapshots.js 归一后逐字同源 + 关键行
     'var cut = this._cutIndex(snap);',
     'if (cut.cut < 0) return { ok: false, reason: cut.reason, split: true };',
     'GameState.chatHistory = (GameState.chatHistory || []).slice(0, cut.cut);',
-    'return { ok: true, round: round, snap: snap, cut: cut.cut, cutBy: cut.how };'
+    // ★ P72·W0-b：返回值多了 lostMsgIds（被切走分支的节点 id，供 Logger.archiveAfter
+    //   归档日志；不再物理删日志）。哨兵跟着 W0-b 的口径改，语义仍是"这条返回语句在"。
+    'return { ok: true, round: round, snap: snap, cut: cut.cut, cutBy: cut.how, lostMsgIds: lostMsgIds };'
   ]) H.contains(rn, must, 'F1-9 本仓应有：' + must);
   H.notOk(rn.indexOf('slice(0, snap.chatLength)') >= 0, 'F1-9 老的下标截断写法应消失');
   if (HAVE_PC) {

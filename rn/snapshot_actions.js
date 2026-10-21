@@ -24,22 +24,51 @@ function lastAssistantText() {
   return '';
 }
 
-// 按游戏内日期 + 轮次删回退点之后的日志
-// （ui_snapshot L56-62 / L104-107；★ P4 追加第 4 参 round：
-//   当天日志不再整条删，只截断该轮之后的原文）
-function deleteLogsAfterRollback(snap) {
+// P72·W0-b 对齐桌面：回退不再物理删日志（deleteLogsAfter 只留给显式入口），
+// 改成"归档"——按被切掉的 messageId 把对应日志块标 archived，日志页
+// 「显示已归档」还能看。旧分支被切回来时日志也仍在。
+// 桌面锚点：engine/ui_snapshot.js doRegenerate / onRollbackClick 里的
+//   Logger.archiveAfter(cardId, saveId, lostMsgIds)。
+function archiveLogsAfter(snap, ids, hintPrefix) {
   try {
-    if (snap && snap.gameTime && typeof Logger !== 'undefined' &&
-        GameState.currentCardId && GameState.currentSaveId) {
-      var deleted = Logger.deleteLogsAfter(GameState.currentCardId, GameState.currentSaveId, snap.gameTime, snap.round);
-      if (deleted > 0) Platform.ui.appendHint('（已回退日志 ' + deleted + ' 条）');
-    }
-  } catch (e) { /* 日志回退失败不阻断主链（同 ui_snapshot L61） */ }
+    if (!ids || !ids.length) return 0;
+    if (typeof Logger === 'undefined' || !Logger.archiveAfter) return 0;
+    if (!GameState.currentCardId || !GameState.currentSaveId) return 0;
+    var archived = Logger.archiveAfter(GameState.currentCardId, GameState.currentSaveId, ids);
+    if (archived > 0) Platform.ui.appendHint('（已归档' + (hintPrefix || '回退前') + '的日志 ' + archived + ' 块）');
+    return archived;
+  } catch (e) { return 0; }
 }
 
 // 重绘剧情区（RN = story_runtime.replayHistory，对齐 ui_core.rebuildStoryFromHistory）
 function replayStory() {
   StoryRuntime.replayHistory();
+}
+
+// P72·W1 对齐桌面：本档是否有可用的消息树 + 该快照是否带 messageId 且节点仍在。
+// 有树 ⇒ 回退/重跑改走"切分支"（节点、日志、后续快照全保留，‹i/n› 可切回）；
+// 无树老档 ⇒ 保留旧的截断路径（老档零变化）。
+function haveTreeFor(snap) {
+  return !!(typeof GameState !== 'undefined' && GameState.messageTree &&
+    typeof MessageTree !== 'undefined' && typeof MessageTree.byId === 'function' &&
+    snap && snap.messageId && MessageTree.byId(snap.messageId));
+}
+
+// P72·W1-b 对齐桌面 _branchStepBack：分支步退公共核心。
+// 切 activeLeaf 到本轮 action 节点的父（= 上一轮 story 末尾）+ restoreOnly
+// 恢复该轮开始前快照（只恢复不截断，快照文件全留）+ 非破坏归档被切掉的日志
+// + 重绘 + 提示。桌面 engine/ui_snapshot.js:_branchStepBack 是同一口径。
+function branchStepBack(actionId, round, tailIds, hint) {
+  var actionNd = (typeof MessageTree !== 'undefined' && MessageTree.byId) ? MessageTree.byId(actionId) : null;
+  if (!actionNd || !MessageTree.setActiveLeaf(actionNd.parentId)) return { ok: false, reason: '分支切换失败' };
+  var rr = Snapshots.restoreOnly(round);
+  if (!rr.ok) return { ok: false, reason: rr.reason };
+  archiveLogsAfter(null, tailIds, '回退前');
+  Platform.ui.renderTopbar();
+  Platform.ui.renderSidebarExpanded();
+  replayStory();
+  if (hint) Platform.ui.appendHint(hint);
+  return { ok: true };
 }
 
 // 重新生成最新一轮（ui_snapshot.onRegenerateClick + doRegenerate 合并）
@@ -68,10 +97,28 @@ async function regenerate() {
   if (comment === null) return false;
 
   var rejectedText = lastAssistantText();
-  var r = Snapshots.rollbackLast();
-  if (!r.ok) { Platform.ui.toast('回滚失败：' + r.reason, { type: 'error' }); return false; }
+  // P72·W1 对齐桌面：有树档改走分支——被否决的输出节点保留（‹i/n› 可切回），
+  //   activeLeaf 切回本轮 action，restoreOnly 只恢复数据面不截断；retryLast 重跑时
+  //   新 story 挂 action 下成为兄弟版本。无树老档保留截断 + 非破坏归档。
+  if (typeof GameState !== 'undefined' && GameState.messageTree &&
+      typeof MessageTree !== 'undefined' && typeof MessageTree.byId === 'function') {
+    var leafId = MessageTree.activeLeafId();
+    var leaf = leafId ? MessageTree.byId(leafId) : null;
+    if (leaf && leaf.parentId) {
+      var rr = Snapshots.restoreOnly(Snapshots._currentRound());
+      if (!rr.ok) { Platform.ui.toast('重跑失败：' + rr.reason, { type: 'error' }); return false; }
+      if (!MessageTree.setActiveLeaf(leaf.parentId)) {
+        Platform.ui.toast('重跑失败：分支切换失败', { type: 'error' }); return false;
+      }
+    } else {
+      Platform.ui.toast('重跑失败：分支切换失败', { type: 'error' }); return false;
+    }
+  } else {
+    var r = Snapshots.rollbackLast();
+    if (!r.ok) { Platform.ui.toast('回滚失败：' + r.reason, { type: 'error' }); return false; }
+    archiveLogsAfter(r.snap, r.lostMsgIds, '重新生成前');
+  }
 
-  deleteLogsAfterRollback(r.snap);
   StoryLoop._regenContext = { rejected: rejectedText, comment: String(comment).trim() };
   replayStory();
   StoryLoop.retryLast();
@@ -91,19 +138,40 @@ async function rollbackToRound(round) {
   var laterRounds = snaps.filter(function (s) { return s.round > round; }).length;
   if (!laterRounds) { Platform.ui.toast('这已经是最新轮次，无需回退', { type: 'info' }); return false; }
 
-  var msg = '⚠ 回退到第 ' + round + ' 轮开始前，会丢弃之后的 ' + laterRounds + ' 轮：\n\n' +
-    '· 之后的剧情对话\n' +
-    '· 之后所有数值变更（HUD / 面板 / 关系）\n' +
-    '· 之后获得的物品\n' +
-    '· 之后更新的 NPC 状态\n' +
-    '· 之后生成的日志\n\n' +
-    '确定？';
+  var snap = Snapshots.peek(round);
+  var haveTree = haveTreeFor(snap);
+
+  var msg = haveTree
+    ? '⚠ 回到第 ' + round + ' 轮开始前，之后的 ' + laterRounds + ' 轮转入旧分支：\n\n' +
+      '· 之后的剧情从本线隐藏（节点保留，版本按钮可再切回）\n' +
+      '· 数值 / 物品 / NPC 回到这一轮开始前\n' +
+      '· 之后的日志转入归档（日志页「显示已归档」可看）\n\n' +
+      '确定？'
+    : '⚠ 回退到第 ' + round + ' 轮开始前，会丢弃之后的 ' + laterRounds + ' 轮：\n\n' +
+      '· 之后的剧情对话\n' +
+      '· 之后所有数值变更（HUD / 面板 / 关系）\n' +
+      '· 之后获得的物品\n' +
+      '· 之后更新的 NPC 状态\n' +
+      '· 之后生成的日志\n\n' +
+      '确定？';
   if (!(await Platform.ui.confirmAsync(msg))) return false;
 
+  if (haveTree) {
+    // —— P72·W1 分支路径：只切线恢复，不删节点、不删日志、不删后续快照 ——
+    var ids = MessageTree.mainlineIds();
+    var cutIdx = (ids ? ids.indexOf(snap.messageId) : -1);
+    var tailIds = (cutIdx >= 0) ? ids.slice(cutIdx) : null;
+    var rb = branchStepBack(snap.messageId, round, tailIds,
+      '（已回到第 ' + round + ' 轮开始前；之后的轮次转入旧分支，节点与日志都保留）');
+    if (!rb.ok) Platform.ui.toast('回退失败：' + rb.reason, { type: 'error' });
+    return rb.ok;
+  }
+
+  // —— 无树老档：截断式回退 + 非破坏归档（与桌面 W0-b 旧路径一字不差） ——
   var r = Snapshots.rollbackTo(round);
   if (!r.ok) { Platform.ui.toast('回退失败：' + r.reason, { type: 'error' }); return false; }
 
-  deleteLogsAfterRollback(r.snap);
+  archiveLogsAfter(r.snap, r.lostMsgIds, '回退前');
   Platform.ui.renderTopbar();
   Platform.ui.renderSidebarExpanded();
   replayStory();
