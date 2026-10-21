@@ -205,6 +205,13 @@ load('StyleGuard',            function () { return require('../engine/style_guar
 // P72·W9：世界书关键词触发 —— prompt_builder.buildSemiStatic 里用 LoreTrigger.match，
 //   必须排在前；缺了会退化成「整本世界书照塞」（行为回到改动前，不算崩）。
 load('LoreTrigger',           function () { return require('../engine/lore_trigger.js'); });
+// P74·A+：叙事越界治理三件套 —— 顺序要求：
+//   TurnIntent / PlanBlock 必须早于 PromptBuilder（buildDynamic 尾部按意图注入一行条件指令）；
+//   NarrativeLint 必须早于 StoryLoop（_lintAndRepair 里 typeof 判空会静默跳过）。
+//   缺任一：TurnIntent 缺失 ⇒ 不注入条件指令（行为同改动前）；NarrativeLint 缺失 ⇒ 只做 StyleGuard。
+load('TurnIntent',            function () { return require('../engine/core/turn_intent.js'); });
+load('PlanBlock',             function () { return require('../engine/core/plan_block.js'); });
+load('NarrativeLint',         function () { return require('../engine/core/narrative_lint.js'); });
 load('StoryLoop',             function () { return require('../engine/story.js'); }, 'CreateFlow');
 
 // ============================================================

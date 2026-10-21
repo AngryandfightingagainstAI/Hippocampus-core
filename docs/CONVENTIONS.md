@@ -82,11 +82,11 @@ node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF）：**逐字节相同 49 个**、**仅行尾不同 23 个**、**真差异 15 个**，
-合计 85 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
+最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF；P74·A+ 新增 `engine/core/turn_intent.js`、`plan_block.js`、`narrative_lint.js` 三件套并同步 `engine/story.js`）：**逐字节相同 52 个**、**仅行尾不同 23 个**、**真差异 15 个**，
+合计 90 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（49 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（52 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
@@ -94,7 +94,10 @@ engine/background.js
 engine/card_display.js
 engine/core/api_client.js
 engine/core/gamestate.js
+engine/core/narrative_lint.js
+engine/core/plan_block.js
 engine/core/tool_executor.js
+engine/core/turn_intent.js
 engine/creation_quiz.js
 engine/destiny.js
 engine/error_log_core.js
@@ -244,7 +247,7 @@ vfs/vfs_guard.js
 【三、`rn/rn_bootstrap.js` 装载约定】
 ================================================================
 
-- 当前 **73 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`；2026-10-21 P70-T2 加 `prompt_inspect.js` 后 69 → 70；P72 加 `message_tree.js` 后 70 → 71；W3 加 `style_guard.js`、W9 加 `lore_trigger.js` 后 71 → 73）。
+- 当前 **76 个 `load()` 调用**（`grep -c '^\s*load(' rn/rn_bootstrap.js`；2026-10-21 P70-T2 加 `prompt_inspect.js` 后 69 → 70；P72 加 `message_tree.js` 后 70 → 71；W3 加 `style_guard.js`、W9 加 `lore_trigger.js` 后 71 → 73；P74·A+ 加 `turn_intent.js` / `plan_block.js` / `narrative_lint.js` 后 73 → 76）。
 - 每个 `load(name, () => require('../engine/xxx.js'), extra?)`，`require` 参数必须是**字面量字符串**
   （Metro 只静态收集字面量；拼出来的路径不进 bundle）。
 - `load` 失败只打 `BOOTSTRAP_FAIL: …` 然后继续，**不抛** ⇒ 少一个模块不会立刻崩，
@@ -331,7 +334,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools/run_batch.js                   # 前置门 + 全量（88 套）（2026-10-21 P72·W2 批后重记：新增 test_p72_edit.js）
+node tools/run_batch.js                   # 前置门 + 全量（92 套）（2026-10-21 P74·A+ 批后重记：新增 test_p74_intent.js / test_p74_lint.js）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）

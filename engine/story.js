@@ -449,6 +449,20 @@ var StoryLoop = {
       }
     } catch (e) { console.warn('[Snapshots] push 失败：', e); }
     try {
+      // ★ P74·A+：本轮意图分类（纯函数、0 次模型调用）。
+      //   结果只影响 dynamic 尾部那一句条件指令；chat + none ⇒ 一个字都不加。
+      //   拿不准时 classifier 自己退回 chat（宁可不约束），所以这里没有业务兜底逻辑。
+      try {
+        if (typeof TurnIntent !== 'undefined' && TurnIntent && typeof TurnIntent.classify === 'function') {
+          var __tiText = TurnIntent.lastUserText(GameState.chatHistory);
+          var __ti = TurnIntent.classify({ text: __tiText, notices: GameState._pendingSystemNotices || [] });
+          TurnIntent.set(__ti);
+          if (__ti && __ti['class'] !== 'chat') {
+            try { console.log('[P74] intent=' + __ti['class'] + ' esc=' + __ti.escalation + ' conf=' + __ti.confidence); } catch (eL) {}
+          }
+        }
+      } catch (eTI) { try { console.warn('[TurnIntent]', eTI); } catch (eT2) {} }
+
       if (GameState.chatHistory.length > 0 && GameState.chatHistory[0].role === 'system') {
         // P72：chatHistory[0] 即树根 msg 的同引用——这行改完树也同步了，无需再调树
         GameState.chatHistory[0].content = PromptBuilder.buildStatic() + '\n' + PromptBuilder.buildSemiStatic();
@@ -627,6 +641,20 @@ var StoryLoop = {
       
       if (myToken !== GameState._sessionToken) return;
 
+      // ★ P74·A+：剥掉可选的 PLAN 协议块（玩家永远看不到；历史里也不留）。
+      //   fail-open：没有块 / 解析失败 / 超长都只丢块，不动正文一个字。
+      //   注意：__pbInfo 必须声明在 try 外面 —— 下面的 _lintAndRepair 要用它；
+      //   写成块内 var 在真机上会报 `Property '__planInfo' doesn't exist`（Hermes 严格作用域）。
+      var __pbInfo = null;
+      try {
+        if (typeof PlanBlock !== 'undefined' && PlanBlock && typeof PlanBlock.consume === 'function') {
+          __pbInfo = PlanBlock.consume(content);
+          content = __pbInfo.text;
+          GameState._lastPlan = __pbInfo.plan || null;
+          try { console.log('[P74] plan=' + (__pbInfo.plan ? __pbInfo.plan['class'] + '/' + __pbInfo.plan.escalation : 'none') + ' reason=' + __pbInfo.reason); } catch (eL2) {}
+        }
+      } catch (ePB) { try { console.warn('[PlanBlock]', ePB); } catch (eP2) {} }
+
       const reasoning = GameState._lastReasoning || '';
       const usage = GameState._lastUsage || null;
 
@@ -688,7 +716,27 @@ var StoryLoop = {
         }
 
         const clean = ToolExecutor.strip(content);
-        this.parseAndRender(clean, toolResults);
+        // ★ P74·A+：叙事越界检测（渲染前）。repair 档下若只有「替玩家决定/写内心」这一条，
+        //   只重写命中那一段（其余正文一字不动），再拿去渲染；warn 档不动正文，只在末尾留一句提示。
+        var __lintText = clean;
+        try {
+          var __lintRound = (typeof GameState._roundSeq === 'number' ? GameState._roundSeq : 0);
+          __lintText = await this._lintAndRepair(clean, toolResults, (__pbInfo && __pbInfo.plan) || GameState._lastPlan || null, __lintRound);
+        } catch (eLP) { console.warn('[P74 lint]', eLP); }
+        // 修补过的正文要跟历史/树保持一致（node.msg 就是 chatHistory 里那条的同一引用），
+        // 否则重放（replay）与导出会出现「存档里是旧文本、屏幕上新文本」的错位。
+        if (__lintText !== clean && assistantNode && assistantNode.msg) {
+          assistantNode.msg.content = __lintText;
+        }
+        this.parseAndRender(__lintText, toolResults);
+        // P74：warn 档（默认）才在叙事流末尾留一句人话；repair 档已经改过正文，不再重复提示。
+        try {
+          if (GameState._lastLint && typeof NarrativeLint !== 'undefined' && NarrativeLint
+            && typeof NarrativeLint.config === 'function' && NarrativeLint.config().mode === 'warn') {
+            var __lintHint = NarrativeLint.hintText(GameState._lastLint);
+            if (__lintHint) Platform.ui.appendHint(__lintHint);
+          }
+        } catch (eLH) {}
       toolResults.forEach(function(r) {
         if (r && r.ok && r.type === 'proposal' && r.action === 'create' && r.proposalId) {
           try { Platform.ui.appendProposalCard(r.proposalId); } catch (e) { console.warn('[ProposalCard]', e); }
@@ -1301,6 +1349,93 @@ var StoryLoop = {
       }
     } catch (e) { console.warn('[StyleGuard] 检查失败：', e); }
     return out;
+  },
+
+  // ============================================================
+  // P74·A+：叙事越界检测 + 局部修补（生成之后，不改 prompt）
+  // ------------------------------------------------------------
+  // 与 StyleGuard 的分工：
+  //   StyleGuard = 文风闸门（说教味），命中 fail 会整轮重掷；
+  //   NarrativeLint = 事实层越界（替玩家决定 / 写内心 / 无凭证升级 / 关系跃迁 / OOC 口吻）。
+  // 为什么不整轮重掷：整轮重掷贵且会把已经写好的东西一起丢掉。只有 agency 走「只重写命中那一段」。
+  // 为什么 psych/ooc 永远不改：它们是概率判断（正则/3-gram），误杀代价比漏判大得多。
+  //
+  // @returns {Promise<string>} 可能被局部修补过的正文（其余部分一字不动）
+  // ============================================================
+  async _lintAndRepair(text, toolResults, plan, roundNum) {
+    GameState._lastLint = null;
+    try {
+      if (typeof NarrativeLint === 'undefined' || !NarrativeLint) return text;
+      var cfg = (typeof NarrativeLint.config === 'function') ? NarrativeLint.config() : { mode: 'warn', budget: {} };
+      if (cfg.mode === 'off') return text;
+
+      var res = NarrativeLint.run({
+        text: text, plan: plan, toolResults: toolResults, card: GameState.currentCard,
+        // playerText：玩家这轮的原话，用来避免把「玩家自己说的动作」误判成替玩家决定
+        playerText: (typeof GameState._lastUserRaw === 'string' ? GameState._lastUserRaw : '')
+      });
+      GameState._lastLint = res;
+      var fails = res.fail || [];
+      var warns = res.warn || [];
+      if (!fails.length && !warns.length) return text;
+
+      try {
+        console.log('[P74] lint fails=' + fails.map(function (h) { return h.id; }).join(',')
+          + ' warns=' + warns.map(function (h) { return h.id; }).join(',')
+          + ' mode=' + cfg.mode);
+      } catch (eL) {}
+
+      // 1) 无凭证升级：唯一能让模型下一轮改口的通道就是 pendingSystemNotices（P64 机制）
+      if (fails.some(function (h) { return h.id === 'escalation'; })) {
+        GameState._pendingSystemNotices.push(
+          '引擎检测到：你上一轮声称发生了关系或事件层面的变化，但本轮没有任何对应的工具调用成功。'
+          + '若确实发生了，请调用 proposal / trigger_event 等工具；没有发生就不要在正文里宣布。'
+        );
+      }
+
+      // 2) 局部修补：只有 agency（字符串可判的硬事实）、只有 repair 档、只有预算够
+      var repairable = res.repairable || [];
+      if (cfg.mode === 'repair' && repairable.length) {
+        var can = (typeof NarrativeLint.canSpend === 'function') ? NarrativeLint.canSpend(roundNum) : false;
+        if (can) {
+          var hit = repairable[0];
+          var para = NarrativeLint.locateParagraph(text, hit.at);
+          var fixed = await this._repairParagraph(para.text, hit.why);
+          if (fixed) {
+            text = NarrativeLint.replaceParagraph(text, para.start, para.end, fixed);
+            if (typeof NarrativeLint.spend === 'function') NarrativeLint.spend(roundNum);
+            GameState._lastLintRepaired = { round: roundNum, why: hit.why };
+            try { console.log('[P74] lint repaired para (' + hit.why + ')'); } catch (eL2) {}
+          }
+        }
+      }
+      return text;
+    } catch (e) {
+      console.warn('[P74 lint] 检查失败：', e);
+      return text;
+    }
+  },
+
+  // 只重写命中的那一段：max_tokens≈300（约整轮 1/5 成本）。
+  // 防御：返回太短/太长/带开场白一律丢弃 —— 宁可留着原样，也不要把正文改坏。
+  async _repairParagraph(paraText, why) {
+    var prompt = '你是小说校对。下面这一段出现了「' + why + '」的问题：叙述者替玩家做了决定或写了内心，而玩家并没有表达过。\n'
+      + '要求：只把这一处改掉——改成只写玩家能看见、能听见的外部事实（动作、表情、语气、环境），'
+      + '不要替玩家下结论、不要写玩家内心。保持原文篇幅与语气，不要新增情节，不要解释。\n'
+      + '直接输出改写后的这一段，不要加引号、标题或任何说明。\n\n'
+      + '=== 原文 ===\n' + String(paraText || '') + '\n=== 原文结束 ===';
+    try {
+      var out = await ApiClient.chat([{ role: 'user', content: prompt }], { max_tokens: 300, temperature: 0.3 });
+      var s = String(out || '').trim();
+      if (!s) return '';
+      if (s.length < 6) return '';
+      if (s.length > Math.max(80, String(paraText || '').length * 2.2)) return '';
+      if (/^(好的|以下是|改写后|抱歉|我无法)/.test(s)) return '';
+      return s;
+    } catch (e) {
+      console.warn('[P74 lint] 局部修补失败：', e);
+      return '';
+    }
   }
 };
 

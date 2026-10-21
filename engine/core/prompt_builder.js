@@ -42,6 +42,10 @@ var GM_DEFAULTS = {
     '【对话功能】对话不必句句有用：打招呼、敷衍、闲扯、开玩笑、答非所问都算正常对话。只有当一方确实在试探、压价、封口、转移话题时，信息才在角逐中流动。',
     '【裂痕原则】玩家的陈述和角色说的话一样，都是线索，不是结论。言行矛盾时以行为为准；但不要替玩家做心理诊断——玩家没明说的想法、情绪、动机都不是事实，也不是你能看见的东西。',
     '【戏剧节制】不要为了戏剧性强行安排关系跃迁、配对、救赎、误会升级或正面冲突。剧情往前走的动力是角色自己的动机和已经发生的事实，不是"这一轮该有个高潮"。',
+    // P74·A+：可选的回合计划协议。解析在 engine/core/plan_block.js，这里只告诉模型「可以写」。
+    //   为什么走内联块而不是 jsonMode：jsonMode 会把整轮变成 JSON，破坏流式与【正文】/【选项】解析。
+    //   为什么不写就不报错：fail-open，模型没写协议时当作普通对话处理。
+    '可选协议：若本轮真的发生了关系或事件层面的变化，在【选项】之后另起一行写 <<<PLAN>>>{"class":"chat|trade|conflict|care|probe|event","escalation":"none|relationship|major"}<<<END>>>；没有变化就完全不写。这一行会被引擎剥掉、玩家看不到，所以不用为它写解释。',
     '【行为驱动力】角色行为的来处是性格内核或当前情境刺激——剧情跟在角色身后走。',
     '【事件自治】事件发生不以玩家在场或知情为前提。玩家可选择介入/旁观/离开。',
     // P11·S1：以下两条原在默认 gm.cardStyle 内，玩家可清空 ⇒ 上提为引擎级（不受用户配置影响）。
@@ -904,6 +908,20 @@ var PromptBuilder = {
         if (traceBlock) lines.push(traceBlock);
         const checkBlock = (typeof ToolTrace.selfCheckBlock === 'function') ? ToolTrace.selfCheckBlock() : '';
         if (checkBlock) lines.push(checkBlock);
+      }
+    } catch (e) {}
+
+    // ★ P74·A+：本轮条件指令（TurnIntent 的分类结果）。
+    //   只有「非普通对话」或「声称有升级」时才出现；chat + none ⇒ 一个字都不加，
+    //   这样聊天轮的 prompt 与 P74 之前逐字一致（T2 的 MD5 门禁与前缀缓存都靠这条）。
+    //   不单独记 pi 块：这段文本已经包含在 'dynamic' 整块里，再记一次会让「分块和 = total」多算。
+    try {
+      if (typeof TurnIntent !== 'undefined' && TurnIntent && typeof TurnIntent.directiveFor === 'function') {
+        // 直接读 GameState 上的意图，而不是 TurnIntent.current()：两仓/测试沙箱里
+        // TurnIntent 与 GameState 可能不在同一个作用域，让 prompt_builder 自己兜这一层更稳。
+        var _tiIntent = (typeof GameState !== 'undefined' && GameState) ? (GameState._turnIntent || null) : null;
+        var _tiLine = TurnIntent.directiveFor(_tiIntent);
+        if (_tiLine) lines.push(_tiLine);
       }
     } catch (e) {}
 
