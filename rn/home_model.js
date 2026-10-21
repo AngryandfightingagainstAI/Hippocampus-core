@@ -125,6 +125,26 @@ function formatTokenBadge(t) {
   return (n / 1000000).toFixed(2) + 'M';
 }
 
+// ---------- P72·W6：主页是否跟随玩家全局主题 ----------
+//   默认 false = 维持「书票压主题」；打开后主页也吃玩家主题（与桌面
+//   engine/ui_home.js 的 getHomeFollow/toggleHomeFollow 同口径同存储键）。
+
+function getHomeFollow() {
+  try {
+    var g = Storage.getGlobal();
+    return !!(g.settings && g.settings.ui && g.settings.ui.homeFollowGlobal);
+  } catch (e) { return false; }
+}
+
+function setHomeFollow(on) {
+  var g = Storage.getGlobal();
+  g.settings = g.settings || {};
+  g.settings.ui = g.settings.ui || {};
+  g.settings.ui.homeFollowGlobal = !!on;
+  Storage.setGlobal(g);
+  return g.settings.ui.homeFollowGlobal;
+}
+
 // ---------- 换卡浮层列表 ----------
 
 function listCardsForPicker() {
@@ -157,7 +177,9 @@ function buildHomeModel() {
     saves: buildHomeSaves(picked),
     lastSave: buildLastSave(),
     skin: effectiveSkin(picked),
-    skinThemes: CardDisplay.SKIN_THEMES.slice()
+    skinThemes: CardDisplay.SKIN_THEMES.slice(),
+    // P72·W6：主页是否跟随玩家主题（跟随中时书票区置灰 + 文案变）
+    homeFollow: getHomeFollow()
   };
 }
 
@@ -170,6 +192,8 @@ module.exports = {
   getSkinOverrides: getSkinOverrides,
   setSkinOverride: setSkinOverride,
   effectiveSkin: effectiveSkin,
+  getHomeFollow: getHomeFollow,
+  setHomeFollow: setHomeFollow,
   buildHomeSaves: buildHomeSaves,
   buildLastSave: buildLastSave,
   formatPlayTimeSafe: formatPlayTimeSafe,

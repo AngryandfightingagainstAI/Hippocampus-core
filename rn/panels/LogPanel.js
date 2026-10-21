@@ -38,6 +38,12 @@ function LogPanel(props) {
   var bumpS = React.useState(0);
   var bump = bumpS[0], setBump = bumpS[1];
 
+  // P72·§15.4-3：归档日志的「显示已归档」开关（会话内存态，不落盘；同桌面
+  // ui_panels.js:669 toggleArchivedLogs）。关着=只列活跃块（默认），开着=连被
+  // 回退切走的归档块一起列，且能在详情页「恢复已归档」把它们放回默认视图。
+  var archS = React.useState(false);
+  var showArch = archS[0], setShowArch = archS[1];
+
   // 重新取数据（搜索后刷新）
   view = PanelData.computeLog();
 
@@ -90,7 +96,24 @@ function LogPanel(props) {
       borderWidth: 1, borderColor: c.danger, borderRadius: tk.radius.sm || 4,
       paddingHorizontal: 14, paddingVertical: 8
     },
-    detailDelText: { fontSize: f.sm, color: c.danger }
+    detailDelText: { fontSize: f.sm, color: c.danger },
+    // P72·§15.4-3：归档开关与恢复按钮
+    archRow: {
+      flexDirection: 'row', alignItems: 'center', gap: 8,
+      marginBottom: 10, paddingVertical: 4
+    },
+    archToggle: {
+      borderWidth: 1, borderColor: c.hair, borderRadius: tk.radius.sm || 4,
+      paddingHorizontal: 10, paddingVertical: 5
+    },
+    archToggleText: { fontSize: f.sm, color: c.text2 || c.text },
+    archEmpty: { fontSize: f.sm, color: c.muted },
+    archBadge: { fontSize: f.sm, color: c.muted, marginTop: 2 },
+    detailRestore: {
+      borderWidth: 1, borderColor: c.accent || c.primary, borderRadius: tk.radius.sm || 4,
+      paddingHorizontal: 14, paddingVertical: 8
+    },
+    detailRestoreText: { fontSize: f.sm, color: c.accent || c.primary }
   });
 
   // 空模块态
@@ -117,9 +140,39 @@ function LogPanel(props) {
     });
   }
 
+  // P72·§15.4-3：某天归档块数（列表角标 / 详情按钮都用它）
+  function archCountOf(l) {
+    if (!l || !l.gameDate) return 0;
+    try {
+      if (typeof Logger !== 'undefined' && Logger.countArchived) {
+        return Logger.countArchived(GameState.currentCardId, GameState.currentSaveId, l.gameDate) || 0;
+      }
+    } catch (e) { /* 取不到就当没有 */ }
+    return 0;
+  }
+
+  // P72·§15.4-3：把这一天的归档块放回默认日志流（不删任何内容）
+  function doUnarchive() {
+    if (!detail || !detail.gameDate) return;
+    var n = 0;
+    try {
+      if (typeof Logger !== 'undefined' && Logger.unarchiveLog) {
+        n = Logger.unarchiveLog(GameState.currentCardId, GameState.currentSaveId, detail.gameDate) || 0;
+      }
+    } catch (e) { n = 0; }
+    if (Platform.ui.toast) {
+      Platform.ui.toast(n > 0 ? ('已恢复 ' + n + ' 块归档日志') : '这天没有已归档的日志',
+        { type: n > 0 ? 'success' : 'info' });
+    }
+    setDetail(null);
+    setSearchResult(null);
+    setBump(function (v) { return v + 1; });
+  }
+
   // 详情视图
   if (detail) {
     var ent = detail.entities || {};
+    var detailArchN = archCountOf(detail);
     return (
       <View>
         <TouchableOpacity style={styles.detailBack} onPress={function () { setDetail(null); }}>
@@ -172,6 +225,11 @@ function LogPanel(props) {
           </View>
         ) : null}
         <View style={styles.detailBtnRow}>
+          {detailArchN > 0 ? (
+            <TouchableOpacity style={styles.detailRestore} activeOpacity={0.7} onPress={doUnarchive}>
+              <Text style={styles.detailRestoreText}>{'恢复已归档 ' + detailArchN + ' 块'}</Text>
+            </TouchableOpacity>
+          ) : null}
           <TouchableOpacity style={styles.detailDel} activeOpacity={0.7} onPress={doDeleteLog}>
             <Text style={styles.detailDelText}>{'删除'}</Text>
           </TouchableOpacity>
@@ -182,6 +240,20 @@ function LogPanel(props) {
 
   // 搜索栏 + 列表
   var logs = view.logs;
+  // P72·§15.4-3：开关打开时用 includeArchived 重新取，行对象补 gameDate 供
+  // archCountOf / 恢复按钮用（computeLog 出口只有 date 字符串）
+  if (showArch && typeof Logger !== 'undefined' && GameState.currentCardId) {
+    try {
+      var raw = Logger.listLogs(GameState.currentCardId, GameState.currentSaveId, { includeArchived: true }) || [];
+      logs = raw.map(function (l) {
+        var d = l.gameDate;
+        return {
+          id: l.id || '', date: d ? (d.year + '-' + d.month + '-' + d.day) : '?',
+          title: l.title || '', summary: l.summary || '', gameDate: d || null
+        };
+      });
+    } catch (e) { /* 取失败就退回默认视图 */ }
+  }
   var searchHeader = '';
   if (searchResult !== null) {
     logs = searchResult;
@@ -234,7 +306,24 @@ function LogPanel(props) {
         </TouchableOpacity>
       </View>
       {searchHeader ? <Text style={styles.searchHeader}>{searchHeader}</Text> : null}
+      {searchResult === null ? (
+        <View style={styles.archRow}>
+          <TouchableOpacity
+            style={styles.archToggle}
+            activeOpacity={0.7}
+            onPress={function () { setShowArch(function (v) { return !v; }); }}
+          >
+            <Text style={styles.archToggleText}>
+              {showArch ? '✓ 显示已归档' : '显示已归档'}
+            </Text>
+          </TouchableOpacity>
+          <Text style={styles.archEmpty}>
+            {showArch ? '回退切走的旧轮日志也列出来，可在详情里恢复' : ''}
+          </Text>
+        </View>
+      ) : null}
       {logs.length ? logs.map(function (l, i) {
+        var archN = archCountOf(l);
         return (
           <TouchableOpacity
             key={l.id || l.date || i}
@@ -244,6 +333,7 @@ function LogPanel(props) {
           >
             <Text style={styles.title}>{(l.date || '') + ' · ' + (l.title || '')}</Text>
             <Text style={styles.sub}>{l.summary || ''}</Text>
+            {archN > 0 ? <Text style={styles.archBadge}>{'· 已归档 ' + archN + ' 块'}</Text> : null}
           </TouchableOpacity>
         );
       }) : (searchHeader ? null : <Text style={styles.empty}>{view.emptyText}</Text>)}

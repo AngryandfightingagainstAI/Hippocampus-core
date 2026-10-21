@@ -69,11 +69,26 @@ function HomeScreen() {
   var clock = Model.buildClock();
   var skinNames = Model.HOME_SKIN_NAMES;
 
+  // P72·W6：主页是否跟随玩家主题。跟随中时书票区不可点、说明文字换口径，
+  // 与桌面 engine/ui_home.js 的 getHomeFollow/toggleHomeFollow 同一存储键
+  var homeFollow = !!model.homeFollow;
+
   function applySkin(id) {
     if (!picked) return;
+    if (homeFollow) {
+      Platform.ui.toast('主页正在跟随你的主题，先关掉「跟随中」再选书票', { type: 'warn' });
+      return;
+    }
     // 按卡覆盖 + 静默切到该书票（Electron syncHomeLook 的 RN 对应）
     Model.setSkinOverride(picked.id, id);
     themeApi.setTheme(id);
+    bump(function (v) { return v + 1; });
+  }
+
+  function toggleHomeFollow() {
+    var on = Model.setHomeFollow(!homeFollow);
+    Platform.ui.toast(on ? '主页改为跟随你的主题（书票暂停生效）' : '主页恢复书票（随卡而变）',
+      { type: 'success' });
     bump(function (v) { return v + 1; });
   }
 
@@ -167,6 +182,21 @@ function HomeScreen() {
       saveMeta: { fontSize: f.xs, color: c.faint, fontFamily: fonts.serif },
       empty: { fontSize: f.sm, color: c.faint, paddingVertical: 9, paddingHorizontal: 4 },
       chips: { flexDirection: 'row', gap: 10, marginTop: 4 },
+  // P72·W6：跟随玩家主题时书票区置灰（视觉 + 不可点，避免"点了没反应"）
+  chipsOff: { opacity: 0.38 },
+  followBtn: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: c.hair,
+    marginTop: 6,
+    marginBottom: 6
+  },
+  followBtnOn: { backgroundColor: c.ink, borderColor: c.ink },
+  followTxt: { fontSize: f.xs, color: c.muted },
+  followTxtOn: { color: c.bg },
       chip: {
         flex: 1, borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.md, padding: 5
       },
@@ -245,8 +275,9 @@ function HomeScreen() {
     return (
       <TouchableOpacity
         key={id}
-        activeOpacity={picked ? 0.6 : 1}
-        style={[styles.chip, on ? styles.chipOn : null, !picked ? styles.actionDisabled : null]}
+        activeOpacity={picked && !homeFollow ? 0.6 : 1}
+        disabled={!picked || homeFollow}
+        style={[styles.chip, on ? styles.chipOn : null, (!picked || homeFollow) ? styles.actionDisabled : null]}
         onPress={function () { applySkin(id); }}
       >
         {swatch}
@@ -359,11 +390,23 @@ function HomeScreen() {
         ) : model.saves.map(renderSaveRow)}
 
         <Text style={styles.sideHead}>{'书 票 · 主 题'}</Text>
-        <View style={styles.chips}>
+        <TouchableOpacity
+          style={[styles.followBtn, homeFollow ? styles.followBtnOn : null]}
+          onPress={toggleHomeFollow}
+          accessibilityRole="button"
+          accessibilityLabel={homeFollow ? '跟随中' : '跟随我的主题'}
+        >
+          <Text style={[styles.followTxt, homeFollow ? styles.followTxtOn : null]}>
+            {homeFollow ? '跟随中' : '跟随我的主题'}
+          </Text>
+        </TouchableOpacity>
+        <View style={[styles.chips, homeFollow ? styles.chipsOff : null]}>
           {model.skinThemes.map(renderChip)}
         </View>
         <Text style={styles.note}>
-          {'卡带带身份（题名 / 印章 / 题辞 / 身份色 / 默认书票），玩家主题带皮肤，两层叠加。自定义书票走主题包导入。'}
+          {homeFollow
+            ? '主页正在跟随你的主题，书票暂停生效。要恢复随卡而变的书票，点上面的「跟随中」。'
+            : '卡带带身份（题名 / 印章 / 题辞 / 身份色 / 默认书票），玩家主题带皮肤，两层叠加。自定义书票走主题包导入。'}
         </Text>
       </ScrollView>
 

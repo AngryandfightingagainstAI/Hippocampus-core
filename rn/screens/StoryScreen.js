@@ -137,20 +137,12 @@ function StoryScreen() {
   // P72·W1-b：系统返回键 = 撤销上一步（叙事页且上一轮存在 → 不退出 App，
   // 走 snapshot_actions.undoLastStep 与桌面 undoLastStep 同语义的分支切线，
   // toast「已回到上一轮」）。已是最早一轮 / 正在生成（undoLastStep 返回
-  // false）→ 回落默认行为：双击退出（「再按一次退出」）。
+  // false）→ **交还系统**，由 App.tsx 的监听走 NavStore.goBack()（P33 契约：
+  // 返回键先"返回上一屏"，栈空才退出应用）。这里不再自己弹「再按一次退出」——
+  // 那会让玩家以为要退出 App，实际 P33 期望的是回主页。
   React.useEffect(function () {
-    var lastBack = 0;
     var handler = function () {
-      if (SnapshotActions.undoLastStep()) return true;   // 已撤销：拦截返回键
-      var now = Date.now();
-      if (now - lastBack > 2000) {
-        lastBack = now;
-        if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.toast) {
-          Platform.ui.toast('再按一次退出', { type: 'info' });
-        }
-        return true;                                     // 首次：提示后拦截，等第二次
-      }
-      return false;                                      // 2 秒内再按：放行默认退出
+      return SnapshotActions.undoLastStep() ? true : false;
     };
     RN.BackHandler.addEventListener('hardwareBackPress', handler);
     return function () { RN.BackHandler.removeEventListener('hardwareBackPress', handler); };
@@ -179,6 +171,11 @@ function StoryScreen() {
   // P1-D：当前轮次（ui_core L693 isLast 判定用 _currentRoundNum）
   var curRound = 0;
   try { curRound = StoryStore.currentRoundNum(); } catch (e) { curRound = 0; }
+  // P72·§15.4-2：有没有 round 0 的开局快照（有才渲染「开场 · 回到开头」那一行）
+  var hasOpeningSnap = false;
+  try {
+    if (typeof Snapshots !== 'undefined' && Snapshots.peek) hasOpeningSnap = !!Snapshots.peek(0);
+  } catch (e) { hasOpeningSnap = false; }
 
   // P13·S1-b：手机未读信号（真源只有一个：InfoFeed.unreadTotal()；无未读时不占位、不占宽度）
   //   数据刷新沿用 L129 的 NavStore 'topbar' 信号：引擎 renderTopbar 后组件现读一次。
@@ -485,6 +482,18 @@ function StoryScreen() {
             <TouchableOpacity style={styles.rowBtn} activeOpacity={0.6}
               onPress={function () { onRollback(e.round); }}>
               <Text style={styles.rowBtnText}>{'↩ 回到这里'}</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+        {(e.round === 1 && hasOpeningSnap) ? (
+          // P72·§15.4-2：开场白那一章额外挂一行「开场 · ↩ 回到开头」，指向
+          //   round 0 的开局快照（story.start 里 push('start') 压的那份）。
+          //   老档没有这份快照时 hasOpeningSnap=false，不渲染死按钮。
+          <View style={styles.rowActions}>
+            <Text style={styles.rowLabel}>{'开场'}</Text>
+            <TouchableOpacity style={styles.rowBtn} activeOpacity={0.6}
+              onPress={function () { onRollback(0); }}>
+              <Text style={styles.rowBtnText}>{'↩ 回到开头'}</Text>
             </TouchableOpacity>
           </View>
         ) : null}

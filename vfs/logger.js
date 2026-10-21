@@ -238,6 +238,66 @@
       return affected;
     },
 
+    // P72·§15.4-3：把归档的 chunk 恢复回来（archiveAfter 的逆操作）。
+    //   「回到这里」把之后的日志转归档后，玩家反悔切回分支时这些块要能回到
+    //   默认日志流里——否则它们在日志页需要一直开着「显示已归档」才看得见。
+    //   不传 msgIds ⇒ 恢复该档全部归档块；传 ⇒ 只恢复与之有交集的块。
+    //   返回：被恢复的 chunk 条数。
+    unarchiveAfter: function(cardId, saveId, msgIds) {
+      var want = null;
+      if (Array.isArray(msgIds) && msgIds.length) {
+        want = Object.create(null);
+        msgIds.forEach(function(id) { want[id] = true; });
+      }
+      var all = this.listLogs(cardId, saveId, { includeArchived: true });
+      var affected = 0;
+      var self = this;
+      all.forEach(function(l) {
+        var chunks = Array.isArray(l.chunks) ? l.chunks : null;
+        if (!chunks) return;
+        var hit = false;
+        chunks.forEach(function(c) {
+          if (!c || !c.archived) return;
+          if (want) {
+            if (!Array.isArray(c.msgIds)) return;   // 老块无 msgIds：不猜归属
+            if (!c.msgIds.some(function(id) { return want[id]; })) return;
+          }
+          c.archived = false;
+          delete c.archived;
+          hit = true;
+          affected++;
+        });
+        if (hit) self.writeLog(cardId, saveId, l);
+      });
+      return affected;
+    },
+
+    // P72·§15.4-3：恢复某一天日志里的全部归档块（日志详情页「恢复已归档」按钮）。
+    //   与 unarchiveAfter 同语义，只是按 gameDate 定位（日志页手里正好有这天）。
+    //   返回：被恢复的 chunk 条数；找不到这天 / 没有归档块返回 0。
+    unarchiveLog: function(cardId, saveId, gameDate) {
+      if (!gameDate) return 0;
+      var l = this.readLog(cardId, saveId, gameDate);
+      var chunks = (l && Array.isArray(l.chunks)) ? l.chunks : null;
+      if (!chunks) return 0;
+      var affected = 0;
+      chunks.forEach(function(c) {
+        if (!c || !c.archived) return;
+        delete c.archived;
+        affected++;
+      });
+      if (affected > 0) this.writeLog(cardId, saveId, l);
+      return affected;
+    },
+
+    // 统计某天日志里的归档块数（日志列表打「已归档 N 块」角标用）
+    countArchived: function(cardId, saveId, gameDate) {
+      var l = this.readLog(cardId, saveId, gameDate);
+      var chunks = (l && Array.isArray(l.chunks)) ? l.chunks : null;
+      if (!chunks) return 0;
+      return chunks.filter(function(c) { return !!(c && c.archived); }).length;
+    },
+
     // 彻底清空已归档日志（设置 → 数据 → 显式入口专用；真删，用户手动触发）
     //   只删 archived:true 的 chunk；某天的 chunk 全空则删整份天文件。
     //   返回：被物理删除的 chunk 条数。

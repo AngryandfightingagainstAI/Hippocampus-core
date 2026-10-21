@@ -30,6 +30,43 @@
       return d + '/r' + String(round).padStart(4, '0') + '.json';
     },
 
+    // ★ P72 复核补 2（§15.4-1）：分支并存时的文件名。
+    //   老档/单分支仍是 `r0005.json`（兼容 + 老测试不用改）；
+    //   同一轮号下已经存在别的分支快照时，改写成 `r0005-<messageId 尾 8 位>.json`，
+    //   两份都留在磁盘上，`list()` 按 round 升序、同 round 按时间升序排。
+    _pathFor: function(round, messageId) {
+      var d = this._dir();
+      if (!d) return null;
+      var base = d + '/r' + String(round).padStart(4, '0');
+      if (!messageId) return base + '.json';
+      var tail = String(messageId).replace(/[^A-Za-z0-9]/g, '').slice(-8) || 'x';
+      return base + '-' + tail + '.json';
+    },
+
+    // 该轮号下的所有快照文件（含分支后缀），按写入时间升序
+    _filesOf: function(round) {
+      var d = this._dir();
+      if (!d) return [];
+      var pre = '/r' + String(round).padStart(4, '0');
+      return VFS.listAll(d).filter(function(p) {
+        var name = p.slice(p.lastIndexOf('/') + 1);
+        return name.indexOf(pre.slice(1)) === 0 && name.endsWith('.json');
+      });
+    },
+
+    // 取某轮号的目标快照：给了 messageId 就只认精确命中，否则取该轮最新一份
+    _pick: function(round, messageId) {
+      var files = this._filesOf(round);
+      var best = null;
+      files.forEach(function(p) {
+        var s = VFS.readJSON(p);
+        if (!s) return;
+        if (messageId && s.messageId !== messageId) return;
+        if (!best || (s.timestamp || 0) >= (best.snap.timestamp || 0)) best = { path: p, snap: s };
+      });
+      return best;
+    },
+
     // P72·W0-a：快照轮号改读全局单调轴 _roundSeq（玩家真行动入队时 +1，见 story.js
     //   sendAction 三处；切分支/截断都不回跳）。旧口径（数主线真玩家）继续当显示轴
     //   用——在 ui_core._currentRoundNum，与本函数解耦。
@@ -156,8 +193,15 @@
     push: function(reason) {
       var d = this._dir();
       if (!d) return false;
-      var round = this._currentRound();
-      if (round === 0) return false;
+      // ★ P72 复核补 2（§15.4-1）：轮号只增不减——回到旧轮 → 切分支再行动时，
+      //   `_roundSeq` 已被 _applySnapData 拉回旧值，若不同步抬高就会写出同名文件、
+      //   把旧分支那份快照覆盖掉。这里按「当前值」与「已有快照最大 seq」取大。
+      // P72·§15.4-2：开局快照固定压成 **round 0**（reason='start'）。
+      //   为什么必须是 0 而不是「开场白算第 1 轮」：第一轮行动的 push 也算 1，
+      //   两份快照同轮时会由 _pick 取"最新一份"，开局那份就被永久遮住 →
+      //   「回到开头」无处可退（TRAE 报的 §15.4-2 真因）。压成 0 后互不遮挡。
+      var round = (reason === 'start') ? 0 : this._currentRound();
+      if (round === 0 && reason !== 'start') return false;
       if (this._dirEnsured !== d) {
         VFS.mkdir(d);
         this._dirEnsured = d;
@@ -182,7 +226,7 @@
         pendingNotices: JSON.parse(JSON.stringify(GameState._pendingSystemNotices || [])),
         systems: this._grabSystemData()
       };
-      VFS.writeJSON(this._path(round), snap);
+      VFS.writeJSON(this._pathFor(round, snap.messageId), snap);
       this._cleanup();
       return true;
     },
@@ -195,9 +239,10 @@
       var snaps = [];
       files.forEach(function(p) {
         var s = VFS.readJSON(p);
-        if (s) snaps.push({ round: s.round, timestamp: s.timestamp, reason: s.reason });
+        // ★ P72 复核补 2：带 path（分支并存时同一 round 会有多份，删/读都要按文件走）
+        if (s) snaps.push({ round: s.round, timestamp: s.timestamp, reason: s.reason, path: p, messageId: s.messageId || null });
       });
-      snaps.sort(function(a, b) { return a.round - b.round; });
+      snaps.sort(function(a, b) { return (a.round - b.round) || ((a.timestamp || 0) - (b.timestamp || 0)); });
       return snaps;
     },
 
@@ -211,7 +256,12 @@
       GameState._gameTime = snap.gameTime || null;
       GameState._pendingSystemNotices = snap.pendingNotices || [];
       // P72·W0-a：快照轴恢复到目标值（老快照缺 roundSeq 时回落 round，两值同源同数）
-      GameState._roundSeq = (snap.roundSeq != null ? snap.roundSeq : snap.round) || 0;
+      // ★ P72 复核补 2（§15.4-1）：**只抬高、不回退**。原先这里直接赋值把 _roundSeq 拉回旧值，
+      //   于是「回到第 2 轮 → 换个说法再行动」会再次算出 3，写出同名 r0003.json，
+      //   把被切走那条分支的快照整份覆盖（切回来数据面就错）。取 max 后新一轮拿到新序号。
+      var _wantSeq = (snap.roundSeq != null ? snap.roundSeq : snap.round) || 0;
+      var _haveSeq = (typeof GameState._roundSeq === 'number' ? GameState._roundSeq : 0);
+      GameState._roundSeq = Math.max(_haveSeq, _wantSeq);
       // 恢复各系统运行时状态
       if (snap.systems) {
         this._putSystemData(snap.systems);
@@ -225,8 +275,9 @@
     //   不 slice chatHistory、不 truncateToCount、不删后续快照
     //   （旧分支全保留，‹i/n› /「回到这里」随时可切回）。
     //   返回形与 rollbackTo 对齐：ok / round / snap / cut(=-1) / cutBy / lostMsgIds(=null)。
-    restoreOnly: function(round) {
-      var snap = VFS.readJSON(this._path(round));
+    restoreOnly: function(round, messageId) {
+      var hit = this._pick(round, messageId);
+      var snap = hit && hit.snap;
       if (!snap) return { ok: false, reason: '快照不存在' };
       this._applySnapData(snap);
       try { GameState.invalidateCache(); } catch (e) {}
@@ -234,8 +285,9 @@
     },
 
     // ============ 回退到某轮开始前 ============
-    rollbackTo: function(round) {
-      var snap = VFS.readJSON(this._path(round));
+    rollbackTo: function(round, messageId) {
+      var hit = this._pick(round, messageId);
+      var snap = hit && hit.snap;
       if (!snap) return { ok: false, reason: '快照不存在' };
 
       // 0. ★ P54·§四 F1：先算切点 —— 算不出来就整条拒绝，绝不进入
@@ -260,10 +312,10 @@
         MessageTree.truncateToCount(cut.cut);
       }
 
-      // 4. 删除之后的所有快照
+      // 4. 删除之后的所有快照（带分支后缀的一并删，按写下的 path 走）
       var self = this;
       this.list().forEach(function(s) {
-        if (s.round > round) VFS.deleteFile(self._path(s.round));
+        if (s.round > round) VFS.deleteFile(s.path || self._path(s.round));
       });
 
       // 5. 换 session token 阻断挂起请求
@@ -278,11 +330,13 @@
     rollbackLast: function() {
       var snaps = this.list();
       if (!snaps.length) return { ok: false, reason: '没有快照' };
-      return this.rollbackTo(snaps[snaps.length - 1].round);
+      var last = snaps[snaps.length - 1];
+      return this.rollbackTo(last.round, last.messageId || null);
     },
 
-    peek: function(round) {
-      return VFS.readJSON(this._path(round));
+    peek: function(round, messageId) {
+      var hit = this._pick(round, messageId);
+      return hit ? hit.snap : null;
     },
 
     clear: function() {
@@ -296,7 +350,7 @@
       if (snaps.length <= MAX) return;
       var self = this;
       snaps.slice(0, snaps.length - MAX).forEach(function(s) {
-        VFS.deleteFile(self._path(s.round));
+        VFS.deleteFile(s.path || self._path(s.round));
       });
     }
   };

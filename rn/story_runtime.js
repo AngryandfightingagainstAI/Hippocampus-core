@@ -160,7 +160,11 @@ function replayHistory() {
     // P72·W2：带 playerNodeId——行动灰字行长按可「改这句」（窗内）
     if (it.hint) Platform.ui.appendHint(it.hint, it.playerNodeId);
     var story = it.content, options = [];
-    var clean = ToolExecutor.strip(it.content);
+    // ToolExecutor 在 bootstrap 里挂着；纯 node 冒烟（p1_settings 等）只桩了必要件，
+    // 拿不到就跳过剥离，不因为"工具痕迹没剥"整条崩掉。
+    var clean = (typeof ToolExecutor !== 'undefined' && ToolExecutor && ToolExecutor.strip)
+      ? ToolExecutor.strip(it.content)
+      : it.content;
     var sp = mt && mt.splitAssistant
       ? mt.splitAssistant(clean)
       : { story: clean, optionsRaw: '', bodyHit: false, optHit: false };

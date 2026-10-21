@@ -173,17 +173,30 @@ async function runD() {
   };
 
   var snapList = [];
-  var rollbackLastCalls = 0, rollbackToArgs = [];
-  var rollbackLastResult = { ok: true, snap: { gameTime: '1990-01-01' } };
-  var rollbackToResult = { ok: true, snap: { gameTime: '1990-01-01' } };
+  var rollbackLastCalls = 0, rollbackToArgs = [], restoreOnlyArgs = [];
+  var rollbackLastResult = { ok: true, snap: { gameTime: '1990-01-01' }, lostMsgIds: ['m1', 'm2'] };
+  var rollbackToResult = { ok: true, snap: { gameTime: '1990-01-01' }, lostMsgIds: ['m1', 'm2'] };
   globalThis.Snapshots = {
     list: function () { return snapList.slice(); },
     rollbackLast: function () { rollbackLastCalls++; return rollbackLastResult; },
-    rollbackTo: function (round) { rollbackToArgs.push(round); return rollbackToResult; }
+    rollbackTo: function (round) { rollbackToArgs.push(round); return rollbackToResult; },
+    // P72·W0-b/W1 契约：peek 取全量（判定有无消息树）、restoreOnly 只恢复不截断。
+    peek: function (round) {
+      for (var i = 0; i < snapList.length; i++) { if (snapList[i].round === round) return snapList[i]; }
+      return null;
+    },
+    restoreOnly: function (round) {
+      restoreOnlyArgs.push(round);
+      return { ok: true, round: round, snap: { gameTime: '1990-01-01' }, cut: -1, cutBy: 'restore-only', lostMsgIds: null };
+    }
   };
 
   var deletedLogs = 2;
-  globalThis.Logger = { deleteLogsAfter: function () { return deletedLogs; } };
+  globalThis.Logger = {
+    // W0-b 起回退/重跑走归档而非物理删除；deleteLogsAfter 只留给显式入口
+    archiveAfter: function () { return deletedLogs; },
+    deleteLogsAfter: function () { return deletedLogs; }
+  };
 
   // P6·S3-5：regenerate 由 confirmAsync 改为 StoryStore.promptOpen 收多行
   // 意见（桌面 ui_snapshot.js:18-27 的 textarea，文案逐字）。断言随之改
@@ -256,7 +269,7 @@ async function runD() {
     globalThis.StoryLoop._regenContext.rejected === '老者抬眼。' &&
     globalThis.StoryLoop._regenContext.comment === '');
   check('P1D-13 重放历史 + 重跑', clearCalls === 1 && globalThis.StoryLoop.retryLastCalls === 1);
-  check('P1D-14 回退日志 hint', hints.indexOf('（已回退日志 2 条）') >= 0);
+  check('P1D-14 归档日志 hint（W0-b 起不再物理删）', hints.indexOf('（已归档重新生成前的日志 2 块）') >= 0);
 
   resetCalls();
   promptQueue = ['  太温柔了  '];
@@ -303,7 +316,7 @@ async function runD() {
   check('P1D-28 三条收尾（topbar/侧栏/重放/尾 hint）',
     topbarCalls === 1 && sideCalls === 1 && clearCalls === 1 &&
     hints.indexOf('（已回退到第 1 轮，可以改你当时的输入）') >= 0);
-  check('P1D-29 回退日志 hint', hints.indexOf('（已回退日志 2 条）') >= 0);
+  check('P1D-29 归档日志 hint（W0-b 起不再物理删）', hints.indexOf('（已归档回退前的日志 2 块）') >= 0);
 
   resetCalls();
   rollbackToResult = { ok: false, reason: '快照不存在' };

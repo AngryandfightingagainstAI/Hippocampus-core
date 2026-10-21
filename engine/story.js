@@ -231,6 +231,12 @@ var StoryLoop = {
     );
     Platform.ui.clearStory();
     Platform.ui.appendHint('（游戏开始）');
+    // P72·§15.4-2：开局快照（固定 round 0，reason='start'）——开场白之后、
+    //   callAI 之前压，记的就是 [system, 开场白] 这个"刚开局"状态。
+    //   不加这条的话，第一轮行动的 push 也落在 round 1，把开局那份遮住。
+    if (typeof Snapshots !== 'undefined') {
+      try { Snapshots.push('start'); } catch (e) { console.warn('[Snapshots] 开局快照失败：', e); }
+    }
     await this.callAI();
   },
 
