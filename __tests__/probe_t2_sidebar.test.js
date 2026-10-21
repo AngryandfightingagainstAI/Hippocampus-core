@@ -106,3 +106,24 @@ test('P70-T2：没有 inspect 载荷时展开也不崩（显示空态）', () =>
   expect(all).toContain('还没有发过请求');
   act(() => { t.unmount(); StoryStore.closeSidebar(); });
 });
+
+// 回归（2026-10-21 真机/模拟器实测闪退）：
+//   P70-T2 曾把 useState 写在「收起就 return null」之后，收起态少 2 个 hook、
+//   展开态多 2 个 → React 抛 "Rendered more hooks than during the previous render"
+//   → 点「☰ 菜单」App 直接崩。这条用例就模拟「先收起渲染、再展开」这个顺序。
+test('回归：抽屉先收起渲染、再展开，不应触发 hook 数量不一致', () => {
+  store.ui = {};
+  global.GameState._lastPromptInspect = inspect;
+  let t;
+  act(() => { StoryStore.closeSidebar(); });
+  expect(() => {
+    act(() => { t = renderer.create(React.createElement(SidebarDrawer)); });
+  }).not.toThrow();
+  // 收起态不该渲染任何抽屉内容
+  expect(t.root.findAllByProps({ testID: 'pi-toggle' }).length).toBe(0);
+  act(() => { StoryStore.openSidebar(); });
+  expect(t.root.findAllByProps({ testID: 'pi-toggle' }).length).toBeGreaterThan(0);
+  act(() => { StoryStore.closeSidebar(); });
+  expect(t.root.findAllByProps({ testID: 'pi-toggle' }).length).toBe(0);
+  act(() => { t.unmount(); });
+});

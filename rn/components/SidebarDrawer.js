@@ -130,11 +130,14 @@ function SidebarDrawer() {
   // 订阅 store：sidebarOpen 控开关，sidebarSeq 由 renderSidebarExpanded
   // 壳递增（工具执行/接受提议后刷新数据）
   var snap = React.useSyncExternalStore(StoryStore.subscribe, StoryStore.getSnapshot, StoryStore.getSnapshot);
-  if (!snap.sidebarOpen) return null;
 
-  var sidebar = readSidebar();
-  var prompt = readPrompt();
   // P70-T2：上下文查看器（piOpen 与桌面 Storage.ui.piOpen 共键；tick 只为强制重渲染）
+  //
+  // ！顺序纪律（2026-10-21 真机/模拟器实测必崩后修）：这两个 useState 必须写在
+  //   「抽屉收起就 return null」之前。写在后面会让收起态少 2 个 hook、展开态多 2 个，
+  //   React 直接抛 "Rendered more hooks than during the previous render"，
+  //   表现为：点「☰ 菜单」App 立刻闪退（logcat: FATAL EXCEPTION mqt_v_native /
+  //   JavascriptException at SidebarDrawer）。以后往本组件加 hook，一律加在这行之前。
   var inspect = readInspect();
   var piOpen = readPiOpen();
   var piTickState = React.useState(0);
@@ -151,6 +154,11 @@ function SidebarDrawer() {
     } catch (e) {}
     piBump(piTick + 1);
   }
+
+  if (!snap.sidebarOpen) return null;
+
+  var sidebar = readSidebar();
+  var prompt = readPrompt();
 
   function barColor(s, pct) {
     if (s.color && s.color !== 'blue') {
