@@ -117,9 +117,11 @@ function setChapter(roundNum) {
   enqueue({ kind: 'chapter', volume: volume, sub: sub });
 }
 
-// appendHint(text)：灰字提示行（实参全部为纯文本单行）
-function appendHint(text) {
-  enqueue({ kind: 'hint', text: String(text == null ? '' : text) });
+// appendHint(text, nodeId?)：灰字提示行（实参全部为纯文本单行）。
+// P72·W2 第二参 nodeId：玩家行动灰字行对应的 action 节点 id（StoryScreen
+//   长按「改这句」用；canEdit 判定在渲染层）。不传时行为与原先一致。
+function appendHint(text, nodeId) {
+  enqueue({ kind: 'hint', text: String(text == null ? '' : text), playerId: nodeId || null });
 }
 
 // appendDiceResult(text)：剥 🎲/🍀 前缀（BMP 外字符必须交替分支整体匹配），

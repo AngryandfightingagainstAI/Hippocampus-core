@@ -188,9 +188,47 @@ function undoLastStep() {
   return true;
 }
 
+// P72·W2：改这句（StoryScreen 长按行动灰字行触发；桌面锚点
+//   engine/ui_snapshot.js onEditAction——数据核心共用 mirror 件的
+//   MessageTree.editAction，两仓同一份）。promptOpen 收新文本 → editAction
+//   （同父挂新 action 分支 / 同内容兄弟复用，原分支全保留）→ 按原 action
+//   的 messageId 逐轮 peek 找该轮快照 restoreOnly（只恢复不截断；找不到就
+//   跳过数据面恢复，记报告遗留）→ replayStory 重绘 → retryLast 让 AI 按
+//   改后的行动重写这一轮（与 regenerate 同构的分支版，callAI 内 push 按
+//   activeLeafId=新 action 记 messageId，快照契约闭环）。
+async function editAction(nodeId) {
+  if (typeof StoryLoop !== 'undefined' && StoryLoop && StoryLoop.busy) {
+    Platform.ui.toast('AI 正在生成，稍等', { type: 'warn' });
+    return false;
+  }
+  var node = (typeof MessageTree !== 'undefined' && typeof MessageTree.byId === 'function')
+    ? MessageTree.byId(nodeId) : null;
+  if (!node || node.kind !== 'action') { Platform.ui.toast('这一轮不能编辑', { type: 'warn' }); return false; }
+  var newText = await StoryStore.promptOpen('把这一轮的行动改成：',
+    String((node.msg && node.msg.content) || ''), { okText: '改写', cancelText: '取消' });
+  if (newText === null) return false;   // 取消
+  var r = MessageTree.editAction(nodeId, newText);
+  if (!r.ok) { Platform.ui.toast('改写失败：' + (r.reason || '未知原因'), { type: 'error' }); return false; }
+  // 恢复该轮开始前的数据面（不截断、不删快照、不删旧分支、不归档日志）
+  var rounds = Snapshots.list().map(function (s) { return s.round; });
+  for (var ri = rounds.length - 1; ri >= 0; ri--) {
+    var sp = Snapshots.peek(rounds[ri]);
+    if (sp && sp.messageId === nodeId) { Snapshots.restoreOnly(sp.round); break; }
+  }
+  Platform.ui.renderTopbar();
+  Platform.ui.renderSidebarExpanded();
+  replayStory();
+  Platform.ui.appendHint(r.reused
+    ? '（已切到这一轮的「' + String(newText).slice(0, 40) + '」版本）'
+    : '（已改写这一轮的行动，原分支保留，可随时切回）');
+  if (typeof StoryLoop !== 'undefined' && StoryLoop && StoryLoop.retryLast) StoryLoop.retryLast();
+  return true;
+}
+
 module.exports = {
   regenerate: regenerate,
   rollbackToRound: rollbackToRound,
   undoLastStep: undoLastStep,
+  editAction: editAction,
   lastAssistantText: lastAssistantText
 };

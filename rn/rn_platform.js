@@ -469,7 +469,8 @@ function bridgeStory(ui) {
   wrapVoid('appendStory', function (storyText, options, timeDelta, toolResults, roundNum, meta) {
     StoryStore.appendSegment(storyText, options, timeDelta, toolResults, roundNum, meta);
   });
-  wrapVoid('appendHint', function (text) { StoryStore.appendHint(text); });
+  // P72·W2：第二参 nodeId 透传（玩家行动灰字行的 action 节点 id，长按改这句用）
+  wrapVoid('appendHint', function (text, nodeId) { StoryStore.appendHint(text, nodeId); });
   wrapVoid('appendDiceResult', function (text) { StoryStore.appendDiceResult(text); });
   wrapVoid('renderChapterHead', function (roundNum) { StoryStore.setChapter(roundNum); });
   wrapVoid('clearStory', function () { StoryStore.clear(); });

@@ -113,7 +113,8 @@ function replayHistory() {
   for (var k = 0; k < plan.length; k++) {
     var it = plan[k];
     var roundNum = it.round;
-    if (it.hint) Platform.ui.appendHint(it.hint);
+    // P72·W2：带 playerNodeId——行动灰字行长按可「改这句」（窗内）
+    if (it.hint) Platform.ui.appendHint(it.hint, it.playerNodeId);
     var story = it.content, options = [];
     var clean = ToolExecutor.strip(it.content);
     var sp = (typeof MessageTree !== 'undefined' && MessageTree.splitAssistant)

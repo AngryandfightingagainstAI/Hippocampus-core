@@ -292,6 +292,43 @@
     return (line.length - idx) <= EDIT_WINDOW;
   };
 
+  // P72·W2：按 msg 引用反查树上 action 节点 id（导出与节点 msg 同引用，
+  //   头注释①；一个 msg 引用至多落在一个节点上）。无树态 / 没命中返回
+  //   null——planRounds 用它给每轮标 playerNodeId，渲染层据此挂「改这句」。
+  function actionNodeIdOf(msg) {
+    var t = tree();
+    if (!t) return null;
+    for (var i = 0; i < t.nodes.length; i++) {
+      var nd = t.nodes[i];
+      if (nd.kind === 'action' && nd.msg === msg) return nd.id;
+    }
+    return null;
+  }
+
+  // P72·W2：改这句——把 nodeId 这轮的行动换成 newText：在原 action 的父
+  //   （= 上一轮 story 末尾）下挂新 action 分支并把 activeLeaf 切过去
+  //   （appendAt 内部自动切）；原 action 及其后续整条旧分支全保留。
+  //   同父已有同内容 action（含玩家改回原文复用自己）则切过去复用，
+  //   不重复建分支。不做 canEdit 检查（渲染层只对窗内节点给入口；数据
+  //   层保持通用，老分支上的节点也允许从那里长新支）。
+  //   返回 { ok, reused, newNodeId, oldNodeId, parentId, reason }；失败不动树。
+  MessageTree.editAction = function (nodeId, newText) {
+    var node = nodeById(nodeId);
+    if (!node || node.kind !== 'action') return { ok: false, reason: '该节点不是玩家行动' };
+    var text = String(newText == null ? '' : newText);
+    if (!text.trim()) return { ok: false, reason: '行动内容不能为空' };
+    var kids = MessageTree.children(node.parentId);
+    for (var i = 0; i < kids.length; i++) {
+      if (kids[i].kind === 'action' && kids[i].msg && String(kids[i].msg.content || '') === text) {
+        if (!MessageTree.setActiveLeaf(kids[i].id)) return { ok: false, reason: '分支切换失败' };
+        return { ok: true, reused: true, newNodeId: kids[i].id, oldNodeId: node.id, parentId: node.parentId };
+      }
+    }
+    var nd = MessageTree.appendAt(node.parentId, 'action', { role: 'user', content: text });
+    if (!nd) return { ok: false, reason: '建分支失败' };
+    return { ok: true, reused: false, newNodeId: nd.id, oldNodeId: node.id, parentId: node.parentId };
+  };
+
   // —— 迁移（§3.3）—————————————————————————
 
   // kind 推断（与运行时 push 点同源口径）：
@@ -387,13 +424,18 @@
   };
 
   // 把 chatHistory 规划成渲染序列：
-  //   [{ round, hint, content, meta, index }] —— 一章一项，round 从 1 起连续。
+  //   [{ round, hint, content, meta, index, playerNodeId }] —— 一章一项，round 从 1 起连续。
   // hint：'（游戏开始）' / '（<玩家输入>）' / null（本轮没有对应玩家输入）
+  // playerNodeId（P72·W2）：本轮玩家输入对应的 action 节点 id——导出与节点
+  //   msg 同引用（头注释①），按引用反查；开场白轮（不是玩家行动，编辑它
+  //   = 重写整个游戏且无快照可恢复）与无树态返回 null。渲染层据此挂
+  //   「改这句」按钮（canEdit）或「超过 30 轮，只读」title。
   MessageTree.planRounds = function (history) {
     var msgs = Array.isArray(history) ? history : [];
     var out = [];
     var pendingUser = null;
     var pendingIsOpening = false;
+    var pendingPlayerId = null;
     for (var i = 1; i < msgs.length; i++) {
       var m = msgs[i];
       if (!m || typeof m !== 'object') continue;
@@ -403,6 +445,7 @@
         if (c.indexOf(SYS_PREFIX) === 0) continue;   // 合成反馈：不占轮
         pendingUser = c;
         pendingIsOpening = (i === 1);
+        pendingPlayerId = pendingIsOpening ? null : actionNodeIdOf(m);
         continue;
       }
       if (m.role !== 'assistant') continue;
@@ -413,10 +456,12 @@
         hint: hint,
         content: m.content,
         meta: m.meta || null,
-        index: i
+        index: i,
+        playerNodeId: pendingPlayerId
       });
       pendingUser = null;   // 一条玩家输入只喂一章，避免重生成/重复 assistant 时提示串台
       pendingIsOpening = false;
+      pendingPlayerId = null;
     }
     return out;
   };

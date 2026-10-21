@@ -377,7 +377,20 @@ function StoryScreen() {
       );
     }
     if (e.kind === 'hint') {
-      return <Text key={e.id} style={styles.hint}>{e.text}</Text>;
+      // P72·W2：玩家行动灰字行长按「改这句」（canEdit 窗内才挂 onLongPress；
+      //   窗外 / 无 playerId（开场白轮、无树老档）长按无响应=只读。
+      //   RN 无 title 悬浮提示，只读口径与桌面 title=「超过 30 轮，只读」
+      //   的差异记报告）。编辑链走 snapshot_actions.editAction（与桌面
+      //   UI_Snapshot.onEditAction 同语义，数据核心共用 MessageTree.editAction）。
+      var canEditHint = !!(e.playerId && typeof MessageTree !== 'undefined' &&
+        typeof MessageTree.canEdit === 'function' && MessageTree.canEdit(e.playerId));
+      return (
+        <Text
+          key={e.id}
+          style={styles.hint}
+          onLongPress={canEditHint ? (function () { SnapshotActions.editAction(e.playerId); }) : undefined}
+        >{e.text}</Text>
+      );
     }
     if (e.kind === 'dice') {
       return (
