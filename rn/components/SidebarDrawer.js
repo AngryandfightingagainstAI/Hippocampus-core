@@ -139,6 +139,12 @@ function SidebarDrawer() {
   //   表现为：点「☰ 菜单」App 立刻闪退（logcat: FATAL EXCEPTION mqt_v_native /
   //   JavascriptException at SidebarDrawer）。以后往本组件加 hook，一律加在这行之前。
   var inspect = readInspect();
+  // ★ 每块条形图的基准值只算一次：原来写在 map 回调里，6 块就是 36 次比较（O(n²)），
+  //   块数将来涨上去会白烧 CPU。注意本行必须在任何 return null 之前（hook 顺序问题）。
+  var piMaxTk = 0;
+  if (inspect && inspect.blocks) {
+    inspect.blocks.forEach(function (x) { if (x.tokens > piMaxTk) piMaxTk = x.tokens; });
+  }
   var piOpen = readPiOpen();
   var piTickState = React.useState(0);
   var piTick = piTickState[0]; var piBump = piTickState[1];
@@ -349,9 +355,7 @@ function SidebarDrawer() {
                       <View>
                         <Text style={styles.desc}>{'第 ' + (inspect.round != null ? inspect.round : '?') + ' 轮发送内容：'}</Text>
                         {inspect.blocks.map(function (b) {
-                          var maxTk = 0;
-                          inspect.blocks.forEach(function (x) { if (x.tokens > maxTk) maxTk = x.tokens; });
-                          var w = (b.tokens > 0 && maxTk > 0) ? Math.max(2, Math.round(b.tokens / maxTk * 100)) : 0;
+                          var w = (b.tokens > 0 && piMaxTk > 0) ? Math.max(2, Math.round(b.tokens / piMaxTk * 100)) : 0;
                           return (
                             <View key={'pi' + b.id} testID={'pi-row-' + b.id} style={{ marginVertical: 4 }}>
                               <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
