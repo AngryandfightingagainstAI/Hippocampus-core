@@ -247,6 +247,15 @@
     return t ? (t.activeLeafId || null) : null;
   };
 
+  // P72·W0-b：主链节点 id 数组（根→叶）。供 story.js 压缩时取被归档消息的
+  //   节点 id（chunk.msgIds）、snapshots.js rollbackTo 收集被切走分支的
+  //   msgIds（Logger.archiveAfter 的定位键）。无树态返回 null。
+  MessageTree.mainlineIds = function () {
+    var t = tree();
+    if (!t) return null;
+    return mainline().map(function (n) { return n.id; });
+  };
+
   MessageTree.children = function (id) {
     var t = tree();
     if (!t) return [];

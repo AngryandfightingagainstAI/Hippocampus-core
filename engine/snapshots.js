@@ -214,7 +214,12 @@
       GameState.chatHistory = (GameState.chatHistory || []).slice(0, cut.cut);
       // ★ P72：有树档时同步截树（删切点之后的节点、activeLeafId 回退到切点末节点），
       //   并用主线导出覆盖 chatHistory——与上面 slice 的内容一致（元素同引用）
+      // P72·W0-b：截断前收集「被切走分支」的节点 id（Logger.archiveAfter 的定位键；
+      //   调用方拿去归档日志，不再物理删）。无树档为 null。
+      var lostMsgIds = null;
       if (GameState.messageTree && typeof MessageTree !== 'undefined') {
+        var _ids = MessageTree.mainlineIds();
+        if (_ids) lostMsgIds = _ids.slice(cut.cut);
         MessageTree.truncateToCount(cut.cut);
       }
 
@@ -238,7 +243,7 @@
       // 6. 静态缓存失效（玩家数据变了）
       try { GameState.invalidateCache(); } catch (e) {}
 
-      return { ok: true, round: round, snap: snap, cut: cut.cut, cutBy: cut.how };
+      return { ok: true, round: round, snap: snap, cut: cut.cut, cutBy: cut.how, lostMsgIds: lostMsgIds };
     },
 
     rollbackLast: function() {

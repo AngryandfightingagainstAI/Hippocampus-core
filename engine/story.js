@@ -1022,6 +1022,13 @@ var StoryLoop = {
     const batchRealUsers = toCompress.filter(isRealUserMsg).length;
     const keepRealUsers = rest.slice(keepFrom).filter(isRealUserMsg).length;
     const seqFrom = Math.max(0, seqTo - keepRealUsers - batchRealUsers + 1);
+    // P72·W0-b：被压缩消息的树节点 id（与 toCompress 对齐 = 主线下标 1..keepFrom；
+    //   落进 chunk.msgIds，W0-b 起 archiveAfter 按它定位归档块）。无树档传 null。
+    let compressIds = null;
+    if (GameState.messageTree && typeof MessageTree !== 'undefined' && typeof MessageTree.mainlineIds === 'function') {
+      const ids = MessageTree.mainlineIds();
+      if (ids && ids.length > 1) compressIds = ids.slice(1, keepFrom + 1);
+    }
     const logData = await Logger.compress({
         cardId: GameState.currentCardId,
         saveId: GameState.currentSaveId,
@@ -1030,6 +1037,7 @@ var StoryLoop = {
         msgFrom: batchMsgFrom,
         roundSeqFrom: seqFrom,
         roundSeqTo: seqTo,
+        msgIds: compressIds,
         messages: toCompress
       });
     if (!logData) {

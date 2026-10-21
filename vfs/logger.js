@@ -99,7 +99,10 @@
       return /_week\.json$/.test(path);
     },
 
-    listLogs: function(cardId, saveId) {
+    // P72·W0-b：默认跳过 archived 的 chunk（回退归档的非破坏日志不再出现在日志页）。
+    //   opts.includeArchived = true 时全量返回（日志页「显示已归档」开关）。
+    //   老档 chunk 无 archived 字段 ⇒ 原样返回，行为零变化。
+    listLogs: function(cardId, saveId, opts) {
       var dir = this._dir(cardId, saveId);
       var paths = VFS.listAll(dir);
       var out = [];
@@ -116,7 +119,19 @@
       out.sort(function(a, b) {
         return dateNum(b.gameDate) - dateNum(a.gameDate);
       });
-      return out;
+      if (opts && opts.includeArchived) return out;
+      return out.map(function(l) {
+        var chunks = Array.isArray(l.chunks) ? l.chunks : null;
+        if (!chunks || !chunks.some(function(c) { return c && c.archived; })) return l;
+        var kept = chunks.filter(function(c) { return !(c && c.archived); });
+        if (!kept.length) return null;   // 全部已归档：整天在默认视图隐藏
+        var patched = Object.assign({}, l);
+        patched.chunks = kept;
+        patched.fullText = kept.map(function(c) { return c.text; })
+          .filter(function(t) { return !!t; })
+          .join('\n\n---\n\n');
+        return patched;
+      }).filter(function(l) { return !!l; });
     },
 
     readLog: function(cardId, saveId, gameDate) {
@@ -192,10 +207,72 @@
       return affected;
     },
 
+    // ============ P72·W0-b：非破坏式归档 ============
+    // 回退/撤销时不再物理删日志：把「被切走分支」的 chunk 标 archived:true。
+    //   定位方式：chunk.msgIds（W0-b 起压缩时记的 MessageTree 节点 id）与传入
+    //   msgIds 有交集 ⇒ 整块标记（chunk 是 40 条粒度，部分交集也整块——日志是
+    //   叙事参考，不做逐条切分）。
+    //   老 chunk 没有 msgIds 字段 ⇒ 归属未知，永不自动处理（老档行为零变化）。
+    //   返回：被标记的 chunk 条数。
+    archiveAfter: function(cardId, saveId, msgIds) {
+      if (!Array.isArray(msgIds) || !msgIds.length) return 0;
+      var want = Object.create(null);
+      msgIds.forEach(function(id) { want[id] = true; });
+      var all = this.listLogs(cardId, saveId, { includeArchived: true });
+      var affected = 0;
+      var self = this;
+      all.forEach(function(l) {
+        var chunks = Array.isArray(l.chunks) ? l.chunks : null;
+        if (!chunks) return;
+        var hit = false;
+        chunks.forEach(function(c) {
+          if (!c || c.archived) return;
+          if (!Array.isArray(c.msgIds)) return;   // 老块无 msgIds：不动
+          if (!c.msgIds.some(function(id) { return want[id]; })) return;
+          c.archived = true;
+          hit = true;
+          affected++;
+        });
+        if (hit) self.writeLog(cardId, saveId, l);
+      });
+      return affected;
+    },
+
+    // 彻底清空已归档日志（设置 → 数据 → 显式入口专用；真删，用户手动触发）
+    //   只删 archived:true 的 chunk；某天的 chunk 全空则删整份天文件。
+    //   返回：被物理删除的 chunk 条数。
+    purgeArchived: function(cardId, saveId) {
+      var all = this.listLogs(cardId, saveId, { includeArchived: true });
+      var removed = 0;
+      var self = this;
+      all.forEach(function(l) {
+        var chunks = Array.isArray(l.chunks) ? l.chunks : null;
+        if (!chunks) return;
+        var before = chunks.length;
+        var kept = chunks.filter(function(c) { return !(c && c.archived); });
+        if (kept.length === before) return;
+        removed += (before - kept.length);
+        if (!kept.length) {
+          self.deleteLog(cardId, saveId, l.gameDate);
+          return;
+        }
+        var patched = Object.assign({}, l);
+        patched.chunks = kept;
+        patched.fullText = kept.map(function(c) { return c.text; })
+          .filter(function(t) { return !!t; })
+          .join('\n\n---\n\n');
+        self.writeLog(cardId, saveId, patched);
+      });
+      return removed;
+    },
+
     // ============ 压缩 ============
     compress: async function(opts) {
       var cardId = opts.cardId, saveId = opts.saveId;
       var messages = opts.messages || [];
+      // P72·W0-b：本批消息的 MessageTree 节点 id（story.js 压缩时传入，与 messages 对齐）。
+      //   老 chunk 没有这个字段 → 归属未知，archiveAfter 永不自动处理。
+      var msgIdList = Array.isArray(opts.msgIds) ? opts.msgIds : null;
       if (messages.length === 0) return null;
 
       // 归到哪天（优先级从高到低）：
@@ -277,6 +354,8 @@
           //   消费方按缺失处理，老字段 msgFrom/msgTo 保持不动——老档兼容）
           roundSeqFrom: (opts.roundSeqFrom != null ? opts.roundSeqFrom : null),
           roundSeqTo: (opts.roundSeqTo != null ? opts.roundSeqTo : null),
+          // P72·W0-b：本块消息的树节点 id（归档定位用；老档不传则 null）
+          msgIds: (msgIdList ? msgIdList.slice(bi, blockEnd) : null),
           text: txt
         });
         dialogue += pick;
