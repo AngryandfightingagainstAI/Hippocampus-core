@@ -112,8 +112,10 @@ function runA() {
   check('A5a ui_portrait_rn 有讨论链 sendAndGenerate', prn.indexOf('function sendAndGenerate') >= 0 && prn.indexOf('sendAndGenerate: sendAndGenerate') >= 0);
   check('A5b opening 落盘/删除 playerData._openingPrompt',
     prn.indexOf('GameState.playerData._openingPrompt = v') >= 0 && prn.indexOf('delete GameState.playerData._openingPrompt') >= 0);
+  // P71 起 PortraitScreen 的“发送”改走流式讨论链 UI_Portrait.sendStream(t, cb)，
+  // 旧的 UI_Portrait.sendAndGenerate(t) 只留在 rn/ui_portrait_rn.js 供老调用（见 A5a）。
   check('A5c PortraitScreen 有开场白段（文案逐字）与会话输入',
-    ps.indexOf("'开场白（可选）'") >= 0 && ps.indexOf('UI_Portrait.sendAndGenerate(t)') >= 0);
+    ps.indexOf("'开场白（可选）'") >= 0 && ps.indexOf('UI_Portrait.sendStream(t,') >= 0);
 
   // A6 异常卡读 options.title
   var store = readRn('rn/story_store.js');

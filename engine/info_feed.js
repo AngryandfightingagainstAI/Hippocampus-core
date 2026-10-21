@@ -500,7 +500,7 @@
         //   判定（role==='user' && !content.startsWith('【系统 ·')）误判为真实玩家输入，
         //   防止轮次 +1 / 10 轮窗口污染 / 按轮次回退日志错删。两仓同源，须同步改。
         var content = '【系统 · 手机混流】' + (opts.note ? String(opts.note) : ('（跟进手机信息）' + line));
-        try { GameState.chatHistory.push({ role: 'user', content: content }); }
+        try { MessageTree.append('info', { role: 'user', content: content }); }
         catch (e) {
           warned = 'chatHistory 写入失败：' + ((e && e.message) ? e.message : String(e));
           this._audit('promote_history_failed', id + '：' + warned);

@@ -98,8 +98,10 @@ function installLocalStoragePolyfill() {
   return true;
 }
 
-// 启动全集 50 模块（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor；Electron 侧名单 46，未同步）
+// 启动全集 51 模块（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P72 加 MessageTree；Electron 侧名单 46，未同步）
 // —— 核心层 ——
+// P72：消息树——gamestate.loadFromSave 要跑迁移，必须先于 GameState 加载
+load('MessageTree',    function () { return require('../engine/message_tree.js'); });
 load('CardValidator',  function () { return require('../engine/core/card_validator.js'); });
 load('GameState',      function () { return require('../engine/core/gamestate.js'); });
 load('VFS',            function () { return require('../vfs/vfs.js'); });

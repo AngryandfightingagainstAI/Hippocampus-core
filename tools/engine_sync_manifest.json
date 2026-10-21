@@ -2,17 +2,17 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-20T17:21:44Z",
+  "recordedAt": "2026-10-21T02:15:13Z",
   "heads": {
     "rn": null,
     "desktop": null
   },
   "counts": {
-    "mirror": 68,
-    "mirrorEol": 23,
+    "mirror": 69,
+    "mirrorEol": 24,
     "fork": 16,
-    "unsharedDesktop": 129,
-    "unsharedRn": 156
+    "unsharedDesktop": 132,
+    "unsharedRn": 157
   },
   "mirror": [
     "engine/achievements.js",
@@ -47,6 +47,7 @@
     "engine/import/vault.js",
     "engine/info_feed.js",
     "engine/log_query.js",
+    "engine/message_tree.js",
     "engine/npc_runtime.js",
     "engine/outputs.js",
     "engine/portrait.js",
@@ -96,6 +97,7 @@
     "engine/dice_history.js",
     "engine/endings.js",
     "engine/events.js",
+    "engine/message_tree.js",
     "engine/proposal_semantic_check.js",
     "engine/proposal_validator.js",
     "engine/runtime_repair.js",
@@ -131,9 +133,9 @@
       "diffLines": 456
     },
     "engine/core/gamestate.js": {
-      "rn": "E59DF6A01FBBF772FAAE143588C0296C",
-      "desktop": "28C06930941317AC16D6512DCC79A770",
-      "diffLines": 249
+      "rn": "564C85508E62DA763700C33917E9093D",
+      "desktop": "2A1D33F4D211C2909E049F708C6B3A86",
+      "diffLines": 290
     },
     "engine/core/storage.js": {
       "rn": "4777A5C488743AE4E80D74A32A510A8B",
@@ -176,9 +178,9 @@
       "diffLines": 251
     },
     "vfs/saves.js": {
-      "rn": "1E87EB592560370B74C60C4F52EE4D8C",
-      "desktop": "E919E482CC4CDAC1BDA22F3A8B6BE4C2",
-      "diffLines": 258
+      "rn": "915F7B13FB19A74F9D5D33BBA466B19C",
+      "desktop": "79FA64C56B0FA5E89C243E0557687373",
+      "diffLines": 269
     },
     "vfs/vfs.js": {
       "rn": "71B7E0E0A655589A5AC314B778793E3B",

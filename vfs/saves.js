@@ -59,6 +59,17 @@
     savePortrait(cardId, saveId, data) {
       return VFS.writeJSON(this.portraitPath(cardId, saveId), data || null) !== false;
     },
+    // P72：消息树（老档迁移后的节点树，与 chat 分片并存——树是导出源，分片是兼容落盘）
+    treePath(cardId, saveId)      { return this.basePath(cardId, saveId) + '/tree.json'; },
+    loadTree(cardId, saveId) {
+      const t = VFS.readJSON(this.treePath(cardId, saveId));
+      if (!t || t.v !== 1 || !Array.isArray(t.nodes) || typeof t.activeLeafId !== 'string') return null;
+      return t;
+    },
+    saveTree(cardId, saveId, tree) {
+      if (!tree || !Array.isArray(tree.nodes)) return false;
+      return VFS.writeJSON(this.treePath(cardId, saveId), tree) !== false;
+    },
     // ---- v2 新增结束 ----
 
     listAll() {

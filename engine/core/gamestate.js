@@ -7,6 +7,8 @@
 var GameState = {
   currentCard: null, currentState: null, playerData: {}, chatHistory: [],
   currentCardId: null, currentSaveId: null,
+  // P72：消息树（老档按 chatHistory 迁移生成；树是主线导出源，与 chat 分片并存）
+  messageTree: null,
   _sessionStart: 0, _sessionToken: 0,
   _gameTime: null, _totalTokens: 0, _lastUsage: null,
   // P17·A 缓存用量：_totalCachedTokens = 累计命中缓存的输入 token，
@@ -34,6 +36,24 @@ var GameState = {
     if (!this.playerData.inventory) this.playerData.inventory = { bar: [], common: [], story: [], rare: [] };
     if (typeof Alias !== 'undefined') Alias.normalize(this.playerData);
     this.chatHistory = data.chat.messages || [];
+    // P72：消息树装载——有树档直接载树（树是导出源）；老档跑迁移，
+    // 门禁不过（导出与原文不一致）保持无树态，行为与旧版一致（fail-open）。
+    this.messageTree = null;
+    try {
+      const savedTree = Saves.loadTree(cardId, saveId);
+      if (savedTree && Array.isArray(savedTree.nodes) && savedTree.nodes.length > 0) {
+        this.messageTree = savedTree;
+        MessageTree.syncChatHistory();
+      } else {
+        const mig = MessageTree.migrateFromHistory(this.chatHistory);
+        if (mig.ok) {
+          this.messageTree = mig.tree;
+          MessageTree.syncChatHistory();
+        } else {
+          console.warn('[MessageTree] 迁移门禁未过，保持无树态：' + mig.reason);
+        }
+      }
+    } catch (eTree) { console.warn('[MessageTree] 装载失败，保持无树态：', eTree); }
     this._sessionToken = Date.now();
     this._totalTokens = 0;
     this._lastUsage = null;
@@ -96,6 +116,8 @@ var GameState = {
     var ok = true;
     if (Saves.savePlayer(this.currentCardId, this.currentSaveId, this.playerData, this.currentState, this._gameTime) === false) ok = false;
     if (Saves.saveChat(this.currentCardId, this.currentSaveId, this._pruneOldMetaForSave(this.chatHistory)) === false) ok = false;
+    // P72：树与 chat 分片同口径落盘（无树档不落，下次载入再迁移）
+    if (this.messageTree && Saves.saveTree(this.currentCardId, this.currentSaveId, this._pruneTreeMetaForSave(this.messageTree)) === false) ok = false;
     const d = Math.floor((Date.now() - (this._sessionStart || Date.now())) / 1000);
     if (Saves.touch(this.currentCardId, this.currentSaveId, d > 0 ? d : 0) === false) ok = false;
     this._sessionStart = Date.now();
@@ -132,6 +154,25 @@ var GameState = {
       }
     }
     return out;
+  },
+
+  // P72：树落盘前的 meta 剥离——与 _pruneOldMetaForSave 同口径（保留最近 25 条
+  // 有 meta 的 assistant），浅拷贝节点与 msg，不改内存树。
+  _pruneTreeMetaForSave(tree) {
+    if (!tree || !Array.isArray(tree.nodes)) return tree;
+    var nodes = tree.nodes.map(function (n) {
+      if (n && n.msg && n.msg.role === 'assistant' && n.msg.meta) {
+        return Object.assign({}, n, { msg: Object.assign({}, n.msg) });
+      }
+      return n;
+    });
+    var msgs = nodes.map(function (n) { return n.msg; });
+    var pruned = this._pruneOldMetaForSave(msgs);
+    var out = nodes.map(function (n, i) {
+      if (pruned[i] !== msgs[i]) return Object.assign({}, n, { msg: pruned[i] });
+      return n;
+    });
+    return { v: tree.v, seq: tree.seq, nodes: out, activeLeafId: tree.activeLeafId };
   },
 
   invalidateCache() { this._cacheVersion++; this._cachedStaticDynamic = null; },

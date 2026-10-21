@@ -224,10 +224,11 @@ var StoryLoop = {
     // ★ 初始化"当前场景位置"
     this._lastPlayerLocation = this._getPlayerLocation();
 
-    GameState.chatHistory = [
-      { role: 'system', content: PromptBuilder.buildStatic() + '\n' + PromptBuilder.buildSemiStatic() },
-      { role: 'user', content: opening }
-    ];
+    // P72：开局建消息树（system 根 + 开场白），chatHistory 由主线导出
+    MessageTree.init(
+      PromptBuilder.buildStatic() + '\n' + PromptBuilder.buildSemiStatic(),
+      opening
+    );
     Platform.ui.clearStory();
     Platform.ui.appendHint('（游戏开始）');
     await this.callAI();
@@ -238,9 +239,9 @@ var StoryLoop = {
     const diceResult = this.tryParsePlayerDice(t);
     if (diceResult) {
       Platform.ui.appendHint('（你的选择：' + t + '）');
-      GameState.chatHistory.push({ role: 'user', content: t });
+      MessageTree.append('action', { role: 'user', content: t });
       const fb = ToolExecutor.formatForHistory([diceResult]);
-      if (fb) GameState.chatHistory.push({ role: 'user', content: fb });
+      if (fb) MessageTree.append('fb', { role: 'user', content: fb });
       const uiLine = ToolExecutor.formatDiceForUI(diceResult);
       if (uiLine) Platform.ui.appendDiceResult(uiLine);
       if (typeof DiceHistory !== 'undefined') DiceHistory.record(diceResult);
@@ -261,9 +262,9 @@ var StoryLoop = {
     const searchResult = await this.tryParsePlayerSearch(t);
     if (searchResult) {
       Platform.ui.appendHint('（你的选择：' + t + '）');
-      GameState.chatHistory.push({ role: 'user', content: t });
+      MessageTree.append('action', { role: 'user', content: t });
       const fb = ToolExecutor.formatForHistory([searchResult]);
-      if (fb) GameState.chatHistory.push({ role: 'user', content: fb });
+      if (fb) MessageTree.append('fb', { role: 'user', content: fb });
       if (typeof ToolTrace !== 'undefined') {
         try {
           ToolTrace.record(null, [{
@@ -293,7 +294,7 @@ var StoryLoop = {
       _content = t + '\n\n【系统提示】玩家本轮说的是元层指令，不是剧情动作（关键词：' + _intent.keywords.join('、') + '）。\n这是指令，不是请求。必须调 propose_change({type, payload, reason}) 提议变更。\n不允许只在叙事里口头答应。不允许直接调 add_achievement 等原工具。';
       Platform.ui.appendHint('（检测到元层意图：' + _intent.keywords.join('、') + '）');
     }
-    GameState.chatHistory.push({ role: 'user', content: _content });
+    MessageTree.append('action', { role: 'user', content: _content });
     await this.callAI();
   },
 
@@ -439,6 +440,7 @@ var StoryLoop = {
     } catch (e) { console.warn('[Snapshots] push 失败：', e); }
     try {
       if (GameState.chatHistory.length > 0 && GameState.chatHistory[0].role === 'system') {
+        // P72：chatHistory[0] 即树根 msg 的同引用——这行改完树也同步了，无需再调树
         GameState.chatHistory[0].content = PromptBuilder.buildStatic() + '\n' + PromptBuilder.buildSemiStatic();
       }
       const g = Storage.getGlobal();
@@ -594,8 +596,9 @@ var StoryLoop = {
       const reasoning = GameState._lastReasoning || '';
       const usage = GameState._lastUsage || null;
 
-      GameState.chatHistory.push({ role: 'assistant', content: content });
-      const assistantMsgRef = GameState.chatHistory[GameState.chatHistory.length - 1];
+      // P72：AI 回复入树（node.msg 即导出元素，assistantMsgRef 引用不变）
+      const assistantNode = MessageTree.append('story', { role: 'assistant', content: content });
+      const assistantMsgRef = assistantNode.msg;
 
       let toolResults = [];
       try {
@@ -626,7 +629,7 @@ var StoryLoop = {
         if (toolResults.length) {
           toolResults.forEach(r => { if (r.ok && r.segmentCrossed) GameState._pendingSystemNotices.push('玩家 ' + r.label + ' 进入新状态：' + r.segmentCrossed.text); });
           const fb = ToolExecutor.formatForHistory(toolResults);
-          if (fb) GameState.chatHistory.push({ role: 'user', content: fb });
+          if (fb) MessageTree.append('fb', { role: 'user', content: fb });
           Platform.ui.renderTopbar(); Platform.ui.renderSidebarExpanded();
       var __toolFails = toolResults.filter(function(r) { return r && !r.ok && r.reason; });
       if (__toolFails.length === 1) {
@@ -791,6 +794,8 @@ var StoryLoop = {
         try {
           const idx = GameState.chatHistory.indexOf(assistantMsgRef);
           if (idx >= 0) GameState.chatHistory.splice(idx);
+          // P72：孤儿回滚同步删树节点（链尾无子，删后 activeLeafId 回退到其父）
+          if (idx >= 0 && GameState.messageTree) MessageTree.removeNode(assistantNode.id);
         } catch (e) { console.warn('[StoryLoop] 孤儿消息回滚失败：', e); }
         throw renderErr;
       }
@@ -840,7 +845,7 @@ var StoryLoop = {
           var evResult = Events.tick();
           if (evResult && evResult.triggered && evResult.triggered.length) {
             var evFb = Events.formatForHistory(evResult.triggered);
-            if (evFb) GameState.chatHistory.push({ role: 'user', content: evFb });
+            if (evFb) MessageTree.append('fb', { role: 'user', content: evFb });
           }
         } catch (e) { console.warn('[Events] tick 失败：', e); }
       }
@@ -849,7 +854,7 @@ var StoryLoop = {
           var taskResult = Tasks.tick();
           if (taskResult && taskResult.completed && taskResult.completed.length) {
             var taskFb = Tasks.formatForHistory(taskResult.completed);
-            if (taskFb) GameState.chatHistory.push({ role: 'user', content: taskFb });
+            if (taskFb) MessageTree.append('fb', { role: 'user', content: taskFb });
           }
         } catch (e) { console.warn('[Tasks] tick 失败：', e); }
       }
@@ -858,7 +863,7 @@ var StoryLoop = {
           var achResult = Achievements.tick();
           if (achResult && achResult.unlocked && achResult.unlocked.length) {
             var achFb = Achievements.formatForHistory(achResult.unlocked);
-            if (achFb) GameState.chatHistory.push({ role: 'user', content: achFb });
+            if (achFb) MessageTree.append('fb', { role: 'user', content: achFb });
           }
         } catch (e) { console.warn('[Achievements] tick 失败：', e); }
       }
@@ -1023,6 +1028,9 @@ var StoryLoop = {
     GameState._logCompressFailStreak = 0;
 
     GameState.chatHistory = [GameState.chatHistory[0]].concat(rest.slice(keepFrom));
+    // P72：压缩砍头同步删树（被归档节点从主线摘除删除，新主线首节点改挂 system 根），
+    //   dropMainlineHead 内部会重导出 chatHistory——与上一行结果逐元素一致（同 msg 引用）
+    if (GameState.messageTree) MessageTree.dropMainlineHead(keepFrom);
     GameState._lastCompressMsgCount = GameState.chatHistory.filter(m => m.role !== 'system').length;
     if (GameState._gameTime) {
       GameState._lastCompressGameTime = {
@@ -1067,8 +1075,12 @@ var StoryLoop = {
     }
     if (!timeMarkerFound) timeDelta = 15;
 
-    const bodyRe = /(?:【正文】|【故事】|正文[:：]|\[正文\])([\s\S]*?)(?=(?:【时间】|【选项】|【选项列表】|选项[:：]|\[选项\]|$))/;
-    const optRe = /(?:【选项】|【选项列表】|选项[:：]|\[选项\])([\s\S]*)$/;
+    // P72·D3：正文/选项正则与 ui_core 的渲染拆句共用一份（engine/message_tree.js），
+    // 避免两处口径漂移（此前 ui_core 少了【时间】前的截断、story 少了【选项列表】等变体）。
+    const bodyRe = (typeof MessageTree !== 'undefined' && MessageTree.BODY_RE) ? MessageTree.BODY_RE
+      : /(?:【正文】|【故事】|正文[:：]|\[正文\])([\s\S]*?)(?=(?:【时间】|【选项】|【选项列表】|选项[:：]|\[选项\]|$))/;
+    const optRe = (typeof MessageTree !== 'undefined' && MessageTree.OPT_RE) ? MessageTree.OPT_RE
+      : /(?:【选项】|【选项列表】|选项[:：]|\[选项\])([\s\S]*)$/;
     const bm = content.match(bodyRe), om = content.match(optRe);
     if (bm) story = bm[1].trim();
     else if (om) { const i = content.indexOf(om[0]); story = content.slice(0, i).trim(); }

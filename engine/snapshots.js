@@ -55,9 +55,16 @@
     // 返回 { cut, how, drift }：cut = 要保留的历史条数；cut < 0 表示原文已被
     // 压缩归档、无法可靠回退（reason 给玩家看）。前驱指纹用来消歧：玩家重复
     // 同一句输入时，只认「前一条也对得上」的那个位置。
+    // ★ P72：快照改记 messageId（压栈时的主线末节点 id），有树档优先按 id
+    //   在主线上定位切点（跨压缩/重复输入都稳）；id 不在主线（无树档、节点
+    //   已被压缩删掉、或切到别的分支）时退回锚点指纹法，行为与旧版一致。
     _cutIndex: function(snap) {
       var hist = GameState.chatHistory || [];
       var want = snap.chatLength || 0;
+      if (snap.messageId && GameState.messageTree && typeof MessageTree !== 'undefined') {
+        var mi = MessageTree.mainlineIndexOf(snap.messageId);
+        if (mi >= 0) return { cut: mi + 1, how: 'msg-id', drift: want - (mi + 1) };
+      }
       if (!snap.anchor) {
         // 升级前压的旧快照：没有锚点，沿用老口径（长度没缩就还能对上）；缩过就拒绝
         if (want <= hist.length) return { cut: want, how: 'legacy-length', drift: 0 };
@@ -151,6 +158,8 @@
         timestamp: Date.now(),
         reason: reason || '',
         chatLength: hist.length,
+        // ★ P72：主线末节点 id——回退时优先按它在树上定位切点
+        messageId: (GameState.messageTree && GameState.messageTree.activeLeafId) || null,
         // ★ P54·§四 F1：切点锚点（见 _cutIndex 注释）
         anchor: this._fp(hist[hist.length - 1]),
         anchorLead: hist.length > 1 ? this._fp(hist[hist.length - 2]) : null,
@@ -198,6 +207,11 @@
 
       // 2. 截断历史（按锚点算出的切点，不再是「当时的下标」）
       GameState.chatHistory = (GameState.chatHistory || []).slice(0, cut.cut);
+      // ★ P72：有树档时同步截树（删切点之后的节点、activeLeafId 回退到切点末节点），
+      //   并用主线导出覆盖 chatHistory——与上面 slice 的内容一致（元素同引用）
+      if (GameState.messageTree && typeof MessageTree !== 'undefined') {
+        MessageTree.truncateToCount(cut.cut);
+      }
 
       // 3. 恢复各系统运行时状态
       if (snap.systems) {

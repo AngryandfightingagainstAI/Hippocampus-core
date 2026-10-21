@@ -98,38 +98,34 @@ async function continueLast() {
   return openSave(last.cardId, last.saveId);
 }
 
-// 历史重放：逐 user/assistant 对重建章节头、段、选项与玩家行动灰字。
-// 正则与步进同 ui_core L386-415；输出全部走 Platform.ui 壳。
+// 历史重放：重建章节头、段、选项与玩家行动灰字。
+// ★ P72·D6（RN 侧同步）：不再用固定步长 i += 2 两两配对——只要一轮里插了合成
+//   user（工具反馈 / 事件通报 / 任务状态 / 成就 / 手机混流），后面整段配对就错位，
+//   表现为"回到上一条之后某一轮整段消失"。现在与桌面共用
+//   engine/message_tree.js 的 planRounds / splitAssistant / parseOptions：
+//   assistant 决定章数、最近一条真玩家输入决定提示行，合成 user 不占轮。
 function replayHistory() {
   Platform.ui.clearStory();
   var messages = GameState.chatHistory || [];
-  var i = 1;
-  var roundNum = 0;
-  while (i < messages.length) {
-    var u = messages[i], a = messages[i + 1];
-    if (u && u.role === 'user') {
-      if (!(u.content && u.content.indexOf('【系统 ·') === 0)) {
-        roundNum++;
-        if (i > 1) Platform.ui.appendHint('（' + u.content + '）');
-        else Platform.ui.appendHint('（游戏开始）');
-      }
+  var plan = (typeof MessageTree !== 'undefined' && MessageTree.planRounds)
+    ? MessageTree.planRounds(messages)
+    : [];
+  for (var k = 0; k < plan.length; k++) {
+    var it = plan[k];
+    var roundNum = it.round;
+    if (it.hint) Platform.ui.appendHint(it.hint);
+    var story = it.content, options = [];
+    var clean = ToolExecutor.strip(it.content);
+    var sp = (typeof MessageTree !== 'undefined' && MessageTree.splitAssistant)
+      ? MessageTree.splitAssistant(clean)
+      : { story: clean, optionsRaw: '', bodyHit: false, optHit: false };
+    if (sp.bodyHit) story = sp.story;
+    if (sp.optHit && typeof MessageTree.parseOptions === 'function') {
+      options = MessageTree.parseOptions(sp.optionsRaw);
     }
-    if (a && a.role === 'assistant') {
-      var story = a.content, options = [];
-      var clean = ToolExecutor.strip(a.content);
-      var bm = clean.match(/(?:【正文】|【故事】)([\s\S]*?)(?=(?:【时间】|【选项】|【选项列表】|$))/);
-      var om = clean.match(/(?:【选项】|【选项列表】)([\s\S]*)$/);
-      if (bm) story = bm[1].trim();
-      if (om) {
-        options = om[1].split('\n').map(function (l) {
-          return l.replace(/^\s*\d+[\.、\)）]\s*/, '').trim();
-        }).filter(Boolean);
-      }
-      StoryLoop.currentOptions = options;
-      Platform.ui.renderChapterHead(roundNum);
-      Platform.ui.appendStory(story, options, 0, null, roundNum, a.meta);
-    }
-    i += 2;
+    StoryLoop.currentOptions = options;
+    Platform.ui.renderChapterHead(roundNum);
+    Platform.ui.appendStory(story, options, 0, null, roundNum, it.meta);
   }
 }
 

@@ -112,6 +112,12 @@ globalThis.Platform = {
 const errLog = [];
 globalThis.ErrorLog = { action: function (tag, msg) { errLog.push(tag + ':' + String(msg)); } };
 
+// P72：info_feed promote 写史走 MessageTree.append（无树态 fail-open 直写
+// chatHistory）。注入模块本体；未建树的用例走旧口径，promote 行为与
+// P72 之前一致（此前缺注入时 promote 的 try/catch 吞 ReferenceError 致
+// 混流消息丢失、2 条断言红）。
+globalThis.MessageTree = require('../engine/message_tree.js');
+
 const InfoFeed = require('../engine/info_feed.js');
 globalThis.InfoFeed = InfoFeed;
 // P9·S13：混流写 chatHistory 的 role:'user' 必须带【系统 · 前缀，否则会被

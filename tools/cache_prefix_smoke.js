@@ -85,6 +85,11 @@ global.ToolExecutor = {
   WHITELIST: {}
 };
 
+// P72：story.js 各 push 点改为 MessageTree.append（无树态 fail-open 直写
+// chatHistory）。沙箱注入模块本体；GameState.messageTree 保持未建（undefined），
+// append 走 fail-open 旧口径，本套 27 条断言语义与 P72 之前完全一致。
+global.MessageTree = require('../engine/message_tree.js');
+
 var StoryLoop = require('../engine/story.js');
 
 // ---------- 断言器 ----------
