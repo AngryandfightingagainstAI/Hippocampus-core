@@ -25,6 +25,8 @@ var CardValidator = {
     for (const m of moved) warnings.push(m);
     // P72·W4：NPC 口吻（voice）自查 —— 全可选段，只报 warnings，绝不拦导入
     for (const m of this.auditNpcVoices(card)) warnings.push(m);
+    // P72·W9：worldbook.lore（世界书关键词触发）——可选字段，同样只警告不拦导入
+    for (const m of this.auditLore(card)) warnings.push(m);
     return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
   },
 
@@ -36,6 +38,22 @@ var CardValidator = {
   //   catchphrase 口头禅，≤4 条
   // 设计：voice 是「锦上添花」，缺了、写歪了都不该拦导入 —— 只把问题报成 warning，
   //   运行期由 normalizeVoice() 再兜一次（截断超长、丢掉非字符串项）。
+  // P72·W9：世界书关键词触发的卡带侧校验。纯可选字段——没有 lore 的卡带
+  //   一条警告都不会多（行为与改动前完全一致）。
+  auditLore(card) {
+    try {
+      const lore = card && card.worldbook && card.worldbook.lore;
+      if (lore == null) return [];
+      if (typeof LoreTrigger !== 'undefined' && LoreTrigger && typeof LoreTrigger.auditList === 'function') {
+        return LoreTrigger.auditList(lore);
+      }
+      if (!Array.isArray(lore)) return ['worldbook.lore 必须是数组，已忽略整段'];
+      return [];
+    } catch (e) {
+      return [];
+    }
+  },
+
   auditNpcVoices(card) {
     const out = [];
     const npcs = (card && card.worldbook && Array.isArray(card.worldbook.npcs)) ? card.worldbook.npcs : [];

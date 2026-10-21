@@ -202,6 +202,9 @@ load('UI_Portrait',           function () { return require('./ui_portrait_rn.js'
 // P72·W3：反说教闸门 —— story.js 渲染后调 StyleGuard.analyze，
 //   必须排在 StoryLoop 之前，否则 typeof StyleGuard === 'undefined' 会静默跳过检查。
 load('StyleGuard',            function () { return require('../engine/style_guard.js'); });
+// P72·W9：世界书关键词触发 —— prompt_builder.buildSemiStatic 里用 LoreTrigger.match，
+//   必须排在前；缺了会退化成「整本世界书照塞」（行为回到改动前，不算崩）。
+load('LoreTrigger',           function () { return require('../engine/lore_trigger.js'); });
 load('StoryLoop',             function () { return require('../engine/story.js'); }, 'CreateFlow');
 
 // ============================================================

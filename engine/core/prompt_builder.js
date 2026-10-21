@@ -416,6 +416,39 @@ var PromptBuilder = {
       }
     } catch (e) {}
 
+    // P72·W9：世界书关键词触发（可选字段 card.worldbook.lore）。
+    //   没有 lore 的卡带 ⇒ 这一段一个字符都不加（老卡带行为完全不变）。
+    try {
+      const _loreList = (card.worldbook && card.worldbook.lore) || null;
+      if (Array.isArray(_loreList) && _loreList.length && typeof LoreTrigger !== 'undefined' && LoreTrigger) {
+        const _norm = LoreTrigger.normalizeList(_loreList);
+        // 玩家这一轮说的话：最后一条真实 user 消息；recentText 用最近几轮 assistant 正文
+        let _playerText = '';
+        let _recentText = '';
+        try {
+          const _h = GameState.chatHistory || [];
+          for (let _i = _h.length - 1; _i >= 0; _i--) {
+            if (_h[_i] && _h[_i].role === 'user' && !String(_h[_i].content || '').startsWith('【系统 ·')) {
+              _playerText = String(_h[_i].content || '');
+              break;
+            }
+          }
+          const _tails = [];
+          for (let _j = _h.length - 1; _j >= 0 && _tails.length < 4; _j--) {
+            if (_h[_j] && _h[_j].role === 'assistant') _tails.unshift(String(_h[_j].content || '').slice(0, 1500));
+          }
+          _recentText = _tails.join('\n');
+        } catch (e2) {}
+        const _hits = LoreTrigger.match(_norm, { playerText: _playerText, recentText: _recentText });
+        GameState._lastLoreHits = _hits.map(function (h) { return { id: h.id, name: h.name, via: h.via, chars: h.chars }; });
+        const _loreBlock = LoreTrigger.formatBlock(_hits);
+        if (_loreBlock) {
+          lines.push(_loreBlock); lines.push('');
+          this._piBlock('lore', _loreBlock);
+        }
+      }
+    } catch (e) {}
+
     const entityIdx = this.buildEntityIndex();
     // P70-T2：semiStatic 块 = 不含实体索引的部分，与 entity 块互斥（避免查看器双算）。
     //   join 只为取记录快照，不改动 lines 与最终输出。

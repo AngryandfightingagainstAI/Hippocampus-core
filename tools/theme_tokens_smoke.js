@@ -45,7 +45,7 @@ var boot = require('../rn/rn_bootstrap.js');
 // P71 同步 68→69：rn_bootstrap 新增 PortraitChat（人设共创会话层），当轮断言未同步（遗留漂移）
 // P70-T2 同步 69→70：rn_bootstrap 新增 PromptInspect（上下文查看器数据层），断言重记现盘值
 // P72 同步 70→71：rn_bootstrap 新增 MessageTree（消息树数据层），断言重记现盘值
-check('BOOTSTRAP 72/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background、P47·批次2 加 Destiny、P65 加 ToolTrace、P66 加 StateGuard、P67 加 CreationQuiz、P71 加 PortraitChat、P70-T2 加 PromptInspect、P72 加 MessageTree）', boot.ok === 72 && boot.failed === 0,
+check('BOOTSTRAP 73/0（H6 加 UI_Portrait、P1-F 加 CARDS、P1-G 加 CardClassifyPure、P1-H 加 InfoFeed、P2·S1 加 WebSearchManager、P2·S2 加 NumEditor、P4·S2 加 LogQuery、P15 加 12 个导入层模块、P28 加 Background、P47·批次2 加 Destiny、P65 加 ToolTrace、P66 加 StateGuard、P67 加 CreationQuiz、P71 加 PortraitChat、P70-T2 加 PromptInspect、P72 加 MessageTree、W3 加 StyleGuard、W9 加 LoreTrigger）', boot.ok === 73 && boot.failed === 0,
   'ok=' + boot.ok + ' failed=' + boot.failed);
 
 var Theme = require('../engine/theme.js');

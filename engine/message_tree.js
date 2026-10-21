@@ -279,6 +279,68 @@
     return out;
   };
 
+  // P72·W11：分支剪枝——只保留「每条主线上最近 keep 个兄弟分支」，更老的整枝丢。
+  //   纯函数：入参树对象、返回新树对象（不改入参）。
+  //   规则：①主线节点一律保留（当前正在看的东西不能丢）；
+  //        ②对主线上每个分叉点，按 ts 倒序保留最近 keep 个孩子所在子树；
+  //        ③keep<=0 表示不保留任何旁支（只留主线）。
+  //   影响面：被剪掉的老分支切不回去（正文还在日志里可见），主线与当前 leaf 不受影响。
+  MessageTree.pruneSiblings = function (srcTree, keep) {
+    if (!srcTree || !Array.isArray(srcTree.nodes)) return srcTree;
+    var k = (typeof keep === 'number' && isFinite(keep)) ? Math.floor(keep) : 3;
+    var nodes = srcTree.nodes;
+    var byId = Object.create(null);
+    nodes.forEach(function (n) { byId[n.id] = n; });
+
+    // 1) 找当前主线（根 → activeLeaf）
+    var lineIds = Object.create(null);
+    var cur = srcTree.activeLeafId ? byId[srcTree.activeLeafId] : null;
+    while (cur) { lineIds[cur.id] = true; cur = cur.parentId ? byId[cur.parentId] : null; }
+    if (!Object.keys(lineIds).length) {
+      // 没有 leaf（异常树）：退回「保留全部」，别把人档剪没了
+      return srcTree;
+    }
+
+    // 2) 收集要丢的子树根
+    var dropRoots = [];
+    nodes.forEach(function (n) {
+      if (!lineIds[n.id]) return;
+      var kids = nodes.filter(function (x) { return x.parentId === n.id; });
+      if (kids.length <= 1) return;
+      kids.sort(function (a, b) {
+        var ta = a.ts || 0, tb = b.ts || 0;
+        if (ta !== tb) return tb - ta;
+        return String(b.id) > String(a.id) ? 1 : -1;
+      });
+      kids.forEach(function (kid, i) {
+        if (lineIds[kid.id]) return;      // 主线上的那个孩子永远留
+        if (i < k) return;                // 最近 keep 个旁支留着
+        dropRoots.push(kid.id);
+      });
+    });
+
+    // 3) 展开成整枝
+    var dropped = Object.create(null);
+    dropRoots.forEach(function (rid) {
+      var stack = [rid];
+      while (stack.length) {
+        var id = stack.pop();
+        if (dropped[id] || lineIds[id]) continue;
+        dropped[id] = true;
+        nodes.forEach(function (x) { if (x.parentId === id) stack.push(x.id); });
+      }
+    });
+
+    if (!Object.keys(dropped).length) return srcTree;
+    return {
+      v: srcTree.v,
+      seq: srcTree.seq,
+      nodes: nodes.filter(function (n) { return !dropped[n.id]; }),
+      activeLeafId: srcTree.activeLeafId,
+      roundSeq: srcTree.roundSeq
+    };
+  };
+
   // —— 编辑窗口（§3.5）—————————————————————————
 
   // 距主线末 30 条内的玩家输入（kind='action'）可编辑；第 30 条可编辑、第 31 条只读。

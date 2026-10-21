@@ -3,6 +3,7 @@
 // 全局状态容器：卡带 / 存档 / 对话历史 / 游戏时间 / token 计数。
 // 数据源是 Saves 层，被 ApiClient（写 token）和 PromptBuilder（读状态）依赖。
 // ============================================================
+// 平台依赖：Saves, Platform.dialog.alert
 
 var GameState = {
   currentCard: null, currentState: null, playerData: {}, chatHistory: [],
@@ -178,8 +179,21 @@ var GameState = {
       if (pruned[i] !== msgs[i]) return Object.assign({}, n, { msg: pruned[i] });
       return n;
     });
-    // P72·W0-a：树分片随身带快照轴 roundSeq（内存树不挂此字段，落盘/载档走这里与 loadFromSave）
-    return { v: tree.v, seq: tree.seq, nodes: out, activeLeafId: tree.activeLeafId, roundSeq: this._roundSeq };
+    // P72·W0-a：树分片随身带快照轴 roundSeq（内存树不挂此字段，落档/载档走这里与 loadFromSave）
+    // P72·W11：分支太多会让 tree.json 线性膨胀（每条被丢弃的分支都躺着全文）。
+    //   这里按 settings.tree.keepSiblings（默认 3）只保留**每条主线上**最近 N 个兄弟分支，
+    //   更老的整枝剪掉；被剪的节点不影响当前主线（主线节点一律保留）。
+    var kept = out;
+    try {
+      var keep = 3;
+      var cfg = (typeof Storage !== 'undefined' && Storage.getGlobal) ? Storage.getGlobal() : null;
+      var raw = cfg && cfg.settings && cfg.settings.tree && cfg.settings.tree.keepSiblings;
+      if (typeof raw === 'number' && isFinite(raw) && raw >= 0 && raw <= 20) keep = Math.floor(raw);
+      if (typeof MessageTree !== 'undefined' && MessageTree && MessageTree.pruneSiblings) {
+        kept = MessageTree.pruneSiblings({ v: tree.v, seq: tree.seq, nodes: out, activeLeafId: tree.activeLeafId }, keep).nodes;
+      }
+    } catch (ePrune) { kept = out; }
+    return { v: tree.v, seq: tree.seq, nodes: kept, activeLeafId: tree.activeLeafId, roundSeq: this._roundSeq };
   },
 
   invalidateCache() { this._cacheVersion++; this._cachedStaticDynamic = null; },
