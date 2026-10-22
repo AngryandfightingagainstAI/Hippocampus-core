@@ -146,10 +146,21 @@ function setQuizPick(data, quizId, qi, outcome) {
   return arr;
 }
 
+// 玩家自写答案（原话）：{ qi: '文本' }；只用来判断「这题算不算答过」，不投票
+function quizCustoms(data, quizId) {
+  var v = data && data['__custom_' + quizId];
+  return (v && typeof v === 'object') ? v : {};
+}
+
 function quizMissing(step, data) {
   var defs = quizDefs(step);
   var miss = 0;
   defs.forEach(function (q) {
+    var Q = _quiz();
+    if (Q && typeof Q.missing === 'function') {
+      miss += Q.missing(q, quizPicks(data, q.id), quizCustoms(data, q.id));
+      return;
+    }
     var picks = quizPicks(data, q.id);
     q.questions.forEach(function (item, qi) { if (!picks[qi]) miss++; });
   });
@@ -161,8 +172,12 @@ function quizResults(step, data) {
   if (!Q) return [];
   var defs = quizDefs(step);
   var picks = {};
-  defs.forEach(function (q) { picks[q.id] = quizPicks(data, q.id); });
-  return Q.scoreAll(defs, picks);
+  var customs = {};
+  defs.forEach(function (q) {
+    picks[q.id] = quizPicks(data, q.id);
+    customs[q.id] = quizCustoms(data, q.id);
+  });
+  return Q.scoreAll(defs, picks, customs);
 }
 
 function validateStep(card, step, data) {
@@ -364,6 +379,7 @@ module.exports = {
   toggleMulti: toggleMulti,
   quizDefs: quizDefs,
   quizPicks: quizPicks,
+  quizCustoms: quizCustoms,
   setQuizPick: setQuizPick,
   quizMissing: quizMissing,
   quizResults: quizResults,

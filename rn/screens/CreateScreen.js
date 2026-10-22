@@ -218,11 +218,40 @@ function CreateScreen() {
     CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
   }
   // P72·W5：都不像我 → 自己写（和桌面 CreateFlow.pickQuizCustom 同口径：
-  //   先本地词表映射（确定性）；映射不上才问一次 AI；都失败 ⇒ 这条不投票、不影响结论）
+  //   先本地词表映射（确定性）；映射不上再问一次 AI（允许回答「都不像」）；
+  //   都归不到 ⇒ 这一题记为「自定义作答」：算答过、但不投票，
+  //   并且**清掉这一题之前点过的选项**，否则旧选项会替玩家投一票 = 强行归类）
+  function classifyQuizCustomByAI(text, quiz, outs) {
+    var api = (typeof ApiClient !== 'undefined' && ApiClient) ? ApiClient
+      : ((typeof globalThis !== 'undefined' && globalThis.ApiClient) ? globalThis.ApiClient : null);
+    if (!api || typeof api.chat !== 'function' || !outs.length) return Promise.resolve(null);
+    var sys = '你是「开局问卷」的归类器，任务是判断玩家的一句话在**语义上实质等同于**下面哪一档。'
+      + '只有当这句话讲的正是某一档在做的事，才回答该档 id；'
+      + '如果只是情绪、气氛或处境相近，或者需要你替玩家解释一层才能挂上，就回答 none。'
+      + '宁可回答 none，也不要为了给答案而类比。只输出一行 JSON：{"outcome":"<id 或 none>"}。\n'
+      + '可选结论：\n' + outs.map(function (o) { return '- ' + o.id + '：' + o.name + (o.desc ? '（' + o.desc + '）' : ''); }).join('\n');
+    var call = api.chat([
+      { role: 'system', content: sys },
+      { role: 'user', content: '玩家说：' + text }
+    ], { temperature: 0, max_tokens: 60 });
+    var timeout = new Promise(function (res) { setTimeout(function () { res(null); }, 8000); });
+    return Promise.race([call, timeout]).then(function (resp) {
+      if (!resp) return null;
+      var content = '';
+      if (typeof resp === 'string') content = resp;
+      else if (resp.content) content = resp.content;
+      else if (resp.choices && resp.choices[0] && resp.choices[0].message) content = resp.choices[0].message.content;
+      var m = String(content || '').match(/"outcome"\s*:\s*"?([^",}\s]+)"?/);
+      var id = m ? m[1] : '';
+      if (!id || /^(none|null|unknown|其他|无)$/i.test(id)) return null;
+      return outs.filter(function (o) { return o.id === id; })[0] ? id : null;
+    }).catch(function () { return null; });
+  }
+
   function onCustomQuiz(stepObj, quiz, qi) {
     var Q = (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz : null;
     if (!Q) return;
-    Platform.ui.promptAsync('都不像我？用你自己的话说一句', {
+    Platform.ui.promptAsync('都不像我？用你自己的话说一句', '', {
       placeholder: '例：我不太会说话，但答应的事一定做到',
       okText: '就这样',
       maxLength: 120
@@ -231,19 +260,38 @@ function CreateScreen() {
       if (!t) return;
       var bag = Object.assign({}, (data && data['__custom_' + quiz.id]) || {});
       bag[qi] = t;
-      var outcome = Q.mapCustom ? Q.mapCustom(t, quiz.outcomes) : null;
-      var next = Object.assign({}, data);
-      next['__custom_' + quiz.id] = bag;
-      if (outcome) {
-        CF.setQuizPick(next, quiz.id, qi, outcome);
-        setData(next);
-        CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
-        Platform.ui.toast('按你的说法，这条算「' + (Q.suggestLabel(t, quiz.outcomes) || outcome) + '」', { type: 'success' });
-      } else {
-        setData(next);
-        CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
-        Platform.ui.toast('这句没被识别成某个结论：不参与判卷（不影响结果）', { type: 'warn' });
-      }
+      var local = Q.mapCustom ? Q.mapCustom(t, quiz.outcomes) : null;
+      return classifyQuizCustomByAI(t, quiz, quiz.outcomes || []).then(function (aiId) {
+        var next = Object.assign({}, data);
+        next['__custom_' + quiz.id] = bag;
+        function applyOutcome(outcome) {
+          if (outcome) {
+            CF.setQuizPick(next, quiz.id, qi, outcome);
+            var hit = (quiz.outcomes || []).filter(function (o) { return o && o.id === outcome; })[0];
+            var label = (hit && hit.name) || Q.suggestLabel(t, quiz.outcomes) || outcome;
+            setData(next);
+            CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+            Platform.ui.toast('按你的说法，这条算「' + label + '」', { type: 'success' });
+          } else {
+            CF.setQuizPick(next, quiz.id, qi, ''); // 清掉旧选项：不能替玩家认下
+            setData(next);
+            CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+            Platform.ui.toast('这句归不到任何结论：这一题记为「自定义作答」，不投票、也不算成别的选项', { type: 'warn' });
+          }
+        }
+        if (local) { applyOutcome(local); return; }
+        // AI 的理解只是「一种理解」，要玩家自己确认；否则模型把「我想吃面」解释成
+        // 「制造混乱」也会被硬记成投票——那还是强行归类，只是换了执行者。
+        if (!aiId) { applyOutcome(null); return; }
+        var aiHit = (quiz.outcomes || []).filter(function (o) { return o && o.id === aiId; })[0];
+        var aiName = (aiHit && aiHit.name) || aiId;
+        return Platform.ui.confirmAsync(
+          'AI 把你这句理解为「' + aiName + '」。要按这个记吗？\n（选「不归类」就记为自定义作答：算答过，但不投票）',
+          { okText: '按这个记', cancelText: '不归类' }
+        ).then(function (ok) {
+          applyOutcome(ok ? aiId : null);
+        }).catch(function () { applyOutcome(null); });
+      });
     }).catch(function () { /* 取消/异常：什么都不动 */ });
   }
   function keyPatch(stepObj, oid) {
@@ -767,6 +815,13 @@ function CreateScreen() {
     function suggestOf(quiz, qi) {
       var t = customOf(quiz.id, qi);
       if (!t) return '';
+      // 已经落到某个结论（本地词表或 AI 归类）就以真正的 pick 为准，
+      // 免得出现「已算成某档，但旁注还写着归不到」的自相矛盾。
+      var pick = CF.quizPicks(data, quiz.id)[qi];
+      if (pick) {
+        var hit = (quiz.outcomes || []).filter(function (o) { return o.id === pick; })[0];
+        if (hit) return hit.name;
+      }
       var Q = (typeof CreationQuiz !== 'undefined' && CreationQuiz) ? CreationQuiz : null;
       return (Q && Q.suggestLabel) ? Q.suggestLabel(t, quiz.outcomes) : '';
     }
@@ -810,7 +865,7 @@ function CreateScreen() {
                     </TouchableOpacity>
                     {customOf(q.id, qi) ? (
                       <Text style={styles.customNote}>
-                        {'你写的是：' + customOf(q.id, qi) + (suggestOf(q, qi) ? '（→ ' + suggestOf(q, qi) + '）' : '（没识别成某个结论，不参与判卷）')}
+                        {'你写的是：' + customOf(q.id, qi) + (suggestOf(q, qi) ? '（→ ' + suggestOf(q, qi) + '）' : '（归不到任何结论：记为自定义作答，不投票）')}
                       </Text>
                     ) : null}
                   </View>
@@ -824,7 +879,15 @@ function CreateScreen() {
                   </Text>
                   {res.desc ? <Text style={styles.quizResultDesc}>{res.desc}</Text> : null}
                 </View>
-              ) : (res ? <Text style={styles.quizHint}>{'（还差 ' + (res.total - res.answered) + ' 题）'}</Text> : null)}
+              ) : (
+                <Text style={styles.quizHint}>
+                  {res
+                    ? ('（还差 ' + (res.total - res.answered) + ' 题）')
+                    : (CF.quizMissing({ quizzes: [s] }, data) > 0
+                      ? ('（还差 ' + CF.quizMissing({ quizzes: [s] }, data) + ' 题）')
+                      : '（本卷没有可计入的结论：你的回答不属于已声明的任何一档，不强行归类）')}
+                </Text>
+              )}
             </View>
           );
         })}

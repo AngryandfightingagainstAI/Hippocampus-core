@@ -113,17 +113,33 @@
   }
 
   // picks: { quizId: [ 'outcomeId', ... ] }（按题目顺序）
-  function score(quiz, picks) {
+  // customs: { quizId: { qi: '玩家原话' } }（可选；只用于「算不算作答」，不投票）
+  //   —— P72·W5 修正：玩家写了自定义答案但归不到任何结论时，这一题要算「已作答」，
+  //      否则下一步会卡在「还有 N 道题没选」；但它**不投票**，也不会因为之前点过某个
+  //      选项就把那句话强行算成那个结论（调用方负责在自定义时清掉旧 pick）。
+  function _customText(customs, qi) {
+    if (!customs) return '';
+    var v = null;
+    if (Array.isArray(customs)) v = customs[qi];
+    else v = customs[qi] != null ? customs[qi] : customs[String(qi)];
+    return _s(v).trim();
+  }
+
+  function score(quiz, picks, customs) {
     if (!quiz) return null;
     var votes = {};
     (quiz.outcomes || []).forEach(function (o) { votes[o.id] = 0; });
-    var answered = 0;
+    var answered = 0;   // 已作答（选项 + 自定义，含未归类）
+    var scored = 0;     // 真正计入票数的
     (quiz.questions || []).forEach(function (q, i) {
       var pick = picks && picks[i];
-      if (!pick) return;
-      if (Object.prototype.hasOwnProperty.call(votes, pick)) { votes[pick]++; answered++; }
+      if (pick && Object.prototype.hasOwnProperty.call(votes, pick)) {
+        votes[pick]++; answered++; scored++;
+        return;
+      }
+      if (_customText(customs, i)) answered++; // 自定义作答：算答过，不投票
     });
-    if (!answered) return null;
+    if (!scored) return null; // 一票都没有 ⇒ 没有结论（不拿先声明者凑数）
     var best = null;
     (quiz.outcomes || []).forEach(function (o) {
       // 平票取**先声明**的结论：作者按重要性排序，结果对玩家可预期
@@ -140,14 +156,31 @@
       grants: best.grants || null,
       votes: votes,
       answered: answered,
+      scored: scored,
       total: (quiz.questions || []).length
     };
   }
 
-  function scoreAll(quizzes, picks) {
+  // 还有几道题没作答（选项或自定义都算作答）
+  function missing(quiz, picks, customs) {
+    if (!quiz) return 0;
+    var ids = {};
+    (quiz.outcomes || []).forEach(function (o) { ids[o.id] = true; });
+    var miss = 0;
+    (quiz.questions || []).forEach(function (q, i) {
+      var pick = picks && picks[i];
+      if (pick && ids[pick]) return;
+      if (_customText(customs, i)) return;
+      miss++;
+    });
+    return miss;
+  }
+
+  function scoreAll(quizzes, picks, customs) {
     var out = [];
     (quizzes || []).forEach(function (q) {
-      var r = score(q, picks ? picks[q.id] : null);
+      var c = customs ? customs[q.id] : null;
+      var r = score(q, picks ? picks[q.id] : null, c);
       if (r) out.push(r);
     });
     return out;
@@ -232,28 +265,54 @@
     return _norm(bags.join(' '));
   }
 
+  // ASCII 词元：'i want noodles' → ['want','noodles']
+  // （中文按 2 字滑窗比，英文按整词比；否则 'want' 里的 'wa' 会撞上 'watch coldly' 的 'wa'，
+  //   把「我想吃面」判成「冷眼旁观」。这是 2026-10-22 真机报的「强行归类」的本地成因之一。）
+  function _words(s) {
+    return (_s(s).toLowerCase().match(/[a-z0-9]{2,}/g) || []);
+  }
+
+  // 英文虚词不当证据：'the' 同时出现在选项和玩家话里，不该算「命中」。
+  var EN_STOP = ('the a an and or to of in on at is are was were be been i you he she it we they ' +
+    'me my your his her its our their this that these those with for from as by not no yes do does did ' +
+    'so if then than just very can could would should will may might make get got').split(' ');
+
+  // 中文 2 字片段（只取两侧都是汉字的窗口）
+  function _bigrams(s) {
+    var out = [];
+    var t = _s(s);
+    for (var i = 0; i + 1 < t.length; i++) {
+      var a = t.charAt(i), b = t.charAt(i + 1);
+      if (/[\u4e00-\u9fff]/.test(a) && /[\u4e00-\u9fff]/.test(b)) out.push(a + b);
+    }
+    return out;
+  }
+
   // 本地映射：返回结论 id 或 null。
   //   打分 = 结论名/描述/标签与「词云」的字面重合（2 字以上片段才计），最高分 > 0 且唯一才认。
   function mapCustom(text, outcomes) {
     var bag = _expand(text);
     if (!bag) return null;
+    var playerWords = _words(text);
     var best = null, bestScore = 0, tie = false;
     (outcomes || []).forEach(function (o) {
       if (!o || !o.id) return;
       var fields = [o.name, o.desc].concat(Array.isArray(o.tags) ? o.tags : []);
       var score = 0;
       fields.forEach(function (f) {
-        var s = _norm(f);
-        if (!s) return;
-        // 整段命中（作者写的结论名被玩家直接说出来）权重更高
-        if (s.length >= 2 && bag.indexOf(s) >= 0) score += Math.min(4, s.length);
-        else {
-          // 否则按 2 字滑窗找重合
-          for (var i = 0; i + 2 <= s.length; i++) {
-            var bi = s.substr(i, 2);
-            if (bag.indexOf(bi) >= 0) score += 1;
-          }
+        var raw = _s(f);
+        if (!raw) return;
+        // 中文：整段命中（作者写的结论名被玩家直接说出来）权重更高；否则 2 字滑窗。
+        var cjk = _bigrams(raw);
+        if (cjk.length) {
+          var whole = cjk.join('');
+          if (whole.length >= 2 && bag.indexOf(whole) >= 0) score += Math.min(4, whole.length);
+          else cjk.forEach(function (bi) { if (bag.indexOf(bi) >= 0) score += 1; });
         }
+        // 英文：按整词比（≥3 字母），不做 2 字滑窗——'wa' 这类碎片会把 "want" 撞成 "watch"。
+        _words(raw).forEach(function (w) {
+          if (w.length >= 4 && EN_STOP.indexOf(w) < 0 && playerWords.indexOf(w) >= 0) score += 3;
+        });
       });
       if (score > bestScore) { bestScore = score; best = o.id; tie = false; }
       else if (score === bestScore && score > 0) tie = true;
@@ -292,6 +351,7 @@
     normalize: normalize,
     score: score,
     scoreAll: scoreAll,
+    missing: missing,
     apply: apply,
     applyGrants: applyGrants,
     facts: facts,

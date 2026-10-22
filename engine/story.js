@@ -1915,8 +1915,9 @@ var CreateFlow = {
     if (typeof CreationQuiz === 'undefined' || !CreationQuiz) return [];
     const defs = this.quizDefs(step);
     const picks = {};
-    defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); });
-    return CreationQuiz.scoreAll(defs, picks);
+    const customs = {};
+    defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); customs[q.id] = this.quizCustoms(q.id); });
+    return CreationQuiz.scoreAll(defs, picks, customs);
   },
 
   // ===== P72·W5：都不像我 → 自己写 =====
@@ -1933,7 +1934,7 @@ var CreateFlow = {
     if (!q) return;
     let text = null;
     try {
-      text = await Platform.ui.promptAsync('都不像我？用你自己的话说一句',
+      text = await Platform.ui.promptAsync('都不像我？用你自己的话说一句', '',
         { placeholder: '例：我不太会说话，但答应的事一定做到', okText: '就这样', maxLength: 120 });
     } catch (e) { text = null; }
     if (text == null) return;
@@ -1948,29 +1949,56 @@ var CreateFlow = {
     if (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.mapCustom === 'function') {
       outcome = CreationQuiz.mapCustom(t, q.outcomes);
     }
-    // ② 本地没命中才问 AI（问不到就当中性：不投票）
-    if (!outcome) outcome = await this._classifyQuizCustomByAI(t, q);
+    // ② 本地没命中才问 AI。AI 的映射只是「一种理解」，不等于玩家认了：
+    //    必须让玩家自己确认，否则模型把「我想吃面」解释成「制造混乱」也会被硬记成投票——
+    //    那还是强行归类，只是换了个执行者。
+    if (!outcome) {
+      const aiId = await this._classifyQuizCustomByAI(t, q);
+      if (aiId) {
+        const aiHit = (q.outcomes || []).filter(o => o && o.id === aiId)[0];
+        const aiName = (aiHit && aiHit.name) || aiId;
+        let ok = false;
+        try {
+          ok = await Platform.ui.confirmAsync(
+            'AI 把你这句理解为「' + aiName + '」。要按这个记吗？\n（选「不归类」就记为自定义作答：算答过，但不投票）',
+            { okText: '按这个记', cancelText: '不归类' });
+        } catch (e) { ok = false; }
+        if (ok) outcome = aiId;
+      }
+    }
     if (outcome) {
       const arr = this.quizPicks(quizId).slice();
       while (arr.length < qi) arr.push('');
       arr[qi] = outcome;
       this.data['__picks_' + quizId] = arr;
-      Platform.ui.toast('按你的说法，这条算「' + (CreationQuiz.suggestLabel(t, q.outcomes) || outcome) + '」', { type: 'success' });
+      const hit = (q.outcomes || []).filter(o => o && o.id === outcome)[0];
+      const label = (hit && hit.name) || (typeof CreationQuiz !== 'undefined' && CreationQuiz.suggestLabel ? CreationQuiz.suggestLabel(t, q.outcomes) : '') || outcome;
+      Platform.ui.toast('按你的说法，这条算「' + label + '」', { type: 'success' });
     } else {
-      Platform.ui.toast('这句没有被识别成某个结论：不参与判卷（不影响结果）', { type: 'warn' });
+      // 归不到任何结论 = 玩家讲的不是这几档：这一题算「自定义作答」，
+      // 但必须清掉之前点过的选项——否则旧选项会替玩家投一票，等于强行归类。
+      const arr = this.quizPicks(quizId).slice();
+      while (arr.length < qi) arr.push('');
+      arr[qi] = '';
+      this.data['__picks_' + quizId] = arr;
+      Platform.ui.toast('这句归不到任何结论：这一题记为「自定义作答」，不投票、也不会算成别的选项', { type: 'warn' });
     }
     this._saveDraft();
     this.render();
   },
   // 让 AI 只做「翻译」：把玩家的一句话翻译成作者声明的某个结论 id。
   // 返回值一定是 outcomes 里真实存在的 id 或 null —— 模型乱答/超时/没 Key 一律 null。
+  // 关键：**允许回答「都不像」**（{"outcome":null}）。玩家写的本来可能不在这几档里，
+  // 逼模型必须挑一个，就等于把玩家的话强行归类——这正是 P72·W5 要避免的。
   async _classifyQuizCustomByAI(text, q) {
     try {
       if (typeof ApiClient === 'undefined' || !ApiClient || typeof ApiClient.chat !== 'function') return null;
       const outs = (q.outcomes || []).map(o => ({ id: o.id, name: o.name, desc: o.desc || '' }));
       if (!outs.length) return null;
-      const sys = '你是「开局问卷」的归类器。玩家用一句话描述自己，你要判断这最接近下面哪一个结论。'
-        + '只能从给定 id 里挑一个，不许发明。只输出一行 JSON：{"outcome":"<id>"}。\n'
+      const sys = '你是「开局问卷」的归类器，任务是判断玩家的一句话在**语义上实质等同于**下面哪一档。'
+        + '只有当这句话讲的正是某一档在做的事，才回答该档 id；'
+        + '如果只是情绪、气氛或处境相近，或者需要你替玩家解释一层才能挂上，就回答 none。'
+        + '宁可回答 none，也不要为了给答案而类比。只输出一行 JSON：{"outcome":"<id 或 none>"}。\n'
         + '可选结论：\n' + outs.map(o => '- ' + o.id + '：' + o.name + (o.desc ? '（' + o.desc + '）' : '')).join('\n');
       const call = ApiClient.chat([
         { role: 'system', content: sys },
@@ -1983,8 +2011,9 @@ var CreateFlow = {
       if (typeof resp === 'string') content = resp;
       else if (resp.content) content = resp.content;
       else if (resp.choices && resp.choices[0] && resp.choices[0].message) content = resp.choices[0].message.content;
-      const m = String(content || '').match(/"outcome"\s*:\s*"([^"]+)"/);
+      const m = String(content || '').match(/"outcome"\s*:\s*"?([^",}\s]+)"?/);
       const id = m ? m[1] : '';
+      if (!id || /^(none|null|unknown|其他|无)$/i.test(id)) return null;
       return (outs.filter(o => o.id === id)[0]) ? id : null;
     } catch (e) { return null; }
   },
@@ -2016,7 +2045,7 @@ var CreateFlow = {
           const sug = (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.suggestLabel === 'function')
             ? CreationQuiz.suggestLabel(customTxt, q.outcomes) : '';
           html += '<div class="cf-quiz-custom-note">你写的是：' + escapeHtml(customTxt) +
-            (sug ? '（→ ' + escapeHtml(sug) + '）' : '（没识别成某个结论，不参与判卷）') + '</div>';
+            (sug ? '（→ ' + escapeHtml(sug) + '）' : '（归不到任何结论：记为自定义作答，不投票）') + '</div>';
         }
         html += '</div></div>';
       });
@@ -2026,6 +2055,13 @@ var CreateFlow = {
           (res.desc ? '<div class="cf-quiz-result-desc">' + escapeHtml(res.desc) + '</div>' : '') + '</div>';
       } else if (res) {
         html += '<div class="cf-quiz-result muted">（还差 ' + (res.total - res.answered) + ' 题）</div>';
+      } else {
+        const miss = (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.missing === 'function')
+          ? CreationQuiz.missing(q, picks, this.quizCustoms(q.id))
+          : 0;
+        html += miss > 0
+          ? '<div class="cf-quiz-result muted">（还差 ' + miss + ' 题）</div>'
+          : '<div class="cf-quiz-result muted">（本卷没有可计入的结论：你的回答不属于已声明的任何一档，不强行归类）</div>';
       }
       // 自写答案汇总（只说"你写了什么 → 被认成什么"，不参与算分）
       const customs = this.quizCustoms(q.id);
@@ -2036,7 +2072,7 @@ var CreateFlow = {
             const txt = customs[k];
             const sug = (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.suggestLabel === 'function')
               ? CreationQuiz.suggestLabel(txt, q.outcomes) : '';
-            return '<span class="cf-quiz-custom-item">' + escapeHtml(txt) + ' → ' + (sug ? escapeHtml(sug) : '未识别') + '</span>';
+            return '<span class="cf-quiz-custom-item">' + escapeHtml(txt) + ' → ' + (sug ? escapeHtml(sug) : '自定义作答') + '</span>';
           }).join(' ') + '</div>';
       }
       html += '</div>';
@@ -2159,10 +2195,14 @@ var CreateFlow = {
       const defs = this.quizDefs(step);
       let miss = 0;
       defs.forEach(q => {
-        const picks = this.quizPicks(q.id);
-        q.questions.forEach((item, qi) => { if (!picks[qi]) miss++; });
+        if (typeof CreationQuiz !== 'undefined' && CreationQuiz && typeof CreationQuiz.missing === 'function') {
+          miss += CreationQuiz.missing(q, this.quizPicks(q.id), this.quizCustoms(q.id));
+        } else {
+          const picks = this.quizPicks(q.id);
+          q.questions.forEach((item, qi) => { if (!picks[qi]) miss++; });
+        }
       });
-      if (miss) { Platform.ui.toast('还有 ' + miss + ' 道题没选', { type: 'warn' }); return false; }
+      if (miss) { Platform.ui.toast('还有 ' + miss + ' 道题没作答（选一个，或写一句自己的）', { type: 'warn' }); return false; }
     } else if (step.type === 'select') {
       const k = step.key || step.id;
       if (!this.data[k]) { Platform.ui.toast('请选择一个选项', { type: 'warn' }); return false; }
