@@ -2,7 +2,7 @@
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
   "reason": "--regen",
-  "recordedAt": "2026-10-21T16:06:45Z",
+  "recordedAt": "2026-10-22T14:03:58Z",
   "heads": {
     "rn": null,
     "desktop": null
@@ -11,7 +11,7 @@
     "mirror": 75,
     "mirrorEol": 23,
     "fork": 15,
-    "unsharedDesktop": 154,
+    "unsharedDesktop": 172,
     "unsharedRn": 159
   },
   "mirror": [
@@ -119,8 +119,8 @@
   "fork": {
     "engine/api_manager.js": {
       "rn": "C988647C55E60DE57EA4E975FA1AD1EC",
-      "desktop": "A999DA48A1271CC862634B74E53A1432",
-      "diffLines": 98
+      "desktop": "31877A1830CC9A80586BF4E16C08B06B",
+      "diffLines": 180
     },
     "engine/audit.js": {
       "rn": "E2DCC71DF24B9D30983FF0D1579636B8",

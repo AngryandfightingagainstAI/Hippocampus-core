@@ -221,6 +221,10 @@ var StoryLoop = {
     if (typeof Realtime !== 'undefined' && Realtime.autoTouch) {
       try { Realtime.autoTouch(); } catch (e) {}
     }
+    // 阶段 1c：创角时设定的初始关系落到 NPC 运行时（幂等；重载/继续游戏也会补写）
+    if (typeof NpcRuntime !== 'undefined' && NpcRuntime.applyInitialRelations && GameState.playerData) {
+      try { NpcRuntime.applyInitialRelations(GameState.playerData._relations); } catch (e) { console.warn('[NpcRuntime] 初始关系写入失败：', e); }
+    }
     // ★ 初始化"当前场景位置"
     this._lastPlayerLocation = this._getPlayerLocation();
 
@@ -1595,7 +1599,7 @@ var CreateFlow = {
         else html += this.renderMultiSelect(step);
         break;
       case 'quiz': html += this.renderQuizSet(step); break;
-      case 'summary': html += this.renderSummary(); break;
+      case 'summary': html += this.renderSummary(); html += this.renderRelations(); break;
       default: html += '<p>（未知步骤类型：' + escapeHtml(step.type) + '）</p>';
     }
     return html;
@@ -1643,9 +1647,22 @@ var CreateFlow = {
     const set = (this._destinySets || [])[i];
     if (!set) return;
     this._destinyPicked = set;
+    // 阶段 1b：天命值落成结构化锁。写入 attr_<key>（创角表单与运行时都用这个键）
+    // 同时保留裸键，兼容旧卡带/旧逻辑读取。
+    const lockValues = {};
     Destiny.attributes(this.card).forEach(a => {
-      if (a && a.key && typeof set.values[a.key] === 'number') this.data[a.key] = set.values[a.key];
+      if (!a || !a.key || typeof set.values[a.key] !== 'number') return;
+      const v = set.values[a.key];
+      this.data[a.key] = v;
+      this.data['attr_' + a.key] = v;
+      lockValues['attr_' + a.key] = v;
     });
+    this.data._destiny = {
+      locked: true,
+      values: lockValues,
+      label: '天命 ' + (i + 1) + ' 组',
+      lockedAt: new Date().toISOString()
+    };
     this.render();
   },
 
@@ -1706,6 +1723,13 @@ var CreateFlow = {
     const raw = inputEl.value;
     if (raw === '' || raw === '-' || raw === '.') { this.data[key] = ''; }
     else { const v = Number(raw); if (!isNaN(v)) this.data[key] = v; }
+    // 阶段 1b：天命锁跟随玩家在创角表单里的手动微调（锁的是“最终确定的这组值”，不是掷出的历史值）
+    if (isAttr && this.data._destiny && this.data._destiny.locked) {
+      const nk = String(key).indexOf('attr_') === 0 ? key : ('attr_' + key);
+      if (this.data._destiny.values && Object.prototype.hasOwnProperty.call(this.data._destiny.values, nk)) {
+        this.data._destiny.values[nk] = this.data[key];
+      }
+    }
     if (isAttr) this.updatePool();
     else this.updateCalendar();
     this._saveDraft();
@@ -2052,6 +2076,53 @@ var CreateFlow = {
     return all || '<p class="muted">（没有填写任何内容）</p>';
   },
   setField(k, v) { this.data[k] = v; this._saveDraft(); },
+
+  // ============================================================
+  // 阶段 1c：开局初始关系（结构化，不写开场白、不伪造展示）
+  // 数据通道：卡带 worldbook.npcs（名单）→ this.data._relations（玩家选定）
+  //   → finish() 之后的 playerData._relations（随存档持久化）
+  //   → NpcRuntime.applyInitialRelations() 写入运行时 playerRelation/playerKnown（npc_runtime.json）
+  // 卡带没有 NPC 时整块不渲染，创角流程零变化。
+  // ============================================================
+  RELATION_PRESETS: ['陌生', '认识', '朋友', '好友', '家人', '恋人', '同事', '同门', '仇敌'],
+  renderRelations() {
+    const npcs = ((this.card && this.card.worldbook && this.card.worldbook.npcs) || []).filter(n => n && n.id);
+    if (!npcs.length) return '';
+    const rels = this.data._relations || {};
+    let html = '<div class="cf-relations" style="margin-top:18px;">';
+    html += '<h3 style="margin:0 0 6px 0;font-size:14px;">开局初始关系（可选）</h3>';
+    html += '<div class="muted" style="margin-bottom:8px;font-size:12px;">设定你的角色与这些人物开局是什么关系、是否已经认识。不填就是陌路；这里只写进存档，不会替你安排登场。</div>';
+    npcs.forEach(n => {
+      const cur = rels[n.id] || {};
+      const label = cur.label || '陌生';
+      const known = cur.known !== false && label !== '陌生';
+      const opts = this.RELATION_PRESETS.map(p => '<option value="' + escapeAttr(p) + '"' + (p === label ? ' selected' : '') + '>' + escapeHtml(p) + '</option>').join('');
+      html += '<div class="cf-rel-row" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-top:1px solid rgba(255,255,255,0.06);">';
+      html += '<span style="flex:1 1 40%;min-width:90px;">' + escapeHtml(n.name || n.id) + '<span class="muted" style="font-size:11px;"> ' + escapeHtml(n.id) + '</span></span>';
+      html += '<select onchange="CreateFlow.setRelation(' + jsAttr(n.id) + ', this.value)" style="flex:0 0 auto;">' + opts + '</select>';
+      html += '<label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox"' + (known ? ' checked' : '') +
+        ' onchange="CreateFlow.setRelationKnown(' + jsAttr(n.id) + ', this.checked)"> 已认识</label>';
+      html += '</div>';
+    });
+    html += '</div>';
+    return html;
+  },
+  setRelation(npcId, label) {
+    const rels = Object.assign({}, this.data._relations || {});
+    const cur = rels[npcId] || {};
+    const known = label === '陌生' ? false : (cur.known !== false);
+    rels[npcId] = { label: label, known: known };
+    this.data._relations = rels;
+    this._saveDraft();
+    this.render();
+  },
+  setRelationKnown(npcId, known) {
+    const rels = Object.assign({}, this.data._relations || {});
+    const cur = rels[npcId] || { label: '陌生' };
+    rels[npcId] = { label: cur.label || '陌生', known: !!known };
+    this.data._relations = rels;
+    this._saveDraft();
+  },
   toggleMulti(k, id, min, max) {
     let arr = this.data[k] || [];
     if (arr.includes(id)) arr = arr.filter(x => x !== id);

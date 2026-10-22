@@ -155,6 +155,26 @@
         lines.push('');
         lines.push('【属性】' + attrLine);
       }
+      // 阶段 1b：把天命锁写进提示词，模型先知道规则再动手，从源头减少无效 patch
+      var lock = this._destinyLock(playerData);
+      if (lock) {
+        var lockNames = {};
+        (card && card.attributes || []).forEach(function(a) {
+          if (a && a.key) lockNames['attr_' + a.key] = a.name || a.key;
+        });
+        var lockLines = [];
+        Object.keys(lock.values || {}).forEach(function(k) {
+          var bare = (k.indexOf('attr_') === 0) ? k.slice(5) : k;
+          lockLines.push((lockNames['attr_' + bare] || lockNames[k] || bare) + '=' + lock.values[k]);
+        });
+        if (lockLines.length) {
+          lines.push('');
+          lines.push('【天命锁】（规则层约束，不可协商）');
+          lines.push('以下属性由开局天命固定：' + lockLines.join('、') + '。');
+          lines.push('attributes 里不要包含这些键，任何改动都会被引擎整包拒绝；玩家若要换这组数值，只能回开局界面重掷天命。');
+          lines.push('其他属性、技能、物品、人设字段不受影响，正常整理即可。');
+        }
+      }
       lines.push('');
       lines.push('【讨论历史】');
       (chat || []).forEach(function(m) {
@@ -251,9 +271,26 @@
       return Math.max(0, pool.total - allocated);
     },
 
+    // 阶段 1b：天命锁。
+    // 开局选天命时把已掷定值写进 playerData._destiny = {locked, values:{attr_x:n}, label}。
+    // 之后审核阶段任何对锁定属性的改动都要给出「规则级」拒绝（code=DESTINY_LOCKED），
+    // 让 UI 能把原因回灌给 AI，而不是让模型反复试、反复拿到同一句“属性点不够”。
+    _destinyLock: function(playerData) {
+      var d = playerData && playerData._destiny;
+      if (!d || !d.locked) return null;
+      return d;
+    },
+
+    _destinyLockedKeys: function(playerData) {
+      var d = this._destinyLock(playerData);
+      if (!d) return [];
+      var vals = d.values || {};
+      return Object.keys(vals).map(function(k) { return k.indexOf('attr_') === 0 ? k : ('attr_' + k); });
+    },
+
     // 校验属性 patch：单值 clamp min/max → 再算 allocated → 超 pool.total 整包拒绝
     // 键一律归一为 attr_<key>（裸 x 补前缀，attr_x 保持）；未声明键忽略并警告
-    // 返回 { ok, clamped, warnings, error }
+    // 返回 { ok, clamped, warnings, error, code, lockedKeys }
     validateAttributes: function(attrPatch, playerData) {
       var card = GameState.currentCard;
       var meta = this._attributeMeta(card);
@@ -278,25 +315,67 @@
         clamped[normKey] = v;
       });
 
-      // 再算 allocated（用 clamped 值替换原值），超 pool.total 整包拒绝
+      // 天命锁：锁定属性不允许任何改动（含下调），先于池校验给出可解释的拒绝
+      var lock = this._destinyLock(playerData);
+      if (lock) {
+        var attrNames = {};   // attr_<key> → 中文名
+        (card && card.attributes || []).forEach(function(a) {
+          if (a && a.key) attrNames['attr_' + a.key] = a.name || a.key;
+        });
+        var lockedKeys = [];
+        var lockedParts = [];
+        var lockedVals = lock.values || {};
+        Object.keys(clamped).forEach(function(nk) {
+          var bare = nk.indexOf('attr_') === 0 ? nk.slice(5) : nk;
+          if (!(bare in lockedVals) && !(nk in lockedVals)) return;
+          var before = (lockedVals[nk] != null) ? lockedVals[nk] : lockedVals[bare];
+          if (clamped[nk] === before) return;   // 同值重写不算改
+          lockedKeys.push(nk);
+          lockedParts.push((attrNames[nk] || bare) + '（' + before + '）');
+        });
+        if (lockedKeys.length) {
+          return {
+            ok: false,
+            code: 'DESTINY_LOCKED',
+            lockedKeys: lockedKeys,
+            clamped: clamped,
+            error: '天命锁：' + lockedParts.join('、') + ' 已由天命固定，审核阶段不能修改。'
+              + '想换这组数值只能回开局界面「重掷天命」；其余属性、技能、物品、人设字段仍可照常调整。'
+          };
+        }
+      }
+
+      // 再算 allocated（用 clamped 值替换原值），超 pool.total 整包拒绝。
+      // 有天命锁时：锁定属性由天命分配，掷点结果可能本身就超过卡带池上限，
+      // 所以池校验只约束「未锁定属性」的占用，headroom = total - 锁定属性占用（最低 0）。
       if (pool && pool.total != null) {
-        var allocatedBefore = 0, allocatedAfter = 0;
+        var lockedSet = {};
+        if (lock) {
+          this._destinyLockedKeys(playerData).forEach(function(k) { lockedSet[k] = true; });
+        }
+        var allocatedBefore = 0, allocatedAfter = 0, lockedAlloc = 0;
         (card.attributes || []).forEach(function(a) {
           var key = 'attr_' + a.key;
           var vBefore = playerData[key] != null ? playerData[key] :
                         (playerData[a.key] != null ? playerData[a.key] : (a.init != null ? a.init : 0));
           var vAfter = (clamped[key] != null) ? clamped[key] : vBefore;
           var fb = a.min != null ? a.min : base;
-          if (typeof vBefore === 'number' && !isNaN(vBefore)) allocatedBefore += Math.max(0, vBefore - fb);
-          if (typeof vAfter === 'number' && !isNaN(vAfter)) allocatedAfter += Math.max(0, vAfter - fb);
+          var cb = (typeof vBefore === 'number' && !isNaN(vBefore)) ? Math.max(0, vBefore - fb) : 0;
+          var ca = (typeof vAfter === 'number' && !isNaN(vAfter)) ? Math.max(0, vAfter - fb) : 0;
+          if (lockedSet[key]) { lockedAlloc += cb; return; }
+          allocatedBefore += cb;
+          allocatedAfter += ca;
         });
-        if (allocatedAfter > pool.total) {
-          var need = allocatedAfter - pool.total;
-          var remain = Math.max(0, pool.total - allocatedBefore);
+        var headroom = Math.max(0, pool.total - lockedAlloc);
+        if (allocatedAfter > headroom) {
+          var need = allocatedAfter - headroom;
+          var remain = Math.max(0, headroom - allocatedBefore);
           return {
             ok: false,
+            code: 'POOL_EXCEEDED',
             clamped: clamped,
             error: '属性点不够：这次改动要多 ' + need + ' 点，当前只剩 ' + remain + ' 点'
+              + (lock ? '（天命锁定的属性不参与本次计算）' : '')
           };
         }
       }
@@ -331,7 +410,7 @@
       // 2. 属性 clamp + 池校验（整包拒绝）；clamped 的键已归一为 attr_<key>
       var attrResult = this.validateAttributes(attrPatch, playerData);
       if (!attrResult.ok) {
-        return { ok: false, error: attrResult.error };
+        return { ok: false, error: attrResult.error, code: attrResult.code, lockedKeys: attrResult.lockedKeys };
       }
       var normAttrKeys = Object.keys(attrResult.clamped);
 
@@ -468,6 +547,8 @@
       lines.push('你是人设合理性审核员。审核玩家填写的人设在当前世界观中是否合理。');
       lines.push('');
       lines.push('审核标准：字段是否与世界观/背景矛盾、是否自洽、是否有明显不合理之处。');
+      lines.push('说明：玩家写长篇人生经历、家庭关系、性格形成过程是正常的，不要因为篇幅长就判问题；只审内容是否自洽、是否与世界矛盾。');
+      lines.push('你只负责审核与提建议，不能修改属性数值；属性改动由引擎规则裁决。');
       lines.push('轻微瑕疵标 concern，严重矛盾标 conflict，都没问题标 ok。');
       lines.push('');
       lines.push('输出格式（只输出 JSON，不要解释、不要 markdown 代码块）：');
@@ -507,16 +588,17 @@
       return lines.join('\n');
     },
 
-    // ★ 阶段 2：生成 prompt —— 审核通过后调用，生成 summary + traits
+    // ★ 阶段 2：生成 prompt —— 审核通过后调用，生成 summary + fullBio + traits
     buildGeneratePrompt: function(playerData, auditResult) {
       var card = GameState.currentCard;
       var lines = [];
-      lines.push('你是角色人设助手。根据玩家的原始填写资料和审核意见，生成一段能让 GM 快速理解这个角色的人设总述。');
+      lines.push('你是角色人设助手。根据玩家的原始填写资料和审核意见，生成 GM 需要的人设资料。');
       lines.push('');
       lines.push('输出格式（只输出 JSON，不要解释、不要 markdown 代码块）：');
       lines.push('{');
-      lines.push('  "summary": "150-250 字的人设总述。第三人称。包含：性格、气质、说话方式、行为倾向、价值观、容易触发反应的点。不要复述属性数字。",');
-      lines.push('  "traits": ["4-6 条关键特质，每条一句话，用于 GM 快速判断 NPC 互动时这个角色会怎么反应"]');
+      lines.push('  "summary": "200-400 字的人设速览。第三人称。包含：性格、气质、说话方式、行为倾向、价值观、容易触发反应的点。不要复述属性数字。注意：这是给 GM 快速读取的索引，不是完整人设，不要为了压短而删掉玩家写过的关键经历。",');
+      lines.push('  "fullBio": "完整人物经历（长文本）。把玩家原始填写里的人生经历、家庭关系、成长与转折、重要人与事按原意整理成通顺段落；玩家在讨论里补充、但原始字段没写进去的内容也放这里。600-2000 字按内容需要来，不设硬上限，宁长勿丢细节。原始字段里已经完整写过的部分可以概括提到，但不要删除。没有额外补充就输出空字符串。",');
+      lines.push('  "traits": ["6-10 条关键特质，每条一句话，用于 GM 快速判断 NPC 互动时这个角色会怎么反应"]');
       lines.push('}');
       lines.push('');
       lines.push('【游戏背景】');
@@ -587,6 +669,8 @@
         if (!p.summary) return null;
         return {
           summary: String(p.summary),
+          // 阶段 1（长度解耦）：完整经历单独存一份，摘要不再承担“代替完整人设”的职责
+          fullBio: (p.fullBio && typeof p.fullBio === 'string') ? p.fullBio : '',
           traits: Array.isArray(p.traits) ? p.traits.map(String) : [],
           lockedAt: new Date().toISOString(),
           aiVersion: 1

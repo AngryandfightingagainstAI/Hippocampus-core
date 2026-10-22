@@ -17,6 +17,12 @@
   var FOCUS_STALE_ROUNDS = 3;    // 镜头 NPC 连续 N 轮没被 AI 碰过 → 自动退回
   var ROLL_CHANCE        = 0.4;  // 每轮尝试自动补位镜头的概率
   var MAX_SCENE_SIZE     = 20;   // 现场舞台最多容纳多少 NPC（防爆）
+  var SCENE_MIN          = 2;    // 现场舞台低于这个数就尝试补人（不然永远无人可遇）
+  var SCENE_SUPPLY_CHANCE = 0.5; // 每轮补现场舞台的概率（换地点时 force 必补）
+  // 未指定 locationId 的 NPC：视为「不固定在某个地点」，按半权重参与任意地点的抽取。
+  // 卡带编辑器没有 locationId 字段（见 worldbook/npc_editor.js），若要求显式地点，
+  // 绝大多数卡带的 NPC 永远不会进场 —— 也就是「永远遇不到人」的根因之一。
+  var UNPLACED_WEIGHT_SCALE = 0.5;
   var MAX_KNOWLEDGE      = 20;   // NPC 知识条目上限（FIFO，超了丢最旧）
   // P11·S6：补 rumor（听说）/ misconception（误解）两类 —— 与原 witness/told/public/deduced
   //   区分开；两者同样走 source 白名单校验（npc_knows / 存档归一化 / 合并默认值）。
@@ -402,6 +408,7 @@
           mood: '',
           locationId: '',
           playerRelation: '',
+          playerKnown: false,
           knownFacts: [],
           recentEvents: [],
           keywords: (def0 && Array.isArray(def0.keywords)) ? def0.keywords.slice() : [],
@@ -423,6 +430,7 @@
       if (rt.lastSeenRound == null) rt.lastSeenRound = 0;
       if (rt.lastTouchedRound == null) rt.lastTouchedRound = 0;
       if (rt.revealed == null) rt.revealed = true;
+      if (rt.playerKnown == null) rt.playerKnown = false;
 
       // 卡带新增关键词 → 运行时同步（只加不删）
       var def = this._findDef(id);
@@ -447,10 +455,115 @@
       return this._ensure(npcId);
     },
 
+    // 阶段 1c：把创角时设定的「玩家 ↔ NPC 初始关系」写进运行时存档。
+    // relations = { [npcId]: { label, known } }
+    // 幂等：已写过（initialRelationApplied）的条目不覆盖，重载/重进游戏不会回滚后续剧情里的关系变化。
+    applyInitialRelations: function(relations) {
+      if (!relations || typeof relations !== 'object') return { ok: true, applied: 0, skipped: 0, missing: [] };
+      if (!this._data) this.load();
+      this._ensureShape();
+      var self = this;
+      var applied = 0, skipped = 0, missing = [];
+      Object.keys(relations).forEach(function(npcId) {
+        var r = relations[npcId];
+        if (!r) return;
+        var label = (typeof r === 'string') ? r : String(r.label || '');
+        var known = (typeof r === 'object' && r.known === false) ? false : !!label && label !== '陌生';
+        // 未认识 / 空标签：不写关系、也不创建运行时条目（默认值本来就等于目标状态），
+        // 否则会把「你们还没见过」的 NPC 提前落成有关系的存档。
+        if (!label || !known) { skipped++; return; }
+        var def = self._findDef(npcId);
+        if (!def) { missing.push(npcId); return; }
+        var rt = self._ensure(def.id);
+        if (!rt) { missing.push(npcId); return; }
+        if (rt.initialRelationApplied) { skipped++; return; }
+        rt.playerRelation = label;
+        rt.playerKnown = known;
+        rt.initialRelationApplied = true;
+        applied++;
+      });
+      if (applied) this.save();
+      return { ok: true, applied: applied, skipped: skipped, missing: missing };
+    },
+
     getAll: function() {
       if (!this._data) this.load();
       this._ensureShape();
       return this._data ? JSON.parse(JSON.stringify(this._data)) : null;
+    },
+
+    // 阶段 2b：卡带类型判定（同人 / 原创）。
+    // 引擎里没有权威的「同人/原创」字段，meta.classified 只是「面板条目已分类」，
+    // 不代表作品类型，所以不能拿它当依据。判定顺序：
+    //   ① card.meta.cardType 显式声明（fan/同人/original/原创）
+    //   ② worldbook.timeline.fanFuture 非空 ⇒ 同人（卡带校验器也按这条推断）
+    //   ③ 其余一律按原创处理（安全默认：宁可不展示，也不提前泄露名单）
+    // 调用方拿 type + source 自行决定可见性；本函数只判定，不改数据。
+    detectCardType: function(card) {
+      if (!card) {
+        try { card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null; } catch (e0) { card = null; }
+      }
+      if (!card || typeof card !== 'object') return { type: 'original', source: 'default', known: false };
+      var meta = card.meta && typeof card.meta === 'object' ? card.meta : {};
+      var raw = meta.cardType != null ? meta.cardType : meta.card_type;
+      if (raw != null) {
+        var s = String(raw).trim().toLowerCase();
+        if (s === 'fan' || s === 'fanfic' || s === 'doujin' || s === '同人' || s === '二次创作') {
+          return { type: 'fan', source: 'meta.cardType', known: true };
+        }
+        if (s === 'original' || s === 'oc' || s === '原创' || s === '原创世界') {
+          return { type: 'original', source: 'meta.cardType', known: true };
+        }
+      }
+      var ff = card.worldbook && card.worldbook.timeline && card.worldbook.timeline.fanFuture;
+      if (Array.isArray(ff) && ff.length > 0) return { type: 'fan', source: 'timeline.fanFuture', known: true };
+      return { type: 'original', source: 'default', known: false };
+    },
+
+    // 同人卡带：名册可以展示卡带里定义的全部 NPC（含「你们还没认识」的状态）。
+    // 原创卡带 / 类型不明：默认只展示玩家已经认识的人，避免侧栏泄露名单。
+    canRevealAllNpcs: function(card) {
+      return this.detectCardType(card).type === 'fan';
+    },
+
+    // 玩家是否认识该 NPC：运行时标记优先，其次是面板 relation 里配过的关系。
+    isNpcKnown: function(npcId) {
+      var rt = null;
+      try { rt = this.get(npcId); } catch (e1) { rt = null; }
+      if (rt && (rt.playerKnown || rt.playerRelation)) return true;
+      try { if (this.getPanelRelation(npcId)) return true; } catch (e2) {}
+      return false;
+    },
+
+    // 阶段 2a：玩家面板「社交关系」里的 relation 条目
+    // （{type:'relation', from:'player', to:'<NPC id 或名>', min,max,current|init}）
+    // 是卡带/编辑器能配置的唯一「玩家 ↔ NPC 关系」通道。运行时以前从不读它，
+    // 所以面板里配好的关系在人物页看不到。这里做只读映射，不写回。
+    getPanelRelation: function(npcId) {
+      try {
+        if (typeof GameState === 'undefined' || !GameState || !GameState.currentState) return null;
+        var st = GameState.currentState;
+        if (!Array.isArray(st.panels)) return null;
+        var def = this._findDef(npcId) || {};
+        var id = def.id || npcId;
+        var name = def.name || '';
+        for (var i = 0; i < st.panels.length; i++) {
+          var p = st.panels[i];
+          var entries = (p && p.entries) || [];
+          for (var j = 0; j < entries.length; j++) {
+            var e = entries[j];
+            if (!e || e.type !== 'relation') continue;
+            var fromOk = !e.from || e.from === 'player';
+            var toOk = e.to === id || (name && e.to === name);
+            if (!fromOk || !toOk) continue;
+            var val = (e.current != null) ? e.current : (e.init != null ? e.init : 0);
+            return { label: e.name || e.label || '', value: Number(val), key: e.key || '', panel: p.name || '' };
+          }
+        }
+        return null;
+      } catch (err) {
+        return null;
+      }
     },
 
     // 镜头名单（返回 defs + _rt）
@@ -715,7 +828,8 @@
 
       this.save();
 
-      // 8. 尝试补满镜头空位
+      // 8. 换地点时先补现场舞台（原住民/未绑定地点的人），再尝试补满镜头
+      this._supplyScene(true);
       this.rollForScene();
 
       return {
@@ -778,6 +892,68 @@
 
       this._data.lastTickRound = round;
       this.save();
+
+      // 4. 现场舞台补给 + 尝试补满镜头
+      //    旧版 tick 只涨权重、从不往 scene 里加人，而 rollForScene 只从 scene 里抽
+      //    ⇒ 玩家不动地点时 scene 恒空，永远抽不到人（「NPC 遇不到」的根因）。
+      this._supplyScene(false);
+      this.rollForScene();
+    },
+
+    // 往现场舞台补人：优先「当前地点的原住民」，其次「没绑定地点」的 NPC（半权重）。
+    // 返回值只用于测试/日志，调用方不依赖。
+    _supplyScene: function(force) {
+      if (!this._data) this.load();
+      this._ensureShape();
+      if (this._data.scene.length >= SCENE_MIN) return { ok: true, added: [] };
+      if (!force && Math.random() > SCENE_SUPPLY_CHANCE) return { ok: true, added: [] };
+
+      var self = this;
+      var defs = this._listDefs();
+      var loc = this._data.sceneLocationId || '';
+      var candidates = [];
+
+      defs.forEach(function(def) {
+        if (!def || !def.id) return;
+        if (self._data.scene.indexOf(def.id) >= 0) return;
+        if (self._data.focus.indexOf(def.id) >= 0) return;
+        var rt = self._data.npcs[def.id];              // 只在真的要加进来时才建运行时记录
+        if (rt && rt.alive === false) return;
+        var w = (def.weight != null && def.weight > 0) ? def.weight : 5;
+        if (def.locationId) {
+          if (!loc || def.locationId !== loc) return;  // 绑定了别的地点 ⇒ 不在场
+        } else {
+          if (loc && rt && rt.locationId && rt.locationId !== loc) return; // 运行时被挪走过
+          w = w * UNPLACED_WEIGHT_SCALE;
+        }
+        candidates.push({ id: def.id, weight: w });
+      });
+
+      if (!candidates.length) return { ok: true, added: [] };
+
+      var need = SCENE_MIN - this._data.scene.length;
+      var added = [];
+      while (need > 0 && candidates.length) {
+        var total = 0;
+        for (var i = 0; i < candidates.length; i++) total += candidates[i].weight;
+        if (total <= 0) break;
+        var r = Math.random() * total;
+        var acc = 0;
+        var idx = candidates.length - 1;
+        for (var j = 0; j < candidates.length; j++) {
+          acc += candidates[j].weight;
+          if (r <= acc) { idx = j; break; }
+        }
+        var pick = candidates.splice(idx, 1)[0];
+        this._data.scene.push(pick.id);
+        var rt2 = this._ensure(pick.id);
+        if (rt2) { rt2.enteredAt = new Date().toISOString(); this._attachStatus(rt2, pick.id); }
+        added.push(pick.id);
+        need--;
+      }
+
+      if (added.length) this.save();
+      return { ok: true, added: added };
     },
 
     // 尝试从现场舞台抽一个 NPC 上镜头（补空位）

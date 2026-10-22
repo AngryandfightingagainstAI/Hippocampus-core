@@ -195,7 +195,8 @@ var NarrativeLint = (function () {
       exKeys.forEach(function (k) { if (bodyTri[k]) overlap++; });
       var ratio = overlap / exKeys.length;
       if (ratio < lim) {
-        hits.push({ id: 'ooc', level: 'warn', why: '在场 NPC「' + name + '」的口吻例句与正文台词重合率过低（' + ratio.toFixed(3) + '）', excerpt: clip(name, 20), ratio: ratio });
+        // 参考台词只提示语气/用词倾向，不要求被逐字复述 ⇒ 默认不报，也不进玩家可见提示
+        hits.push({ id: 'ooc', level: 'info', why: '口吻参考未被逐字复用（' + ratio.toFixed(3) + '）—— 参考台词只提示语气，不要求相似，属正常写法', excerpt: clip(name, 20), ratio: ratio });
       }
     });
     return hits;
@@ -211,9 +212,13 @@ var NarrativeLint = (function () {
     out = out.concat(checkEscalation(opts.plan, opts.toolResults));
     out = out.concat(checkPairing(text, opts.toolResults));
     out = out.concat(checkStyleDrift(text));
-    var npcs = opts.npcs;
-    if (!npcs && opts.card && opts.card.worldbook && Array.isArray(opts.card.worldbook.npcs)) npcs = opts.card.worldbook.npcs;
-    out = out.concat(checkOoc(text, npcs, opts.oocThreshold));
+    // 口吻重合率只用于「写手自检」：参考台词是语气提示，不是逐字模板。
+    // 运行时默认不跑，否则会把正常叙事误判成 OOC（旧版 0.000 提示即由此而来）。
+    if (opts.voiceCheck === true) {
+      var npcs = opts.npcs;
+      if (!npcs && opts.card && opts.card.worldbook && Array.isArray(opts.card.worldbook.npcs)) npcs = opts.card.worldbook.npcs;
+      out = out.concat(checkOoc(text, npcs, opts.oocThreshold));
+    }
     return {
       hits: out,
       fail: out.filter(function (h) { return h.level === 'fail'; }),

@@ -107,3 +107,4 @@ docs/shots_*/*
 !docs/shots_p13/p13_52_panel_unread1.png
 !docs/shots_p15/p15_import_section.png
 !docs/shots_p15/p15_inapp_report.png
+dist/

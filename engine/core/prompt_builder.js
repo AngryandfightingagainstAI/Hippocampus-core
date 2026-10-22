@@ -1000,7 +1000,7 @@ var PromptBuilder = {
       if (!def) continue;
       var v = norm(def.voice);
       if (!v) continue;
-      var rows = ['>>> 【口吻参考 · ' + (def.name || def.id) + '】'];
+      var rows = ['>>> 【口吻参考 · ' + (def.name || def.id) + '】（参考语气即可，不必复述）'];
       if (v.style) rows.push('风格：' + v.style);
       if (v.examples && v.examples.length) rows.push('例句：' + v.examples.join(' / '));
       if (v.taboo && v.taboo.length) rows.push('禁忌：' + v.taboo.join(' / '));
