@@ -144,8 +144,21 @@ function StoryScreen() {
     var handler = function () {
       return SnapshotActions.undoLastStep() ? true : false;
     };
-    RN.BackHandler.addEventListener('hardwareBackPress', handler);
-    return function () { RN.BackHandler.removeEventListener('hardwareBackPress', handler); };
+    // P0 修复（2026-10-22）：RN 0.87 的 BackHandler.removeEventListener 已被移除，
+    // 只有 addEventListener 返回的 {remove()} 订阅对象。原先在卸载清理里调
+    // removeEventListener 会抛「TypeError: undefined is not a function」，
+    // 使「从叙事页进设置/任何离开叙事页」直接闪退（真机 emulator 崩溃栈：
+    // JavascriptException at StoryScreen → commitHookEffectListUnmount）。
+    // 这里改成保存订阅并按 remove() 解绑，保留旧 API 兜底以免 RN 降级时不兼容。
+    var sub = RN.BackHandler.addEventListener('hardwareBackPress', handler);
+    return function () {
+      try {
+        if (sub && typeof sub.remove === 'function') { sub.remove(); return; }
+        if (typeof RN.BackHandler.removeEventListener === 'function') {
+          RN.BackHandler.removeEventListener('hardwareBackPress', handler);
+        }
+      } catch (e) { /* 卸载清理不抛错，避免再次把界面拖崩 */ }
+    };
   }, []);
 
   function gameClock() {
