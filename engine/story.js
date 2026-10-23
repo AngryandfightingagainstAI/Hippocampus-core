@@ -1530,6 +1530,9 @@ var CreateFlow = {
     // P47·批次2：换卡带创角时清空上一轮天命结果
     this._destinySets = null;
     this._destinyPicked = null;
+    // P75：AI 现定的属性表只活在本次创角，换卡带即清
+    this._destinyDef = null;
+    this._destinyAI = null;
 
     if (draft && draft.data) {
       this.index = Math.max(0, Math.min(draft.index || 0, this.steps.length - 1));
@@ -1638,13 +1641,46 @@ var CreateFlow = {
     return html;
   },
 
-  // P47·批次2：天命面板（CoC 属性 N 选一）。逻辑与 RN CreateScreen 同源
-  //   （都走 engine/destiny.js）；未选=列 N 组供选，已选=折叠显示最终属性 + 重掷。
-  //   卡带未启用 worldbook.destiny 时返回空串，创角流程零变化。
+  // P47·批次2 / P75：天命面板（属性 N 选一 + 让 AI 现定）。
+  //   逻辑与 RN CreateScreen 同源（都走 engine/destiny.js）。
+  //   P75：属性表可以由卡带写死，也可以由玩家点「让 AI 定天命」现场生成；
+  //        AI 结果只存在本次创角内存里，不写回卡带文件。
+  _destinyAttrs() {
+    if (this._destinyDef) return this._destinyDef.attributes;
+    return (typeof Destiny !== 'undefined' && Destiny) ? Destiny.attributes(this.card) : [];
+  },
+
+  _destinySetsCount() {
+    if (this._destinyDef) return this._destinyDef.sets;
+    return (typeof Destiny !== 'undefined' && Destiny) ? Destiny.defaultSets(this.card) : 5;
+  },
+
+  _destinyVisible() {
+    if (this._destinyDef) return true;
+    if (typeof Destiny === 'undefined' || !Destiny) return false;
+    if (Destiny.enabled(this.card)) return true;
+    // 卡带显式写了 enabled:false ⇒ 完全不出现（玩家要求关闭）
+    const d = Destiny.config(this.card);
+    if (d && d.enabled === false) return false;
+    // 卡带没配天命、但有属性创角步骤 ⇒ 允许玩家让 AI 现场定一套
+    const step = this.current();
+    return !!(step && this.isAttrStep(step) && this.getPool(step));
+  },
+
   renderDestiny() {
-    if (typeof Destiny === 'undefined' || !Destiny || !Destiny.enabled(this.card)) return '';
-    const attrs = Destiny.attributes(this.card);
-    let html = '<div class="cf-destiny-box"><div class="cf-destiny-title">🎲 天命</div>';
+    if (typeof Destiny === 'undefined' || !Destiny) return '';
+    if (!this._destinyVisible()) return '';
+    const attrs = this._destinyAttrs();
+    const def = this._destinyDef;
+    let html = '<div class="cf-destiny-box"><div class="cf-destiny-title">🎲 天命' + (def ? '（AI 现定）' : '') + '</div>';
+    if (this._destinyAI === 'loading') {
+      html += '<div class="cf-destiny-hint">正在按这个题材拟一套属性表…（可继续操作别的步骤）</div>';
+      html += '</div>';
+      return html;
+    }
+    if (def) {
+      html += '<div class="cf-destiny-hint">' + escapeHtml(def.source || 'AI 现定') + '：' + attrs.length + ' 项 × ' + def.sets + ' 组。</div>';
+    }
     if (this._destinyPicked) {
       html += '<div class="cf-destiny-hint">已采用这组属性（可在下方步骤里继续手改）。</div>';
       attrs.forEach(a => {
@@ -1653,8 +1689,8 @@ var CreateFlow = {
       });
       html += '<div class="cf-destiny-line"><span class="k">总和：</span>' + String(this._destinyPicked.total) + '</div>';
       html += '<button class="cf-destiny-btn" onclick="CreateFlow.rollDestiny()">重掷天命</button>';
-    } else {
-      html += '<div class="cf-destiny-hint">掷 ' + Destiny.defaultSets(this.card) + ' 组属性，挑一组作为你的天命。</div>';
+    } else if (attrs.length) {
+      html += '<div class="cf-destiny-hint">掷 ' + this._destinySetsCount() + ' 组属性，挑一组作为你的天命。</div>';
       html += '<button class="cf-destiny-btn" onclick="CreateFlow.rollDestiny()">掷天命</button>';
       if (this._destinySets) {
         this._destinySets.forEach((set, i) => {
@@ -1664,15 +1700,101 @@ var CreateFlow = {
             '<div class="cf-destiny-row-total">总和 ' + String(set.total) + '</div></button>';
         });
       }
+    } else {
+      html += '<div class="cf-destiny-hint">这个卡带没有预设天命属性。可以让 AI 按题材现场拟一套（只影响这一次创角）。</div>';
     }
+    html += '<div class="cf-destiny-ai">' +
+      '<button class="cf-destiny-btn" onclick="CreateFlow.aiDestiny()">' + (def ? '重新让 AI 定' : '让 AI 定天命') + '</button>' +
+      (def ? '<button class="cf-destiny-btn" onclick="CreateFlow.clearAIDestiny()">用卡带自带的</button>' : '') +
+      '</div>';
     html += '</div>';
     return html;
   },
 
   rollDestiny() {
     if (typeof Destiny === 'undefined' || !Destiny) return;
+    const attrs = this._destinyAttrs();
+    if (!attrs.length) return;
     this._destinyPicked = null;
-    this._destinySets = Destiny.rollBatch(Destiny.attributes(this.card), Destiny.defaultSets(this.card));
+    this._destinySets = Destiny.rollBatch(attrs, this._destinySetsCount());
+    this.render();
+  },
+
+  // ---------- 让 AI 现定天命（P75）----------
+  //   只在本次创角内存里生效；返回 JSON 走 Destiny.normalizeDefinition 校验，
+  //   任何一项公式不合法都会被丢掉，全丢光就整份作废（不猜、不补）。
+  _buildDestinyPrompt() {
+    const card = this.card || {};
+    const wb = card.worldbook || {};
+    const step = this.current();
+    const fields = (step && this.isAttrStep(step) && Array.isArray(step.fields)) ? step.fields : [];
+    const lines = [];
+    lines.push('你在为一个中文文字冒险游戏设计「创角属性表」（天命系统：一次掷多组，玩家挑一组）。');
+    lines.push('题材：' + (card.title || card.name || '未命名') + (wb.desc ? '｜' + String(wb.desc).slice(0, 200) : ''));
+    if (fields.length) {
+      lines.push('这个卡带的创角属性步骤已有这些字段，尽量沿用同名 key（也可补新的）：');
+      lines.push(fields.map(f => (f.key || '') + '=' + (f.name || f.label || '')).join(', '));
+    }
+    lines.push('');
+    lines.push('规则：');
+    lines.push('- 属性项数自定：3-8 项都合理，按题材决定，不要硬套「六维」');
+    lines.push('- 每项给 key（字母开头，只含字母数字下划线）、name（中文名）、formula（掷骰公式）、可选 min/max');
+    lines.push('- formula 支持：3d6 / 4d6kh3（掷4取高3）/ 4d6dl1 / 4d6r1 / d20 / (2d6+6)*5 / 3d6*5，可组合 + - * 与括号');
+    lines.push('- sets：一次掷几组供玩家挑，按属性波动给 3-10 组');
+    lines.push('');
+    lines.push('只输出一个 JSON 对象，不要解释、不要代码块：');
+    lines.push('{"sets":5,"attributes":[{"key":"str","name":"力量","formula":"4d6kh3","min":3,"max":18}]}');
+    return lines.join('\n');
+  },
+
+  _parseDestinyDef(text) {
+    let s = String(text == null ? '' : text).trim();
+    s = s.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a < 0 || b <= a) return { ok: false, reason: '没找到 JSON' };
+    let obj;
+    try { obj = JSON.parse(s.slice(a, b + 1)); } catch (e) { return { ok: false, reason: 'JSON 解析失败' }; }
+    if (typeof Destiny === 'undefined' || !Destiny || typeof Destiny.normalizeDefinition !== 'function') {
+      return { ok: false, reason: 'Destiny 未加载' };
+    }
+    return Destiny.normalizeDefinition(obj);
+  },
+
+  async aiDestiny() {
+    if (this._destinyAI === 'loading') return;
+    if (typeof ApiClient === 'undefined' || !ApiClient || typeof ApiClient.chat !== 'function') {
+      Platform.ui.appendHint('（没有可用的 AI 接口，无法让 AI 定天命）');
+      return;
+    }
+    this._destinyAI = 'loading';
+    this.render();
+    try {
+      const resp = await ApiClient.chat([{ role: 'user', content: this._buildDestinyPrompt() }], { max_tokens: 900, temperature: 0.7 });
+      const text = (resp && typeof resp === 'object') ? (resp.content || '') : resp;
+      const def = this._parseDestinyDef(text);
+      this._destinyAI = null;
+      if (def && def.ok) {
+        this._destinyDef = { attributes: def.attributes, sets: def.sets, source: 'AI 现定' };
+        this._destinySets = null;
+        this._destinyPicked = null;
+        this.render();
+        Platform.ui.appendHint('（天命已由 AI 现定：' + def.attributes.length + ' 项 × ' + def.sets + ' 组' +
+          (def.dropped && def.dropped.length ? '，丢弃 ' + def.dropped.length + ' 个非法项' : '') + '）');
+      } else {
+        this.render();
+        Platform.ui.appendHint('（AI 给的属性表不可用：' + ((def && def.reason) || '没解析出 JSON') + '）');
+      }
+    } catch (e) {
+      this._destinyAI = null;
+      this.render();
+      Platform.ui.appendHint('（让 AI 定天命失败：' + (e && e.message ? e.message : String(e)) + '）');
+    }
+  },
+
+  clearAIDestiny() {
+    this._destinyDef = null;
+    this._destinySets = null;
+    this._destinyPicked = null;
     this.render();
   },
 
@@ -1683,7 +1805,7 @@ var CreateFlow = {
     // 阶段 1b：天命值落成结构化锁。写入 attr_<key>（创角表单与运行时都用这个键）
     // 同时保留裸键，兼容旧卡带/旧逻辑读取。
     const lockValues = {};
-    Destiny.attributes(this.card).forEach(a => {
+    this._destinyAttrs().forEach(a => {
       if (!a || !a.key || typeof set.values[a.key] !== 'number') return;
       const v = set.values[a.key];
       this.data[a.key] = v;
