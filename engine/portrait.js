@@ -136,7 +136,8 @@
       lines.push('硬规则：');
       lines.push('1. patch 里只列讨论中明确要改的字段，没提到的不要列。');
       lines.push('2. playerData 只改卡带声明过的字段；attributes 只能是卡带声明的属性键。');
-      lines.push('3. 数值要合理，不要超出属性范围。');
+      lines.push('3. 数值要合理，不要超出该项的最小/最大值。');
+      lines.push('   （创角点数池只约束开局那一次分配，此时已经定下的属性可以按人设需要调整；超出池上限照样会写入，但要在 note 里写清为什么这样改。）');
       lines.push('4. 没有要改的内容时，patch 设为 {}，note 写"无需改动"。');
       lines.push('');
       lines.push('【游戏背景】');
@@ -171,7 +172,7 @@
           lines.push('');
           lines.push('【天命锁】（规则层约束，不可协商）');
           lines.push('以下属性由开局天命固定：' + lockLines.join('、') + '。');
-          lines.push('attributes 里不要包含这些键，任何改动都会被引擎整包拒绝；玩家若要换这组数值，只能回开局界面重掷天命。');
+          lines.push('attributes 里不要包含这些键，写了也会被引擎丢掉（其余属性、人设字段照常写入）；玩家若要换这组数值，只能回开局界面重掷天命。');
           lines.push('其他属性、技能、物品、人设字段不受影响，正常整理即可。');
         }
       }
@@ -252,16 +253,24 @@
       });
       var remaining = this._remainingPoints(playerData);
       if (remaining != null) parts.push('剩余点数 ' + remaining);
+      var dAlloc = this._destinyAlloc(playerData);
+      if (dAlloc > 0) parts.push('天命已占 ' + dAlloc + ' 点（不计入池）');
       return parts.join(' ');
     },
 
+    // 2026-10-23 P76·B（用户选 B）：创角点数池只约束「创角分配」，天命掷出来的值不计入池。
+    //   旧算法把锁定属性也算进占用，CoC 一类 3d6*5 掷出 200+ 而 pool.total 只有 30 时，
+    //   AI 在 prompt 里看到的「剩余点数」永远是 0（_attributeStatusLine），于是它反复提
+    //   不可行的属性方案、反复被拒 —— 用户看到的「一直超点数」其实是这个死循环。
     _remainingPoints: function(playerData) {
       var card = GameState.currentCard;
       if (!card || !card.attributePool || card.attributePool.total == null) return null;
       var pool = card.attributePool;
       var base = pool.base != null ? pool.base : 0;
+      var locked = this._destinyLockedBare(playerData);
       var allocated = 0;
       (card.attributes || []).forEach(function(a) {
+        if (a && a.key && locked[a.key]) return;   // 天命锁定项不计入创角池
         var v = playerData['attr_' + a.key];
         if (v == null) v = playerData[a.key];
         if (typeof v !== 'number' || isNaN(v)) return;
@@ -269,6 +278,38 @@
         allocated += Math.max(0, v - fb);
       });
       return Math.max(0, pool.total - allocated);
+    },
+
+    // 天命锁定属性的裸键集合 { str: true, ... }
+    _destinyLockedBare: function(playerData) {
+      var set = {};
+      var lock = this._destinyLock(playerData);
+      if (!lock) return set;
+      var vals = lock.values || {};
+      Object.keys(vals).forEach(function(k) {
+        set[k.indexOf('attr_') === 0 ? k.slice(5) : k] = true;
+      });
+      return set;
+    },
+
+    // 天命锁定属性占用的点数（只用于展示「天命已占 N 点」，不进池计算）
+    _destinyAlloc: function(playerData) {
+      var card = GameState.currentCard;
+      var lock = this._destinyLock(playerData);
+      if (!card || !lock) return 0;
+      var pool = card.attributePool || {};
+      var base = pool.base != null ? pool.base : 0;
+      var locked = this._destinyLockedBare(playerData);
+      var total = 0;
+      (card.attributes || []).forEach(function(a) {
+        if (!a || !a.key || !locked[a.key]) return;
+        var v = playerData['attr_' + a.key];
+        if (v == null) v = playerData[a.key];
+        if (typeof v !== 'number' || isNaN(v)) return;
+        var fb = a.min != null ? a.min : base;
+        total += Math.max(0, v - fb);
+      });
+      return total;
     },
 
     // 阶段 1b：天命锁。
@@ -288,9 +329,10 @@
       return Object.keys(vals).map(function(k) { return k.indexOf('attr_') === 0 ? k : ('attr_' + k); });
     },
 
-    // 校验属性 patch：单值 clamp min/max → 再算 allocated → 超 pool.total 整包拒绝
+    // 校验属性 patch：单值 clamp min/max → 天命锁 → 池占用统计（P76·B：只统计不拒绝）
     // 键一律归一为 attr_<key>（裸 x 补前缀，attr_x 保持）；未声明键忽略并警告
-    // 返回 { ok, clamped, warnings, error, code, lockedKeys }
+    // 返回 { ok, clamped, warnings, error, code, lockedKeys, poolOver }
+    //   poolOver = { total, before, after, need, remaining } | null
     validateAttributes: function(attrPatch, playerData) {
       var card = GameState.currentCard;
       var meta = this._attributeMeta(card);
@@ -345,16 +387,16 @@
         }
       }
 
-      // 再算 allocated（用 clamped 值替换原值），超 pool.total 整包拒绝。
-      // 有天命锁时：锁定属性由天命分配，掷点结果可能本身就超过卡带池上限，
-      // 所以池校验只约束「未锁定属性」的占用，headroom = total - 锁定属性占用（最低 0）。
+      // 2026-10-23 P76·B（用户选 B）：池只约束创角分配，人设/剧情阶段的属性成长不再被池拒绝，
+      //   改为回传 poolOver（超了多少点），由调用方提示玩家并照常落盘 —— 用户原话「我不介意超标，
+      //   但我要知道超了什么」。天命锁定项不计入池（_remainingPoints 同一口径）。
+      //   单值 min/max 仍然硬 clamp（上面已做），这是数值合法性的底线。
+      var poolOver = null;
       if (pool && pool.total != null) {
-        var lockedSet = {};
-        if (lock) {
-          this._destinyLockedKeys(playerData).forEach(function(k) { lockedSet[k] = true; });
-        }
-        var allocatedBefore = 0, allocatedAfter = 0, lockedAlloc = 0;
+        var lockedBare = this._destinyLockedBare(playerData);
+        var allocatedBefore = 0, allocatedAfter = 0;
         (card.attributes || []).forEach(function(a) {
+          if (!a || !a.key || lockedBare[a.key]) return;   // 天命锁定项不进池
           var key = 'attr_' + a.key;
           var vBefore = playerData[key] != null ? playerData[key] :
                         (playerData[a.key] != null ? playerData[a.key] : (a.init != null ? a.init : 0));
@@ -362,30 +404,28 @@
           var fb = a.min != null ? a.min : base;
           var cb = (typeof vBefore === 'number' && !isNaN(vBefore)) ? Math.max(0, vBefore - fb) : 0;
           var ca = (typeof vAfter === 'number' && !isNaN(vAfter)) ? Math.max(0, vAfter - fb) : 0;
-          if (lockedSet[key]) { lockedAlloc += cb; return; }
           allocatedBefore += cb;
           allocatedAfter += ca;
         });
-        var headroom = Math.max(0, pool.total - lockedAlloc);
-        if (allocatedAfter > headroom) {
-          var need = allocatedAfter - headroom;
-          var remain = Math.max(0, headroom - allocatedBefore);
-          return {
-            ok: false,
-            code: 'POOL_EXCEEDED',
-            clamped: clamped,
-            error: '属性点不够：这次改动要多 ' + need + ' 点，当前只剩 ' + remain + ' 点'
-              + (lock ? '（天命锁定的属性不参与本次计算）' : '')
+        if (allocatedAfter > pool.total) {
+          poolOver = {
+            total: pool.total,
+            before: allocatedBefore,
+            after: allocatedAfter,
+            need: allocatedAfter - pool.total,
+            remaining: Math.max(0, pool.total - allocatedBefore)
           };
+          warnings.push('属性点超出创角池 ' + poolOver.need + ' 点（已分配 ' + allocatedAfter + ' / 上限 ' + pool.total + '），已照常写入');
         }
       }
 
-      return { ok: true, clamped: clamped, warnings: warnings };
+      return { ok: true, clamped: clamped, warnings: warnings, poolOver: poolOver };
     },
 
     // 合并 patch 到 playerData + portrait，只覆盖 patch 里出现的键
     // 属性键归一为 attr_<key>，迁移历史裸键；before/after 记归一后键
-    // 返回 { ok, before, after, label, error, attrWarnings }；失败时 ok=false 且不写任何字段
+    // 返回 { ok, before, after, label, error, attrWarnings, attrRejected, attrPoolOver }；失败时 ok=false 且不写任何字段
+    //   attrPoolOver：P76·B 起超创角池不再拒写，只回传占用情况让 UI 提示/确认
     mergePatch: function(patch, playerData) {
       var card = GameState.currentCard;
       var allowed = this._allowedPlayerDataKeys(card);
@@ -407,43 +447,38 @@
         }
       }
 
-      // 2. 属性 clamp + 池校验（整包拒绝）；clamped 的键已归一为 attr_<key>
-      // 2026-10-23 P0：属性被拒（天命锁 / 点数不够）不再连累整包——人设字段与其它属性照常落地，
-      // 只把被拒的属性摘掉、把原因作为 attrRejected 回传。否则模型会反复重试同一处，
-      // 玩家看到的是「一直在报错改数值」，而且人设永远进不了存档。
+      // 2. 属性 clamp + 天命锁 + 池占用统计（P76·B：池只提示不阻断）
+      // 2026-10-23 P0：天命锁命中的属性不再连累整包——人设字段与其它属性照常落地，
+      // 只把锁定的键摘掉、把原因作为 attrRejected 回传。
+      // 2026-10-23 P76·B：超创角池不再「一条都不写」，属性照常落地，占用情况作为
+      // attrPoolOver 回传，由 UI 先问玩家再采纳（见 ui_portrait.js extract）。
       var attrResult = this.validateAttributes(attrPatch, playerData);
       var attrRejected = null;
       if (!attrResult.ok) {
-        var rejectCode = attrResult.code || '';
-        var strippable = rejectCode === 'DESTINY_LOCKED';
-        if (strippable) {
-          // 天命锁：把锁定键从 patch 里摘掉，剩下的属性继续走正常校验
-          var lockedMap = {};
-          (attrResult.lockedKeys || []).forEach(function(k) { lockedMap[k] = true; lockedMap[k.replace(/^attr_/, '')] = true; });
-          var restPatch = {};
-          Object.keys(attrPatch || {}).forEach(function(k) {
-            var nk = k.indexOf('attr_') === 0 ? k : ('attr_' + k);
-            if (!lockedMap[nk]) restPatch[k] = attrPatch[k];
-          });
-          var retry = this.validateAttributes(restPatch, playerData);
-          attrRejected = {
-            code: 'DESTINY_LOCKED',
-            lockedKeys: attrResult.lockedKeys || [],
-            error: attrResult.error,
-            appliedAttr: retry.ok
-          };
-          if (retry.ok) {
-            attrResult = retry;
-          } else {
-            attrResult = { ok: true, clamped: {}, warnings: (attrResult.warnings || []).concat(retry.warnings || []), dropped: true };
-            attrRejected.code = retry.code || 'DESTINY_LOCKED';
-          }
+        // 现在只有 DESTINY_LOCKED 会走到这里（池超限已改成 warning + poolOver）
+        // 天命锁：把锁定键从 patch 里摘掉，剩下的属性继续走正常校验
+        var lockedMap = {};
+        (attrResult.lockedKeys || []).forEach(function(k) { lockedMap[k] = true; lockedMap[k.replace(/^attr_/, '')] = true; });
+        var restPatch = {};
+        Object.keys(attrPatch || {}).forEach(function(k) {
+          var nk = k.indexOf('attr_') === 0 ? k : ('attr_' + k);
+          if (!lockedMap[nk]) restPatch[k] = attrPatch[k];
+        });
+        var retry = this.validateAttributes(restPatch, playerData);
+        attrRejected = {
+          code: 'DESTINY_LOCKED',
+          lockedKeys: attrResult.lockedKeys || [],
+          error: attrResult.error,
+          appliedAttr: retry.ok
+        };
+        if (retry.ok) {
+          attrResult = retry;
         } else {
-          // 点数不够：属性一条都不写，但人设照常落地
-          attrRejected = { code: rejectCode || 'POOL_EXCEEDED', error: attrResult.error, appliedAttr: false };
-          attrResult = { ok: true, clamped: {}, warnings: attrResult.warnings || [], dropped: true };
+          attrResult = { ok: true, clamped: {}, warnings: (attrResult.warnings || []).concat(retry.warnings || []), poolOver: null };
+          attrRejected.appliedAttr = false;
         }
       }
+      var attrPoolOver = attrResult.poolOver || null;
       var normAttrKeys = Object.keys(attrResult.clamped || {});
 
       // 3. 构造 before / after（只记被改的键，属性用归一后键）
@@ -498,15 +533,17 @@
       if (attrRejected) {
         label += (label ? '（' : '') + '被拒的属性：' + (attrRejected.lockedKeys || []).join('、') + '）';
       }
+      if (attrPoolOver) {
+        label += (label ? '（' : '') + '超创角池 ' + attrPoolOver.need + ' 点）';
+      }
 
       return {
         ok: true, before: before, after: after, label: label,
         attrWarnings: attrResult.warnings || [],
-        attrRejected: attrRejected
+        attrRejected: attrRejected,
+        attrPoolOver: attrPoolOver
       };
-    },
-
-    // 记录撤回条目（patch 级 diff，只记被改的键）
+    },    // 记录撤回条目（patch 级 diff，只记被改的键）
     recordUndo: function(entry) {
       var doc = this.loadChat();
       doc.undo.push({

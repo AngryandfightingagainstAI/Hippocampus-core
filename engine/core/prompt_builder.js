@@ -391,6 +391,17 @@ var PromptBuilder = {
       if (pt) { lines.push(pt); lines.push(''); }
     }
 
+    // P76：角色档案段（2026-10-23 用户要求「角色档案段必须做」）。
+    //   以前创角 steps[].fields 里的自定义字段（身高/外貌/过往/家世…）只可能进
+    //   portrait.summary 那段自由散文，模型一压缩就没了；卡带没把它们映射到
+    //   HUD / 面板时，叙事层根本拿不到。这里按「标签：值」结构化列出。
+    //   放 semiStatic（一局不变、吃前缀缓存）：创角字段与「开局已成立的关系」都不再变。
+    //   固定顺序 = steps 顺序 + fields 顺序，保证缓存可命中。
+    try {
+      const sheet = this.buildCharacterSheet(card);
+      if (sheet) { lines.push(sheet); lines.push(''); this._piBlock('characterSheet', sheet); }
+    } catch (eCS) {}
+
     // P67：开局问卷结论（分院 / 魔杖 / 守护神 一类）。引擎判定，不是模型推测，
     //   写正文时作为既成事实引用；没有问卷的卡带这里一行不出现。
     try {
@@ -496,6 +507,108 @@ var PromptBuilder = {
     const result = lines.join('\n');
     GameState._cachedStaticDynamic = result;
     return result;
+  },
+
+  // P76：角色档案（创角字段 + 开局已成立的关系），结构化、固定顺序、可空。
+  //   没填任何自定义字段、也没有先置关系时返回空串 ⇒ 老卡带 prompt 一个字符都不变。
+  buildCharacterSheet(card) {
+    if (!card) return '';
+    const pd = (GameState.playerData || {});
+    // 已经出现在 `>>> 玩家：` 白名单里的键不重复列；系统/私有键一律不列。
+    const SKIP = {
+      name: 1, gender: 1, age: 1, era: 1, era_id: 1, house: 1, identity: 1,
+      race: 1, bloodline: 1, occupation: 1, major: 1,
+      portrait: 1, inventory: 1, _relations: 1, _destiny: 1, _openingPrompt: 1,
+      storySummary: 1, storySummaryAt: 1, locationId: 1, location: 1, __quiz: 1
+    };
+    const rows = [];
+    const seen = {};
+    const self = this;   // forEach 里的 function 没有 this，标签转换要显式带上
+    (card.steps || []).forEach(function (step) {
+      (step.fields || []).forEach(function (f) {
+        if (!f || !f.key) return;
+        const k = String(f.key);
+        if (seen[k] || SKIP[k] || k.indexOf('attr_') === 0 || k.indexOf('__') === 0) return;
+        seen[k] = true;
+        let v = (typeof Alias !== 'undefined' && Alias.get) ? Alias.get(pd, k) : pd[k];
+        if (v == null || v === '') return;
+        if (typeof v === 'object') {
+          try { v = JSON.stringify(v); } catch (e) { return; }
+        }
+        let s = String(v).replace(/\s+/g, ' ').trim();
+        if (!s) return;
+        if (f.options || f.type === 'choice' || f.type === 'select') {
+          const l = self.findOptionLabel(card, k, v);
+          if (l && l !== v) s = String(l);
+        }
+        if (s.length > 160) s = s.slice(0, 160) + '…';
+        rows.push('· ' + (f.label || f.name || k) + '：' + s);
+      });
+    });
+    // P76·Fix2：属性数值也进第三段（用户 2026-10-23 同意）。
+    //   以前只有当卡带把属性挂到 HUD / Sidebar / 面板时，数值才会出现在 prompt 里；
+    //   卡带没挂的话叙事层只能靠 query_player 自己查，等于默认「不记得你多强」。
+    //   这里给一行紧凑快照，天命锁定的项标「（天命）」——那些值不该被剧情改动。
+    const attrParts = [];
+    const lockedVals = (pd._destiny && pd._destiny.values) || {};
+    (card.attributes || []).forEach(function (a) {
+      if (!a || !a.key) return;
+      const k = String(a.key);
+      const v = (pd['attr_' + k] != null) ? pd['attr_' + k] : pd[k];
+      if (v == null || v === '') return;
+      let one = (a.name || k) + ' ' + v + (a.max != null ? '/' + a.max : '');
+      if (lockedVals['attr_' + k] != null || lockedVals[k] != null) one += '（天命）';
+      attrParts.push(one);
+    });
+    const rels = this.buildInitialRelations(card);
+    if (!rows.length && !rels.length && !attrParts.length) return '';
+    const out = ['【角色档案】创角时定下的设定，写正文时当既成事实用，不要改动或忽略'];
+    if (rows.length) {
+      out.push(rows.slice(0, 40).join('\n'));
+      if (rows.length > 40) out.push('· …等 ' + rows.length + ' 项');
+    }
+    if (attrParts.length) out.push('· 属性：' + attrParts.join(' · '));
+    if (rels.length) {
+      out.push('');
+      out.push('【先置关系】开局时就已经成立的关系（不是刚认识）');
+      rels.forEach(function (r) { out.push(r); });
+    }
+    return out.join('\n');
+  },
+
+  // 玩家 ↔ NPC 的开局关系。优先读 NPC 运行时的 playerRelation（applyInitialRelations 幂等写入的
+  // 权威值）；运行时还没有（没进过游戏 / 旧档）时退回创角时选的 playerData._relations。
+  buildInitialRelations(card) {
+    const pd = (GameState.playerData || {});
+    const wb = (card && card.worldbook) || {};
+    const nameOf = {};
+    (wb.npcs || []).forEach(function (n) { if (n && n.id) nameOf[n.id] = n.name || n.id; });
+    const rows = [];
+    const push = function (npcId, label, known) {
+      const l = String(label == null ? '' : label).trim();
+      if (!l || l === '陌生') return;
+      const nm = nameOf[npcId] || npcId;
+      rows.push('· ' + nm + '：' + l + (known === false ? '（对方还不知情）' : ''));
+    };
+    try {
+      if (typeof NpcRuntime !== 'undefined' && NpcRuntime && typeof NpcRuntime.getAll === 'function') {
+        const all = NpcRuntime.getAll();
+        const npcs = (all && all.npcs) || {};
+        Object.keys(npcs).forEach(function (id) {
+          const rt = npcs[id] || {};
+          if (rt.playerRelation) push(id, rt.playerRelation, rt.playerKnown);
+        });
+      }
+    } catch (e) {}
+    if (!rows.length) {
+      const rel = pd._relations || {};
+      Object.keys(rel).forEach(function (id) {
+        const r = rel[id];
+        if (typeof r === 'string') push(id, r, true);
+        else if (r && typeof r === 'object') push(id, r.label, r.known);
+      });
+    }
+    return rows.slice(0, 20);
   },
 
   buildEntityIndex() {
@@ -1171,9 +1284,14 @@ var PromptBuilder = {
     for (const step of (card.steps || [])) {
       const sk = step.key || step.id;
       if (sk === key && step.options) { const o = step.options.find(x => x.id === optId); if (o) return o.name || o.label || optId; }
-      (step.fields || []).forEach(f => {
-        if (f.key === key && f.type === 'choice' && f.options) { const o = f.options.find(x => x.id === optId); if (o) return o.label || o.name || optId; }
-      });
+      // P76：这里原来是 forEach + return —— forEach 的 return 只跳出回调，
+      //   字段级 choice 的标签从来没解析成功过（一直回退成原始 id）。改成 for 循环。
+      for (const f of (step.fields || [])) {
+        if (f.key === key && f.type === 'choice' && f.options) {
+          const o = f.options.find(x => x.id === optId);
+          if (o) return o.label || o.name || optId;
+        }
+      }
     }
     return optId;
   },

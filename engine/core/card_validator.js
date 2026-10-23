@@ -29,7 +29,68 @@ var CardValidator = {
     for (const m of this.auditNpcVoices(card)) warnings.push(m);
     // P72·W9：worldbook.lore（世界书关键词触发）——可选字段，同样只警告不拦导入
     for (const m of this.auditLore(card)) warnings.push(m);
+    // P76·Fix4：天命段（worldbook.destiny）自查 —— 写卡 AI 很容易把 sets 写成 300、
+    //   公式写成 "3d6+"、属性名带空格；运行期这些只是「天命面板不出现 / 掷出怪值」，
+    //   玩家只会觉得坏了。导入时把问题报成 warning（绝不拦导入）。
+    for (const m of this.auditDestiny(card)) warnings.push(m);
     return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
+  },
+
+  // ============ P76·Fix4 · 天命段（worldbook.destiny）============
+  // 卡带可选段：worldbook.destiny = { enabled, sets, attributes[{key,name,formula,min,max}] }
+  //   属性项数不设上限（3/6/8/20 都行）；sets 运行期上限 1000（防掷点卡死），
+  //   公式支持 3d6 / 4d6kh3 / 4d6dl1 / 3d6! / (2d6+6)*5 一类开源骰子记号。
+  auditDestiny(card) {
+    const out = [];
+    try {
+      const d = card && card.worldbook && card.worldbook.destiny;
+      if (d == null) return out;
+      if (typeof d !== 'object' || Array.isArray(d)) return ['worldbook.destiny 必须是对象，已忽略整段'];
+      if (d.enabled != null && typeof d.enabled !== 'boolean') {
+        out.push('worldbook.destiny.enabled 应写 true/false，现在是 ' + JSON.stringify(d.enabled) + '，会被当成「未开启」');
+      }
+      const rawSets = d.sets;
+      const sets = parseInt(rawSets, 10);
+      if (rawSets != null && (!isFinite(sets) || sets < 1)) {
+        out.push('worldbook.destiny.sets 应为正整数，现在是 ' + JSON.stringify(rawSets) + '，运行期按 1 组处理');
+      } else if (isFinite(sets) && sets > 1000) {
+        out.push('worldbook.destiny.sets=' + sets + ' 过大，运行期会被压到 1000 组（防止掷点卡死）');
+      }
+      if (!Array.isArray(d.attributes)) {
+        out.push('worldbook.destiny.attributes 必须是数组，否则天命面板不会出现');
+        return out;
+      }
+      if (!d.attributes.length) {
+        out.push('worldbook.destiny.attributes 是空数组，天命面板不会出现');
+        return out;
+      }
+      const D = (typeof Destiny !== 'undefined' && Destiny) ? Destiny : null;
+      const seen = {};
+      let okCount = 0;
+      d.attributes.forEach(function (a, i) {
+        const at = 'worldbook.destiny.attributes[' + i + ']';
+        if (!a || typeof a !== 'object') { out.push(at + ' 不是对象，已跳过'); return; }
+        const key = String(a.key == null ? '' : a.key);
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+          out.push(at + '.key「' + key + '」不合法（只能是字母/数字/下划线、不能以数字开头、不能带空格），已跳过');
+          return;
+        }
+        if (seen[key]) { out.push(at + '.key「' + key + '」重复，只保留第一项'); return; }
+        seen[key] = true;
+        if (a.min != null && a.max != null && Number(a.min) > Number(a.max)) {
+          out.push(at + ' 的 min(' + a.min + ') 大于 max(' + a.max + ')，掷出的值会被夹到反方向');
+        }
+        const f = String(a.formula == null ? '' : a.formula).trim();
+        if (!f) { out.push(at + '.formula 为空，这项掷不出数，已跳过'); return; }
+        if (D && typeof D.parseFormula === 'function' && !D.parseFormula(f)) {
+          out.push(at + '.formula「' + f + '」不是合法骰子表达式（支持 3d6 / 4d6kh3 / 4d6dl1 / 3d6! / (2d6+6)*5），这项会被丢弃');
+          return;
+        }
+        okCount++;
+      });
+      if (!okCount) out.push('worldbook.destiny 里没有一项可用属性，天命面板不会出现');
+    } catch (e) {}
+    return out;
   },
 
   // ============ P72·W4 · NPC 口吻（voice）============
