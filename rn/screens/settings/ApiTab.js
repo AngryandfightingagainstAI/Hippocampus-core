@@ -144,8 +144,9 @@ function ApiTab() {
   var isKnown = knownModels.indexOf(curModel) >= 0;
   var selectValue = isKnown ? curModel : (curModel ? '__custom__' : '');
 
-  var modelOptions = knownModels.map(function (m) { return { value: m, label: m }; });
-  modelOptions.push({ value: '__custom__', label: '自定义…' });
+  var modelOptions = [{ value: '', label: '-- 快捷选择 --' }];
+  knownModels.forEach(function (m) { modelOptions.push({ value: m, label: m }); });
+  modelOptions.push({ value: '__custom__', label: '自定义（在下方输入）' });
 
   return React.createElement(
     View,
@@ -260,25 +261,20 @@ function ApiTab() {
             value: selectValue,
             options: modelOptions,
             onChange: function (v) {
-              if (v === '__custom__') {
-                // onModelSelectChange 语义：自定义 → 显示输入框（下方 TextInput 常显，无需切换）
-                setCs(function (prev) { return Object.assign({}, prev); });
-              } else if (v) {
-                setField('model', v);
-              }
+              // onModelSelectChange 语义（与桌面 2026-10-23 批一致）：选具体模型 → 填入并保存；
+              // 自定义/快捷选择 → 不动 model（输入框常驻，直接打字即自定义）
+              if (v && v !== '__custom__') setField('model', v);
             }
           }),
-          selectValue === '__custom__'
-            ? React.createElement(
-                View,
-                { style: { marginTop: 6 } },
-                React.createElement(Controls.SetTextInput, {
-                  value: curModel,
-                  placeholder: '手动输入模型名',
-                  onChangeText: function (v) { setField('model', v); }
-                })
-              )
-            : null,
+          React.createElement(
+            View,
+            { style: { marginTop: 6 } },
+            React.createElement(Controls.SetTextInput, {
+              value: curModel,
+              placeholder: '输入任意模型名，或用上方下拉快捷填入',
+              onChangeText: function (v) { setField('model', v); }
+            })
+          ),
           React.createElement(Controls.SetRow, { label: '温度' },
             React.createElement(Controls.SetStepper, {
               value: cs.temperature, min: 0, max: 2, step: 0.1,

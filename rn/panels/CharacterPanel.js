@@ -84,6 +84,13 @@ function CharacterPanel(props) {
         </View>
       ) : null}
 
+      {view.portraitFullBio ? (
+        <View style={styles.section}>
+          <Text style={styles.secTitle}>{'完整经历'}</Text>
+          <Text style={styles.body}>{view.portraitFullBio}</Text>
+        </View>
+      ) : null}
+
       <TouchableOpacity
         style={styles.reviewBtn}
         activeOpacity={0.6}

@@ -669,10 +669,41 @@ var StoryLoop = {
       let toolResults = [];
       try {
         const toolsRaw = ToolExecutor.extract(content);
+        // ★ 2026-10-23 P0：AI 不能替玩家决定去哪。
+        //   set_location 只有在本轮玩家自己表达「移动/前往/去某处」，或自由行动入口放了
+        //   __moveRequest 授权时才执行；否则拦截并把原因回灌给模型（formatForHistory）。
+        let __toolsAllowed = toolsRaw;
+        function __toolName(t) {
+          try { return (typeof t === 'string') ? (JSON.parse(t).name || '') : ((t && t.name) || ''); } catch (e) { return ''; }
+        }
+        const __moveTools = (toolsRaw || []).filter(function(t) { return __toolName(t) === 'set_location'; });
+        if (__moveTools.length) {
+          let __moveAsked = false;
+          try {
+            if (typeof TurnIntent !== 'undefined' && TurnIntent.lastUserText) {
+              const __t = String(TurnIntent.lastUserText(GameState.chatHistory) || '');
+              // 开局提示语不是玩家在说话（里面就有「进入」这种字眼），不能当成移动意图
+              const __isOpening = /请描写我的角色刚进入|^游戏开始。/.test(__t);
+              if (!__isOpening) {
+                __moveAsked = /(去|前往|走到|走向|离开|回到|回|进|出|上楼|下楼|出门|进城|出城|赶路|动身|出发|跑到|奔向|换个地方|移动|挪到|来到)/.test(__t);
+              }
+            }
+          } catch (eM) {}
+          if (!__moveAsked && GameState.playerData && GameState.playerData.__moveRequest) __moveAsked = true;
+          if (__moveAsked && GameState.playerData) { try { delete GameState.playerData.__moveRequest; } catch (eD) {} }
+          if (!__moveAsked) {
+            __toolsAllowed = toolsRaw.filter(function(t) { return __toolName(t) !== 'set_location'; });
+            GameState._pendingSystemNotices.push(
+              '引擎拦截了 set_location：玩家本轮没有要求移动。不要替玩家决定去哪、也不要跳过场景过渡；'
+              + '请停留在原地继续描写，若要移动，先问玩家。'
+            );
+            Platform.ui.appendHint('（引擎拦截：本轮 AI 试图移动你，但你并没有要走，已留在原地）');
+          }
+        }
         // P66：工具执行前给关键数值拍快照，执行后逐项 diff。
         // 唯一硬规则在 StateGuard.verdict 里：状态变了却一个工具都没成功 ⇒ 回滚。
         const __stateBefore = (typeof StateGuard !== 'undefined' && StateGuard.snapshot) ? StateGuard.snapshot() : null;
-        toolResults = await ToolExecutor.executeAll(toolsRaw);
+        toolResults = await ToolExecutor.executeAll(__toolsAllowed);
         if (__stateBefore && typeof StateGuard !== 'undefined' && StateGuard.verdict) {
           try {
             const __sv = StateGuard.verdict(__stateBefore, StateGuard.snapshot(), toolResults);
@@ -1532,6 +1563,8 @@ var CreateFlow = {
       if (opening) GameState.playerData._openingPrompt = opening;
       else delete GameState.playerData._openingPrompt;
       GameState.invalidateCache();
+      // 先落盘：即使没有 API Key / 开场生成失败，人设也必须已经在存档里
+      try { GameState.persist(); } catch (e) { console.warn('[Portrait] 人设落盘失败：', e); }
       if (typeof Snapshots !== 'undefined') Snapshots.push('init');
       Platform.ui.showScreen('screen-game');
       Platform.ui.renderGame();

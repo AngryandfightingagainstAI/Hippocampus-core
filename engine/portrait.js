@@ -408,11 +408,43 @@
       }
 
       // 2. 属性 clamp + 池校验（整包拒绝）；clamped 的键已归一为 attr_<key>
+      // 2026-10-23 P0：属性被拒（天命锁 / 点数不够）不再连累整包——人设字段与其它属性照常落地，
+      // 只把被拒的属性摘掉、把原因作为 attrRejected 回传。否则模型会反复重试同一处，
+      // 玩家看到的是「一直在报错改数值」，而且人设永远进不了存档。
       var attrResult = this.validateAttributes(attrPatch, playerData);
+      var attrRejected = null;
       if (!attrResult.ok) {
-        return { ok: false, error: attrResult.error, code: attrResult.code, lockedKeys: attrResult.lockedKeys };
+        var rejectCode = attrResult.code || '';
+        var strippable = rejectCode === 'DESTINY_LOCKED';
+        if (strippable) {
+          // 天命锁：把锁定键从 patch 里摘掉，剩下的属性继续走正常校验
+          var lockedMap = {};
+          (attrResult.lockedKeys || []).forEach(function(k) { lockedMap[k] = true; lockedMap[k.replace(/^attr_/, '')] = true; });
+          var restPatch = {};
+          Object.keys(attrPatch || {}).forEach(function(k) {
+            var nk = k.indexOf('attr_') === 0 ? k : ('attr_' + k);
+            if (!lockedMap[nk]) restPatch[k] = attrPatch[k];
+          });
+          var retry = this.validateAttributes(restPatch, playerData);
+          attrRejected = {
+            code: 'DESTINY_LOCKED',
+            lockedKeys: attrResult.lockedKeys || [],
+            error: attrResult.error,
+            appliedAttr: retry.ok
+          };
+          if (retry.ok) {
+            attrResult = retry;
+          } else {
+            attrResult = { ok: true, clamped: {}, warnings: (attrResult.warnings || []).concat(retry.warnings || []), dropped: true };
+            attrRejected.code = retry.code || 'DESTINY_LOCKED';
+          }
+        } else {
+          // 点数不够：属性一条都不写，但人设照常落地
+          attrRejected = { code: rejectCode || 'POOL_EXCEEDED', error: attrResult.error, appliedAttr: false };
+          attrResult = { ok: true, clamped: {}, warnings: attrResult.warnings || [], dropped: true };
+        }
       }
-      var normAttrKeys = Object.keys(attrResult.clamped);
+      var normAttrKeys = Object.keys(attrResult.clamped || {});
 
       // 3. 构造 before / after（只记被改的键，属性用归一后键）
       var beforePd = {}, afterPd = {};
@@ -463,8 +495,15 @@
       normAttrKeys.forEach(function(k) { labels.push(k); });
       Object.keys(ptPatch).forEach(function(k) { labels.push('人设.' + k); });
       var label = labels.length ? labels.join('、') : '无改动';
+      if (attrRejected) {
+        label += (label ? '（' : '') + '被拒的属性：' + (attrRejected.lockedKeys || []).join('、') + '）';
+      }
 
-      return { ok: true, before: before, after: after, label: label, attrWarnings: attrResult.warnings || [] };
+      return {
+        ok: true, before: before, after: after, label: label,
+        attrWarnings: attrResult.warnings || [],
+        attrRejected: attrRejected
+      };
     },
 
     // 记录撤回条目（patch 级 diff，只记被改的键）

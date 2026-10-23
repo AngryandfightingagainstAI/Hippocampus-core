@@ -82,14 +82,15 @@ node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF；P74·A+ 新增 `engine/core/turn_intent.js`、`plan_block.js`、`narrative_lint.js` 三件套并同步 `engine/story.js`）：**逐字节相同 52 个**、**仅行尾不同 23 个**、**真差异 15 个**，
+最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF；P74·A+ 新增 `engine/core/turn_intent.js`、`plan_block.js`、`narrative_lint.js` 三件套并同步 `engine/story.js`）：**逐字节相同 53 个**、**仅行尾不同 22 个**、**真差异 15 个**，
 合计 90 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（52 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（53 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
+engine/core/prompt_builder.js
 engine/background.js
 engine/card_display.js
 engine/core/api_client.js
@@ -144,7 +145,7 @@ vfs/logger.js
 vfs/storage_adapter.js
 ```
 
-**仅行尾不同**（24 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
+**仅行尾不同**（23 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
 这类**不是内容不同**：P13 时曾把其中一部分误列进「内容不同」）：
 
 ```text
@@ -155,7 +156,6 @@ engine/calendar.js
 engine/card_diagnose.js
 engine/core/card_validator.js
 engine/core/cards_demo.js
-engine/core/prompt_builder.js
 engine/dice.js
 engine/dice_history.js
 engine/endings.js

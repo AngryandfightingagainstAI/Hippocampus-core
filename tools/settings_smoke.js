@@ -113,7 +113,8 @@ function runA() {
 
   // A14-A16 getModelsForBaseUrl（4-5b，_getModelsForBaseUrl 同构下沉）
   var dsModels = Model.getModelsForBaseUrl('https://api.deepseek.com/v1/'); // 尾斜杠应被去掉后命中
-  check('A14 命中预设（尾斜杠归一）', dsModels.length === 4 && dsModels.indexOf('deepseek-chat') >= 0 && dsModels.indexOf('deepseek-reasoner') >= 0);
+  // 2026-10-23 API 预设更新批：DeepSeek 精简为 deepseek-chat / deepseek-reasoner 两个真实模型（旧 4 条含已不存在的 deepseek-flash / deepseek-v4-pro），基线 4→2 重记现盘值
+  check('A14 命中预设（尾斜杠归一）', dsModels.length === 2 && dsModels.indexOf('deepseek-chat') >= 0 && dsModels.indexOf('deepseek-reasoner') >= 0);
   var merged = Model.getModelsForBaseUrl('https://my-own.example/v1');
   var allModels = [];
   require(path.join(root, 'engine', 'api_manager.js')).PRESETS.forEach(function (p) {

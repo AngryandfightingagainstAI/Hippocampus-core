@@ -146,7 +146,7 @@ function computeCharacter() {
   var empty = {
     name: '（未填）', gender: '—', age: '—', birthday: '—',
     height: '', appearance: '', background: '',
-    portraitSummary: '', traits: [], attrs: [], talents: [],
+    portraitSummary: '', portraitFullBio: '', traits: [], attrs: [], talents: [],
     money: '—', inventory: [
       { key: 'bar', label: '快捷栏', items: [] },
       { key: 'common', label: '通用道具', items: [] },
@@ -181,6 +181,10 @@ function computeCharacter() {
       if (Array.isArray(pd.portrait.traits)) {
         empty.traits = pd.portrait.traits.map(function (t) { return String(t); });
       }
+    }
+    // 完整人生经历不是摘要的替代品：单独一块显示，长也照实展示
+    if (pd.portrait && pd.portrait.fullBio) {
+      empty.portraitFullBio = String(pd.portrait.fullBio);
     }
 
     for (var i = 0; i < attrs.length; i++) {
