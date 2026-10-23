@@ -21,6 +21,14 @@ var SafeArea = require('react-native-safe-area-context');
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
 var BackgroundLayer = require('../components/BackgroundLayer.js').BackgroundLayer;
+// P77（用户 m00890）：人设页以前漏了 P42 的两件套 —— 键盘避让 + 自动长高输入框。
+//   症状：Android targetSdk 36 强制 edge-to-edge 后 adjustResize 不再缩窗口 ⇒
+//         键盘直接盖住下半页；人设总述/开场白又是固定 minHeight ⇒
+//         内容超过框高只能在框内滚，而框的下半截还在键盘底下，最后几行永远看不到。
+//   修法照叙事页（StoryScreen:593/605）与卡带库（CardsScreen:550）：
+//         useKeyboardInset() 补 paddingBottom + AutoInput 跟内容长高（可展开/收起）。
+var AutoInput = require('../components/AutoInput.js').AutoInput;
+var useKeyboardInset = require('../use_keyboard_inset.js').useKeyboardInset;
 
 function PortraitScreen() {
   var themeApi = useTheme();
@@ -30,6 +38,32 @@ function PortraitScreen() {
   var fonts = tk.fonts;
   var nav = useNavigation();
   var insets = SafeArea.useSafeAreaInsets();
+
+  // P77：键盘高度（纯函数判据在 rn/ui_input_metrics.js，见 use_keyboard_inset.js 注释）
+  var kbInset = useKeyboardInset();
+
+  // P77：聚焦哪个框就把它滚到可视区顶部附近，键盘动画结束后再对齐一次
+  //   （第一次调用时窗口还没缩完，只滚到一半会被键盘顶回去）
+  var scrollRef = React.useRef(null);
+  var fieldY = React.useRef({});
+  function rememberY(key) {
+    return function (e) {
+      var y = e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0;
+      if (y > 0) fieldY.current[key] = y;
+    };
+  }
+  function revealField(key) {
+    var y = fieldY.current[key];
+    var sv = scrollRef.current;
+    if (y == null || !sv || !sv.scrollTo) return;
+    try { sv.scrollTo({ y: Math.max(0, y - 12), animated: true }); } catch (e1) { /* */ }
+  }
+  function focusTo(key) {
+    return function () {
+      revealField(key);
+      setTimeout(function () { revealField(key); }, 260);
+    };
+  }
 
   var initPortrait = null;
   var initText = '';
@@ -287,8 +321,11 @@ function PortraitScreen() {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
         backgroundColor: c.panel, color: c.text, fontSize: f.base,
         paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14,
-        minHeight: 120, textAlignVertical: 'top'
+        textAlignVertical: 'top'
       },
+      // P77：AutoInput 的「展开 ▾ / 收起 ▴」开关（文案与配色沿用叙事页的克制风格）
+      moreBtn: { alignSelf: 'flex-end', paddingVertical: 2, paddingHorizontal: 2, marginTop: -10, marginBottom: 10 },
+      moreBtnText: { fontSize: f.xs, color: c.muted, letterSpacing: 1 },
       err: { fontSize: f.sm, color: c.danger, marginBottom: 10 },
       auditBox: {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
@@ -323,7 +360,7 @@ function PortraitScreen() {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
         backgroundColor: c.panel, color: c.text, fontSize: f.sm,
         paddingHorizontal: 12, paddingVertical: 8, marginBottom: 14,
-        minHeight: 60, textAlignVertical: 'top'
+        textAlignVertical: 'top'
       },
       btnRow: { flexDirection: 'row', gap: 10, marginTop: 6, flexWrap: 'wrap' },
       primaryBtn: {
@@ -375,7 +412,12 @@ function PortraitScreen() {
         <Text style={styles.title}>{'人设'}</Text>
         <View style={styles.headerPad} />
       </View>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 + kbInset }]}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.stepLine}>{'人设总述 · 可手填或让 AI 生成'}</Text>
         <Text style={styles.stepTitle}>{'重审人设'}</Text>
         <Text style={styles.guide}>
@@ -395,7 +437,7 @@ function PortraitScreen() {
             <Text style={styles.discEmpty}>{'点下方按钮开始，或直接输入想让 AI 注意的点。'}</Text>
           )}
         </View>
-        <View style={styles.inputRow}>
+        <View style={styles.inputRow} onLayout={rememberY('disc')}>
           <TextInput
             style={styles.smallInput}
             value={discInput}
@@ -404,6 +446,7 @@ function PortraitScreen() {
             placeholderTextColor={c.faint}
             editable={!busy}
             onSubmitEditing={onSend}
+            onFocus={focusTo('disc')}
           />
           <TouchableOpacity
             style={[styles.sendBtn, busy ? styles.btnDisabled : null]}
@@ -433,29 +476,48 @@ function PortraitScreen() {
         ) : null}
 
         <Text style={styles.fieldLabel}>{'人设总述'}</Text>
-        <TextInput
-          style={styles.input}
-          value={text}
-          onChangeText={function (v) { setText(v); }}
-          placeholder={'150-250 字的人设总述…'}
-          placeholderTextColor={c.faint}
-          multiline={true}
-          editable={!busy}
-        />
+        {/* P77：跟内容长高（4 → 6 行），超过 6 行给「展开 ▾」长到 12 行，可再「收起 ▴」 */}
+        <View onLayout={rememberY('summary')}>
+          <AutoInput
+            style={styles.input}
+            value={text}
+            onChangeText={function (v) { setText(v); }}
+            placeholder={'150-250 字的人设总述…'}
+            placeholderTextColor={c.faint}
+            editable={!busy}
+            minLines={4}
+            maxLines={12}
+            collapsedLines={6}
+            expandText={'展开 ▾'}
+            collapseText={'收起 ▴'}
+            toggleStyle={styles.moreBtn}
+            toggleTextStyle={styles.moreBtnText}
+            onFocus={focusTo('summary')}
+          />
+        </View>
 
         {err ? <Text style={styles.err}>{err}</Text> : null}
 
         <Text style={styles.sectionTitle}>{'开场白（可选）'}</Text>
         <Text style={styles.hint}>{'游戏开始时给 AI 的第一句指令。留空则使用卡带默认或通用默认。'}</Text>
-        <TextInput
-          style={styles.openingInput}
-          value={opening}
-          onChangeText={function (v) { setOpening(v); }}
-          placeholder={'例：我从一个陌生的港口醒来，身上只有一部手机和一把匕首。'}
-          placeholderTextColor={c.faint}
-          multiline={true}
-          editable={!busy}
-        />
+        <View onLayout={rememberY('opening')}>
+          <AutoInput
+            style={styles.openingInput}
+            value={opening}
+            onChangeText={function (v) { setOpening(v); }}
+            placeholder={'例：我从一个陌生的港口醒来，身上只有一部手机和一把匕首。'}
+            placeholderTextColor={c.faint}
+            editable={!busy}
+            minLines={3}
+            maxLines={8}
+            collapsedLines={4}
+            expandText={'展开 ▾'}
+            collapseText={'收起 ▴'}
+            toggleStyle={styles.moreBtn}
+            toggleTextStyle={styles.moreBtnText}
+            onFocus={focusTo('opening')}
+          />
+        </View>
 
         {/* 最近改动（撤回） */}
         <View style={styles.undoBox}>

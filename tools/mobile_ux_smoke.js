@@ -1,4 +1,4 @@
-// ============================================================
+﻿// ============================================================
 // P33 · 手机版体验 smoke（纯 Node 断言，零 RN 运行时）
 // 用户 m07904 四条裁决的守卫：
 //   ① 叙事屏菜单入口放大带字 + 顶部横滑状态条下线（数值搬进侧栏抽屉）
@@ -231,6 +231,21 @@ check('U-7ad 设置/世界书多行输入一并自动增高',
 var overlay = read('rn/components/OverlayHost.js');
 check('U-7ae 全局弹窗的多行输入一并自动增高',
   overlay.indexOf('AutoInput') >= 0);
+
+// ---- P77（用户 m00890）：人设页键盘遮挡 + 长文看不到后面 ----
+var portrait = read('rn/screens/PortraitScreen.js');
+check('U-7ax 人设页接了键盘避让', portrait.indexOf('useKeyboardInset()') >= 0 &&
+  /paddingBottom[\s\S]{0,80}kbInset/.test(portrait));
+check('U-7ay 人设页两个多行输入框改用 AutoInput',
+  portrait.indexOf('components/AutoInput.js') >= 0 &&
+  (portrait.match(/<AutoInput/g) || []).length >= 2);
+check('U-7az 人设页多行框不再写死高度（minHeight 120 / 60 已去掉）',
+  portrait.indexOf('minHeight: 120') < 0 && portrait.indexOf('minHeight: 60') < 0);
+check('U-7ba 人设页长文随字数长高且能展开/收起',
+  /collapsedLines=\{6\}/.test(portrait) && /maxLines=\{12\}/.test(portrait) &&
+  portrait.indexOf('展开 ▾') >= 0 && portrait.indexOf('收起 ▴') >= 0);
+check('U-7bb 人设页聚焦输入框会滚进可视区（scrollTo + onFocus）',
+  /scrollTo\(\{ y:/.test(portrait) && /onFocus=\{focusTo/.test(portrait));
 
 // ---- 真渲染：用 react-test-renderer 把 AutoInput 跑起来（不是 grep 源码） ----
 //   手法照 tools/theme_switch_smoke.js：Module._load 桩掉 react-native，react 用真的。
