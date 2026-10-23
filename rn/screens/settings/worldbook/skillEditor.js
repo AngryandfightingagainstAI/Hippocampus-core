@@ -270,8 +270,7 @@ function SkillEditor(props) {
   // 空态（html :19-22）：只有提示 + 新建按钮
   if (!data.length) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
       React.createElement(
         View,
         { style: { paddingVertical: 20, alignItems: 'center' } },
@@ -282,8 +281,7 @@ function SkillEditor(props) {
   }
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
     tabBar(),
     React.createElement(
       View,

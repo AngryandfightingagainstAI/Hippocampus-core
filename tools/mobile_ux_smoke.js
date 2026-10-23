@@ -275,6 +275,50 @@ var npcPanel = read('rn/panels/NpcPanel.js');
 check('U-7bi NPC 面板显示当前情绪组台词（此刻 + 运行时 voiceCues）',
   npcPanel.indexOf("'此刻：'") >= 0 && npcPanel.indexOf('rt.voiceCues') >= 0);
 
+// ---- 设置区「键盘打开时第一次点击被吞」的通用防护（P79）----
+//   起因（真机 vivo V2118A）：键盘弹出时单击「+ 新建 NPC」「+ 添加一组对某个 NPC」没反应，
+//   同一位置再点一次才生效。根因不是渲染：RN ScrollView 默认 keyboardShouldPersistTaps='never'，
+//   键盘打开时第一次点击被用来收键盘、事件不下发给按钮。
+//   这里逐个文件核对「ScrollView 数 == keyboardShouldPersistTaps 数」，以后新写设置页漏了就红。
+var persistFiles = [
+  'rn/screens/SettingsScreen.js',
+  'rn/screens/settings/ColorTab.js',
+  'rn/screens/settings/DataTab.js',
+  'rn/screens/settings/DiceTab.js',
+  'rn/screens/settings/GeneralTab.js',
+  'rn/screens/settings/GmTab.js',
+  'rn/screens/settings/RealtimeTab.js',
+  'rn/screens/settings/WeatherTab.js',
+  'rn/screens/settings/worldbook/factionEditor.js',
+  'rn/screens/settings/worldbook/itemEditor.js',
+  'rn/screens/settings/worldbook/mapEditor.js',
+  'rn/screens/settings/worldbook/npcEditor.js',
+  'rn/screens/settings/worldbook/occupationEditor.js',
+  'rn/screens/settings/worldbook/outputsEditor.js',
+  'rn/screens/settings/worldbook/raceEditor.js',
+  'rn/screens/settings/worldbook/skillEditor.js',
+  'rn/screens/settings/worldbook/worldSettingEditor.js'
+];
+var persistShort = [];
+var persistDetail = [];
+persistFiles.forEach(function (rel) {
+  var t = read(rel);
+  var scrolls = (t.match(/ScrollView,\s*\{/g) || []).length;
+  var guards = (t.match(/keyboardShouldPersistTaps: 'handled'/g) || []).length;
+  if (scrolls === 0 || guards < scrolls) {
+    persistShort.push(rel + '(' + guards + '/' + scrolls + ')');
+  } else if (guards > scrolls) {
+    persistDetail.push(rel + '(' + guards + '>' + scrolls + ')');
+  }
+});
+check('U-7bj 设置区所有 ScrollView 都带 keyboardShouldPersistTaps（键盘打开时首次点击不被吞）',
+  persistShort.length === 0, persistShort.join(' '));
+check('U-7bk NPC 编辑器空态与表单态两个 ScrollView 都有该属性',
+  (read('rn/screens/settings/worldbook/npcEditor.js').match(/keyboardShouldPersistTaps: 'handled'/g) || []).length >= 2);
+check('U-7bl 世界书 9 个分页编辑器一个不漏',
+  persistShort.filter(function (s) { return s.indexOf('worldbook/') >= 0; }).length === 0);
+check('U-7bm 没有多余挂载（属性数不超过 ScrollView 数）', persistDetail.length === 0, persistDetail.join(' '));
+
 // ---- 真渲染：用 react-test-renderer 把 AutoInput 跑起来（不是 grep 源码） ----
 //   手法照 tools/theme_switch_smoke.js：Module._load 桩掉 react-native，react 用真的。
 //   覆盖：跟内容长高 → 到上限夹住并开内部滚 → 内容变短自己缩回 → 折叠/展开开关。

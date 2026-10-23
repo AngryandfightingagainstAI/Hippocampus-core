@@ -149,8 +149,7 @@ function SettingsScreen() {
       React.createElement(View, { style: styles.topRight })
     ),
     React.createElement(
-      ScrollView,
-      { horizontal: true, showsHorizontalScrollIndicator: false, style: styles.chips, contentContainerStyle: { alignItems: 'center' } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', horizontal: true, showsHorizontalScrollIndicator: false, style: styles.chips, contentContainerStyle: { alignItems: 'center' } },
       Model.SETTINGS_TABS.map(function (t) {
         var active = t.id === curTab;
         return React.createElement(
@@ -177,8 +176,7 @@ function SettingsScreen() {
       View,
       { style: styles.body },
       React.createElement(
-        ScrollView,
-        { style: { flex: 1 }, contentContainerStyle: styles.bodyInner },
+        ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: styles.bodyInner },
         renderTab(curTab)
       )
     )

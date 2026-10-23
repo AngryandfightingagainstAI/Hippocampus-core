@@ -281,8 +281,7 @@ function DataTab() {
   }, [tk]);
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     // --- 数据管理 ---
     React.createElement(
       View,

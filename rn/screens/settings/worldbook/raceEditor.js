@@ -217,8 +217,7 @@ function RaceEditor(props) {
   // 未启用分支（html :21-28）
   if (!hasRaces) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
       React.createElement(
         Controls.SetCard,
         { title: null },
@@ -237,8 +236,7 @@ function RaceEditor(props) {
 
   // 已启用分支（html :41-53）
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
     React.createElement(
       Controls.SetCard,
       { title: null },

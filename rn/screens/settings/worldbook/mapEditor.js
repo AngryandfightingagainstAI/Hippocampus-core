@@ -150,8 +150,7 @@ function MapEditor(props) {
 
   if (!d) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
       React.createElement(Controls.SetNote, { first: true }, '（未初始化）')
     );
   }
@@ -194,7 +193,7 @@ function MapEditor(props) {
         }))),
       React.createElement(Controls.SetButton, { label: '+ 新建树', onPress: onAddTree })
     ));
-    return React.createElement(ScrollView, { style: { flex: 1 } }, nodes);
+    return React.createElement(ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } }, nodes);
   }
 
   // ---- 树工具栏（桌面 :209-220）----
@@ -248,7 +247,7 @@ function MapEditor(props) {
     nodes.push(React.createElement(Controls.SetNote, { key: 'lost', first: true },
       '（当前节点丢失，请切换其它树或新建一棵）'));
     nodes.push(saveRow('保存修复结果'));
-    return React.createElement(ScrollView, { style: { flex: 1 } }, nodes);
+    return React.createElement(ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } }, nodes);
   }
 
   // ---- 当前节点表单（桌面 :244-275）----
@@ -422,7 +421,7 @@ function MapEditor(props) {
 
   nodes.push(saveRow('保存地图'));
 
-  return React.createElement(ScrollView, { style: { flex: 1 } }, nodes);
+  return React.createElement(ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } }, nodes);
 }
 
 module.exports = { MapEditor: MapEditor };

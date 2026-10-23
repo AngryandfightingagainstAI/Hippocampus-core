@@ -92,8 +92,7 @@ function OutputsEditor(props) {
 
   if (!d) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
       React.createElement(Controls.SetCard, { title: '产出物' },
         React.createElement(Controls.SetNote, { first: true }, '（未初始化）'))
     );
@@ -300,8 +299,7 @@ function OutputsEditor(props) {
   );
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     baseCard,
     typesCard,
     audiencesCard,

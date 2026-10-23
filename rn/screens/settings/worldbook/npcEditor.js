@@ -585,8 +585,7 @@ function NpcEditor(props) {
   // 空态（html :27-30）：只有提示 + 新建按钮，无横条、无工具栏
   if (!data.length) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
       React.createElement(
         View,
         { style: { paddingVertical: 20, alignItems: 'center' } },
@@ -597,8 +596,7 @@ function NpcEditor(props) {
   }
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 }, contentContainerStyle: { paddingBottom: 40 } },
     tabBar(),
     React.createElement(
       View,

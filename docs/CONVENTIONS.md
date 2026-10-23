@@ -263,7 +263,7 @@ vfs/vfs_guard.js
 【四、跑测口径】
 ================================================================
 
-### 4.1 RN 侧（40 套）
+### 4.1 RN 侧（41 套）
 
 **cwd 随意（P54 实测订正）**：所有 smoke 都用 `__dirname` 锚定仓根（`tools\*.js` 里
 `process.cwd()` 真实调用 **0 处**），babel 也显式传了 `configFile`，所以从任何目录跑结果都一样。
@@ -293,7 +293,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `card_import_smoke.js` | 25 |
 | `cards_smoke.js` | 35 |
 | `claim_fact_smoke.js` | 44 |
-| `create_flow_smoke.js` | 120 |
+| `create_flow_smoke.js` | 122 |
 | `create_smoke.js` | 23 |
 | `dice_history_smoke.js` | 19 |
 | `endings_gate_smoke.js` | 27 |
@@ -304,20 +304,21 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `import_smoke.js` | 130 |
 | `info_phone_smoke.js` | 45 |
 | `info_tick_smoke.js` | 14 |
-| `log_query_smoke.js` | 89 |
+| `log_query_smoke.js` | 88 |
 | `longline_token_smoke.js` | 22 |
-| `mobile_ux_smoke.js` | 83 |
+| `mobile_ux_smoke.js` | 99 |
 | `npc_boundary_smoke.js` | 36 |
-| `num_editor_smoke.js` | 68 |
+| `num_editor_smoke.js` | 67 |
 | `outputs_review_smoke.js` | 77 |
-| `p10_smoke.js` | 75 |
 | `p1_settings_smoke.js` | 202 |
+| `p10_smoke.js` | 75 |
 | `panels_smoke.js` | 102 |
 | `polyfill_smoke.js` | 22 |
 | `proposal_audit_smoke.js` | 19 |
+| `release_publish_smoke.js` | 14 |
 | `saves_smoke.js` | 17 |
 | `secure_envelope_smoke.js` | 83 |
-| `settings_smoke.js` | 144 |
+| `settings_smoke.js` | 139 |
 | `source_readable_smoke.js` | 23 |
 | `story_smoke.js` | 195 |
 | `theme_switch_smoke.js` | 22 |
@@ -327,7 +328,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 | `web_search_smoke.js` | 51 |
 | `worldbook_smoke.js` | 176 |
 
-**当前基线：40 套 / 2625 ok / 0 failed。**
+**当前基线：41 套 / 2650 ok / 7 failed（3 套历史红：`settings_smoke.js` 5 条 `max_tokens` 迁移、`log_query_smoke.js` 1 条、`num_editor_smoke.js` 1 条，与本版功能无关）。**
 
 ### 4.2 桌面侧
 
@@ -377,7 +378,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
   `test_vfs_write_contract_unit.js` 20 条、`test_json_locate_unit.js` 13 条、`test_ui_proxy_cycle_unit.js` 5 条、
   `test_kdf_async_unit.js` 8 条）。
 - **不计入 smoke 基线**：`tools/run_all_smokes.js:39` 只扫 `/_smoke\.js$/`，本目录只匹配
-  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「40 套 / 2625 条」这组数字。
+  `/_unit\.js$/`，两条线互不包含 —— 所以补单测不会改动「41 套 / 2650 条」这组数字。
 - 公共脚手架 `tests/unit/_harness.js`（下划线开头，不被当套件）：`makeVFS` 内存文件表
   （坏 JSON 返回 null，与 `vfs/vfs.js:66` 同行为）、`makeSandbox` 注入最小假件（含
   `setTimeout` 等定时器桩 —— 引擎件在模块级会排布定时器，缺了它整组会报

@@ -226,8 +226,7 @@ function GeneralTab() {
   }
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     React.createElement(
       View,
       { style: { paddingBottom: 24 } },

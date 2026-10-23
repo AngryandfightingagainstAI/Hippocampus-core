@@ -104,8 +104,7 @@ function WorldSettingEditor(props) {
 
   if (!d) {
     return React.createElement(
-      ScrollView,
-      { style: { flex: 1 } },
+      ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
       React.createElement(Controls.SetCard, { title: '世界设定' },
         React.createElement(Controls.SetNote, { first: true }, '（未初始化）'))
     );
@@ -393,8 +392,7 @@ function WorldSettingEditor(props) {
   );
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     baseCard,
     existenceCard,
     eraCard,

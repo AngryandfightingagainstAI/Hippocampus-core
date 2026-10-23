@@ -50,8 +50,7 @@ function DiceTab() {
   var dim = !cfg.enabled ? { opacity: 0.5 } : null;
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     React.createElement(
       View,
       { style: { paddingBottom: 24 } },

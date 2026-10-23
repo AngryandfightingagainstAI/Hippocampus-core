@@ -73,8 +73,7 @@ function WeatherTab() {
   var realActive = cfg.mode === 'real' || cardMode === 'real';
 
   return React.createElement(
-    ScrollView,
-    { style: { flex: 1 } },
+    ScrollView, { keyboardShouldPersistTaps: 'handled', style: { flex: 1 } },
     React.createElement(
       View,
       { style: { paddingBottom: 24 } },
