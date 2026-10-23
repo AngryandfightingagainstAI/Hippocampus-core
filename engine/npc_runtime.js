@@ -275,6 +275,66 @@
       };
     },
 
+    // ★ P78：台词库运行时层（AI 可增改，卡带原稿不动）。
+    //   cue = { kind:'emotion'|'npc'|'like'|'dislike', name, lines:[], period?, timeRange? }
+    //   同 kind + 同名视为同一组：已存在则整组替换，否则追加。最多 40 组、每组最多 6 条。
+    setVoiceCue: function(npcRef, cue) {
+      var def = this._findDef(npcRef);
+      if (!def) return { ok: false, reason: 'NPC 不存在' };
+      var rt = this._ensure(def.id);
+      if (!rt) return { ok: false, reason: '初始化失败' };
+      if (!cue || typeof cue !== 'object') return { ok: false, reason: 'cue 必须是对象' };
+      var name = (typeof cue.name === 'string') ? cue.name.replace(/\s+/g, ' ').trim() : '';
+      if (!name) return { ok: false, reason: 'cue.name 不能为空' };
+      var kind = (['emotion', 'npc', 'like', 'dislike'].indexOf(cue.kind) >= 0) ? cue.kind : 'emotion';
+      var lines = [];
+      (Array.isArray(cue.lines) ? cue.lines : []).forEach(function (ln) {
+        if (typeof ln !== 'string') return;
+        var t = ln.replace(/\s+/g, ' ').trim();
+        if (t) lines.push(t.slice(0, 80));
+      });
+      if (!lines.length) return { ok: false, reason: 'cue.lines 不能为空' };
+      lines = lines.slice(0, 6);
+      if (!Array.isArray(rt.voiceCues)) rt.voiceCues = [];
+      var item = {
+        id: (typeof cue.id === 'string' && cue.id) ? cue.id : (kind + ':' + name),
+        kind: kind, name: name, lines: lines,
+        source: 'ai', at: GameState.formatGameTime()
+      };
+      var idx = -1;
+      for (var i = 0; i < rt.voiceCues.length; i++) {
+        var c = rt.voiceCues[i];
+        if (c && c.kind === kind && c.name === name) { idx = i; break; }
+      }
+      if (idx >= 0) rt.voiceCues[idx] = item;
+      else rt.voiceCues.push(item);
+      if (rt.voiceCues.length > 40) rt.voiceCues = rt.voiceCues.slice(rt.voiceCues.length - 40);
+      this.save();
+      return { ok: true, id: def.id, cue: item, replaced: idx >= 0, total: rt.voiceCues.length };
+    },
+
+    removeVoiceCue: function(npcRef, kind, name) {
+      var def = this._findDef(npcRef);
+      if (!def) return { ok: false, reason: 'NPC 不存在' };
+      var rt = this._ensure(def.id);
+      if (!rt || !Array.isArray(rt.voiceCues)) return { ok: false, reason: '没有台词组' };
+      var k = (['emotion', 'npc', 'like', 'dislike'].indexOf(kind) >= 0) ? kind : 'emotion';
+      var before = rt.voiceCues.length;
+      rt.voiceCues = rt.voiceCues.filter(function (c) {
+        return !(c && c.kind === k && c.name === name);
+      });
+      if (rt.voiceCues.length === before) return { ok: false, reason: '没有这一组' };
+      this.save();
+      return { ok: true, id: def.id, removed: before - rt.voiceCues.length, total: rt.voiceCues.length };
+    },
+
+    listVoiceCues: function(npcRef) {
+      var def = this._findDef(npcRef);
+      if (!def) return [];
+      var rt = this._ensure(def.id);
+      return (rt && Array.isArray(rt.voiceCues)) ? rt.voiceCues.slice() : [];
+    },
+
     // 后置校验（批 2）：AI 正文提到 NPC 可能获得新知识，但本轮没调 npc_knows。
     // 宽匹配，宁漏勿错；返回 [{ npcId, npcName, signal }]。
     checkMissingKnowledge: function(text, toolResults) {
@@ -411,6 +471,8 @@
           playerKnown: false,
           knownFacts: [],
           recentEvents: [],
+          // P78：AI 增改的台词组（卡带 voice.cues 之外的一层）
+          voiceCues: [],
           keywords: (def0 && Array.isArray(def0.keywords)) ? def0.keywords.slice() : [],
           // 伪装
           revealed: true,          // 默认没伪装 = 已揭示
@@ -426,6 +488,7 @@
       if (rt.alive == null) rt.alive = true;
       if (!Array.isArray(rt.knownFacts)) rt.knownFacts = [];
       if (!Array.isArray(rt.recentEvents)) rt.recentEvents = [];
+      if (!Array.isArray(rt.voiceCues)) rt.voiceCues = [];
       if (!Array.isArray(rt.keywords)) rt.keywords = [];
       if (rt.lastSeenRound == null) rt.lastSeenRound = 0;
       if (rt.lastTouchedRound == null) rt.lastTouchedRound = 0;

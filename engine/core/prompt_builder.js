@@ -266,6 +266,7 @@ var PromptBuilder = {
     lines.push('位置：set_location(locationId, reason?) / list_destinations(scope?)（scope: all/children/siblings）');
     lines.push('NPC 管理：add_keyword(id, keyword) / npc_enter(id) / npc_leave(id, to?)（to 可选 "dormant"|"offstage"，默认 dormant）');
     lines.push('NPC 知识：npc_knows(id, text, source?, sourceNote?, origin?, unverified?)（source: witness/told/rumor/public/deduced/misconception/manual/legacy，默认 deduced；玩家本人告诉 NPC 的事用 origin:"player" + unverified:true，表示「玩家这么说过」而非「已确认的事实」）');
+    lines.push('NPC 台词：npc_voice({action:"set"|"remove"|"list", id, kind, name, lines})（kind: emotion 按情绪 / npc 对这个 NPC / like 对喜欢的事物 / dislike 对讨厌的事物；同名同 kind 整组替换；只改本存档，卡带原稿不动。角色表现出稳定口吻、或你对某个情境下他会怎么说有了把握时再写，不要每回合都写）');
     lines.push('手机讯息：info_send(to, text)（给某 NPC 或玩家发一条讯息，剧情外，玩家在手机里看到）');
     lines.push('手机广播：info_broadcast(title, body, opts)（publicity: 暗中/半公开/公开/轰动；scope: 当事人/家庭/势力/城市/世界）');
     lines.push('手机查询：info_read(kind, limit)（查看你已经发过、玩家看过的讯息与广播，避免重复发送）');
@@ -1121,12 +1122,108 @@ var PromptBuilder = {
       if (v.examples && v.examples.length) rows.push('例句：' + v.examples.join(' / '));
       if (v.taboo && v.taboo.length) rows.push('禁忌：' + v.taboo.join(' / '));
       if (v.catchphrase && v.catchphrase.length) rows.push('口头禅：' + v.catchphrase.join(' / '));
+      var cues = this.buildNpcCueLines(def, v.cues || [], presentIds);
+      if (cues.length) rows.push('此刻：' + cues.join(' / '));
       var block = rows.join('\n');
-      if (block.length > 200) block = block.slice(0, 200) + '…';
+      if (block.length > 240) block = block.slice(0, 240) + '…';
       out.push(block);
       used++;
     }
     return out.length ? out.join('\n') : '';
+  },
+
+  // ★ P78：台词库（voice.cues）匹配。
+  //   只喂「此刻用得上」的 1–3 条，不整本塞。优先级：
+  //     1) 情绪：运行时 mood 与组名同名 → 该组；否则「通用/默认/*」组
+  //     2) 对某 NPC：目标在当前在场名单里 → 注入
+  //     3) 喜欢/讨厌：组名命中最近一句玩家输入或当前地点名
+  //   卡带 cues ∪ 运行时 voiceCues（AI 改的），同 kind+同名以运行时为准。
+  buildNpcCueLines(def, baseCues, presentIds) {
+    var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
+    var cues = [];
+    var sig = {};
+    var pushCue = function (c) {
+      if (!c || !c.name) return;
+      var key = (c.kind || 'emotion') + '|' + c.name;
+      sig[key] = cues.length;
+      cues.push(c);
+    };
+    (baseCues || []).forEach(pushCue);
+    // 运行时层（AI 增改）覆盖同 kind+同名
+    var rt = null;
+    try {
+      if (typeof NpcRuntime !== 'undefined' && NpcRuntime && typeof NpcRuntime.get === 'function') {
+        rt = NpcRuntime.get(def.id || def.name);
+      }
+    } catch (e) {}
+    if (rt && Array.isArray(rt.voiceCues)) {
+      rt.voiceCues.forEach(function (c) {
+        if (!c || !c.name) return;
+        var key = (c.kind || 'emotion') + '|' + c.name;
+        if (sig[key] != null) cues[sig[key]] = c;
+        else pushCue(c);
+      });
+    }
+    if (!cues.length) return [];
+
+    // 场景文本：最近一句玩家输入 + 当前地点名
+    var hay = '';
+    try {
+      var hist = (GameState && GameState.chatHistory) || [];
+      for (var i = hist.length - 1; i >= 0; i--) {
+        if (hist[i] && hist[i].role === 'user') { hay += String(hist[i].content || ''); break; }
+      }
+    } catch (e2) {}
+    try {
+      var loc = (typeof NpcRuntime !== 'undefined' && NpcRuntime && typeof NpcRuntime.getLocation === 'function') ? NpcRuntime.getLocation() : null;
+      if (loc && loc.name) hay += ' ' + loc.name;
+    } catch (e3) {}
+    var mood = (rt && rt.mood) ? String(rt.mood).trim() : '';
+
+    var picked = [];
+    var addFrom = function (cue, why) {
+      if (!cue || !Array.isArray(cue.lines)) return;
+      cue.lines.forEach(function (ln) {
+        if (picked.length >= 3) return;
+        if (ln && picked.indexOf(ln) < 0) picked.push(ln);
+      });
+    };
+
+    // 1) 情绪组
+    var moodCue = null;
+    var genericCue = null;
+    cues.forEach(function (c) {
+      if (c.kind !== 'emotion') return;
+      if (mood && c.name === mood) moodCue = c;
+      if (['通用', '默认', '平常', '*'].indexOf(c.name) >= 0) genericCue = c;
+    });
+    addFrom(moodCue || genericCue);
+
+    // 2) 对某 NPC（目标在场才注入）
+    cues.forEach(function (c) {
+      if (picked.length >= 3) return;
+      if (c.kind !== 'npc') return;
+      var tid = c.name;
+      var targetDef = null;
+      try {
+        var npcs = (card && card.worldbook && Array.isArray(card.worldbook.npcs)) ? card.worldbook.npcs : [];
+        for (var j = 0; j < npcs.length; j++) {
+          if (npcs[j] && (npcs[j].id === tid || npcs[j].name === tid)) { targetDef = npcs[j]; break; }
+        }
+      } catch (e4) {}
+      var targetKey = targetDef ? (targetDef.id || targetDef.name) : tid;
+      if (presentIds.indexOf(targetKey) >= 0) addFrom(c);
+    });
+
+    // 3) 喜欢 / 讨厌（话题词命中场景）
+    if (hay) {
+      cues.forEach(function (c) {
+        if (picked.length >= 3) return;
+        if (c.kind !== 'like' && c.kind !== 'dislike') return;
+        if (hay.indexOf(c.name) >= 0) addFrom(c);
+      });
+    }
+    return picked;
   },
 
   // ★ P4：预算刹车入口。under budget ⇒ 与旧版逐字一致（level 0）。

@@ -153,6 +153,31 @@ function NpcPanel(props) {
         voice = def.voice;
       }
     } catch (e) { voice = null; }
+    // P78：当前情绪组的台词（卡带 cues 与 AI 写入的运行时 voiceCues 合并，同名以运行时为准）
+    var cueLines = (function () {
+      try {
+        var list = (voice && Array.isArray(voice.cues)) ? voice.cues.slice() : [];
+        if (rt && Array.isArray(rt.voiceCues)) {
+          rt.voiceCues.forEach(function (c) {
+            if (!c || !c.name) return;
+            var hit = -1;
+            for (var i = 0; i < list.length; i++) {
+              if (list[i] && list[i].kind === (c.kind || 'emotion') && list[i].name === c.name) { hit = i; break; }
+            }
+            if (hit >= 0) list[hit] = c; else list.push(c);
+          });
+        }
+        var mood = (rt && rt.mood) ? String(rt.mood).trim() : '';
+        var moodCue = null, genCue = null;
+        list.forEach(function (c) {
+          if (!c || c.kind !== 'emotion') return;
+          if (mood && c.name === mood) moodCue = c;
+          if (['通用', '默认', '平常', '*'].indexOf(c.name) >= 0) genCue = c;
+        });
+        var pick = moodCue || genCue;
+        return (pick && Array.isArray(pick.lines)) ? pick.lines.slice(0, 2) : [];
+      } catch (e2) { return []; }
+    })();
     return (
       <View key={npcId} style={styles.card}>
         <View style={styles.headRow}>
@@ -172,6 +197,7 @@ function NpcPanel(props) {
             {voice.examples && voice.examples.length ? <Text style={styles.listItem}>{'例句：' + voice.examples.join(' / ')}</Text> : null}
             {voice.taboo && voice.taboo.length ? <Text style={styles.listItem}>{'禁忌：' + voice.taboo.join(' / ')}</Text> : null}
             {voice.catchphrase && voice.catchphrase.length ? <Text style={styles.listItem}>{'口头禅：' + voice.catchphrase.join(' / ')}</Text> : null}
+            {cueLines.length ? <Text style={styles.listItem}>{'此刻：' + cueLines.join(' / ')}</Text> : null}
           </View>
         ) : null}
         {!rt ? (

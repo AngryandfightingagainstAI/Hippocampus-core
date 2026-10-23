@@ -37,6 +37,11 @@ var SafeArea = require('react-native-safe-area-context');
 
 var useTheme = require('../use_theme.js').useTheme;
 var useNavigation = require('../navigation.js').useNavigation;
+// P77b：创角页的输入框也要避开输入法（与人设页同一套做法）。
+//   症状：填姓名/属性的数字框在页面下半部时，键盘一弹就把框整块盖住，
+//   页面也不上移（targetSdk 36 edge-to-edge 后 windowSoftInputMode 不再缩窗口，
+//   判据见 rn/use_keyboard_inset.js 的注释）。
+var useKeyboardInset = require('../use_keyboard_inset.js').useKeyboardInset;
 var Model = require('../home_model.js');
 var CF = require('../create_flow_model.js');
 // P10·A2：建档前起名走 promptOpen（OverlayHost.PromptModal，根层已挂；Promise<string|null>）
@@ -84,6 +89,29 @@ function CreateScreen() {
   var fonts = tk.fonts;
   var nav = useNavigation();
   var insets = SafeArea.useSafeAreaInsets();
+
+  // P77b：键盘高度 + 聚焦即滚进可视区（判据与做法同 rn/screens/PortraitScreen.js）
+  var kbInset = useKeyboardInset();
+  var scrollRef = React.useRef(null);
+  var fieldY = React.useRef({});
+  function rememberY(key) {
+    return function (e) {
+      var y = e && e.nativeEvent && e.nativeEvent.layout ? e.nativeEvent.layout.y : 0;
+      if (y > 0) fieldY.current[key] = y;
+    };
+  }
+  function revealField(key) {
+    var y = fieldY.current[key];
+    var sv = scrollRef.current;
+    if (y == null || !sv || !sv.scrollTo) return;
+    try { sv.scrollTo({ y: Math.max(0, y - 12), animated: true }); } catch (e1) { /* */ }
+  }
+  function focusTo(key) {
+    return function () {
+      revealField(key);
+      setTimeout(function () { revealField(key); }, 260);
+    };
+  }
 
   // 数据源：当前主页卡（rn/home_model.js:19/51 的 setHomeCardId 链）
   var picked = Model.getHomePicked();
@@ -647,7 +675,7 @@ function CreateScreen() {
           // P23·①：显式清空（''）不回填默认值，否则删掉默认数字后没法重输
           var shown = CF.shownValue(fd, val, isAttr);
           return (
-            <View key={key} style={styles.fieldWrap}>
+            <View key={key} style={styles.fieldWrap} onLayout={rememberY(key)}>
               <Text style={styles.fieldLabel}>{(fd.label || key) + (fd.required ? '（必填）' : '')}</Text>
               {fd.type === 'number' ? (
                 <TextInput
@@ -656,6 +684,7 @@ function CreateScreen() {
                   value={shown === '' || shown == null ? '' : String(shown)}
                   onChangeText={function (v) { onNumberChange(key, v); }}
                   onBlur={function () { onNumberBlur(key, fd); }}
+                  onFocus={focusTo(key)}
                   placeholder={fd.placeholder || fd.label || key}
                   placeholderTextColor={c.faint}
                 />
@@ -682,6 +711,7 @@ function CreateScreen() {
                   style={styles.input}
                   value={shown === '' || shown == null ? '' : String(shown)}
                   onChangeText={function (v) { setField(key, v); }}
+                  onFocus={focusTo(key)}
                   placeholder={fd.placeholder || fd.label || key}
                   placeholderTextColor={c.faint}
                 />
@@ -1078,7 +1108,12 @@ function CreateScreen() {
         <Text style={styles.title}>{'新建存档'}</Text>
         <View style={styles.headerPad} />
       </View>
-      <ScrollView style={styles.scroll} contentContainerStyle={styles.body} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        ref={scrollRef}
+        style={styles.scroll}
+        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + 24 + kbInset }]}
+        keyboardShouldPersistTaps="handled"
+      >
         {!card ? (
           <Text style={styles.empty}>{EmptyTexts.NO_CARDS}</Text>
         ) : (

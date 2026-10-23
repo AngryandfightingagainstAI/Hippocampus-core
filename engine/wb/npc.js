@@ -38,7 +38,10 @@ var WB_NPC = {
       weight: 5, keywords: [],
       abilities: [], likes: [], dislikes: [],
       factions: [], relations: [], periods: [],
-      desc: '', tags: []
+      desc: '', tags: [],
+      // P78：口吻 + 台词库。voice 是旁挂段（运行期注入，卡带可选），
+      //   cues 四类：emotion（按情绪）/ npc（对某个 NPC）/ like / dislike。
+      voice: { style: '', examples: [], taboo: [], catchphrase: [], cues: [] }
     });
     WB.DirtyGuard.mark('WB_NPC');
     this._curIdx = this._data.length - 1;
@@ -92,6 +95,70 @@ var WB_NPC = {
     var p = this._data[idx].periods[pi];
     if (!Array.isArray(p.timeRange)) p.timeRange = [null, null];
     p.timeRange[pos] = value === '' ? null : Number(value);
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+
+  // ============ P78 · 台词库（voice.cues）编辑 ============
+  // 四类：emotion（按情绪，name 可自定义）/ npc（对某个 NPC，name 存目标 id 或名字）
+  //       like（对喜欢的事物）/ dislike（对讨厌的事物）。
+  _voiceBox: function (idx) {
+    var n = this._data[idx];
+    if (!n) return null;
+    if (!n.voice || typeof n.voice !== 'object') {
+      n.voice = { style: '', examples: [], taboo: [], catchphrase: [], cues: [] };
+    }
+    if (!Array.isArray(n.voice.cues)) n.voice.cues = [];
+    return n.voice;
+  },
+  setVoiceField: function (idx, key, value) {
+    var v = this._voiceBox(idx);
+    if (!v) return;
+    v[key] = value;
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+  setVoiceList: function (idx, key, value) {
+    var v = this._voiceBox(idx);
+    if (!v) return;
+    v[key] = String(value || '').split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+  addCue: function (idx, kind) {
+    var v = this._voiceBox(idx);
+    if (!v) return -1;
+    v.cues.push({ id: WB.uid('cue'), kind: kind || 'emotion', name: '', lines: [''] });
+    WB.DirtyGuard.mark('WB_NPC');
+    return v.cues.length - 1;
+  },
+  delCue: function (idx, ci) {
+    var v = this._voiceBox(idx);
+    if (!v || !v.cues[ci]) return;
+    v.cues.splice(ci, 1);
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+  setCue: function (idx, ci, key, value) {
+    var v = this._voiceBox(idx);
+    if (!v || !v.cues[ci]) return;
+    v.cues[ci][key] = value;
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+  addCueLine: function (idx, ci) {
+    var v = this._voiceBox(idx);
+    if (!v || !v.cues[ci]) return -1;
+    if (!Array.isArray(v.cues[ci].lines)) v.cues[ci].lines = [];
+    v.cues[ci].lines.push('');
+    WB.DirtyGuard.mark('WB_NPC');
+    return v.cues[ci].lines.length - 1;
+  },
+  setCueLine: function (idx, ci, li, value) {
+    var v = this._voiceBox(idx);
+    if (!v || !v.cues[ci] || !Array.isArray(v.cues[ci].lines)) return;
+    v.cues[ci].lines[li] = value;
+    WB.DirtyGuard.mark('WB_NPC');
+  },
+  delCueLine: function (idx, ci, li) {
+    var v = this._voiceBox(idx);
+    if (!v || !v.cues[ci] || !Array.isArray(v.cues[ci].lines)) return;
+    v.cues[ci].lines.splice(li, 1);
     WB.DirtyGuard.mark('WB_NPC');
   },
 

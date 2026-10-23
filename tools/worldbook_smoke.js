@@ -575,7 +575,7 @@ function runQ() {
   //   engine/num_editor.js。桌面同名/独有件只打软提示。
   var REF = [
     ['engine/wb_common.js', 3587, 'EB5BC8F4DFA284CC33315B3BBACEECAD'],
-    ['engine/wb/npc.js', 4600, '734B19BB8AD27B4652DD9FD7CE18B270'],
+    ['engine/wb/npc.js', 7135, '654201D085A47A697C95800D1041C7AB'],
     ['engine/wb/faction.js', 3425, '8287CA7F9C56EE56D14F0D87832F08CA'],
     ['engine/wb/item.js', 2173, '6995D33AC91854172A382D9FD6C87FF7'],
     ['engine/wb/skill.js', 2937, '17108CA22A613A459C315D5790E63A37'],
@@ -600,7 +600,8 @@ function runQ() {
   var wbTotal = 0;
   ['engine/wb_common.js'].concat(fs.readdirSync(path.join(root, 'engine', 'wb')).map(function (f) { return 'engine/wb/' + f; }))
     .forEach(function (rel) { wbTotal += lfBuf(path.join(root, rel)).length; });
-  eq('Q RN engine/wb_common.js + engine/wb/*.js 13 文件合计字节（LF 口径）', wbTotal, 54163);
+  // P78 台词库批：npc.js 补 voice.cues 编辑（+2535 B），合计 54163 → 56698。
+eq('Q RN engine/wb_common.js + engine/wb/*.js 13 文件合计字节（LF 口径）', wbTotal, 56698);
   // 桌面独有件/同名件软提示：刻意的跨仓参考，不参与断言
   ['worldbook/', 'engine/editor.js', 'engine/web_search.js'].forEach(function (rel) {
     var dp = path.join(DESK, rel);

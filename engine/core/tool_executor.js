@@ -53,12 +53,13 @@
             id: n.id, name: n.name, weight: n.weight, keywords: n.keywords,
             gender: n.gender, desc: n.desc, abilities: n.abilities,
             likes: n.likes, dislikes: n.dislikes, tags: n.tags,
-            factions: n.factions, relations: n.relations
+            factions: n.factions, relations: n.relations, voice: n.voice || null
           },
           runtime: rt ? {
             status: rt.status, sceneWeight: rt.sceneWeight, alive: rt.alive,
             mood: rt.mood, locationId: rt.locationId, playerRelation: rt.playerRelation,
             knownFacts: rt.knownFacts, recentEvents: rt.recentEvents,
+            voiceCues: rt.voiceCues || [],
             lastSeenRound: rt.lastSeenRound
           } : null
         }
@@ -259,6 +260,30 @@
         if (!r.ok) return { ok: false, reason: r.reason || '搜索失败', searchMeta: r };
         return { ok: true, type: 'search', type2: 'search', searchMeta: r, keyword: kw };
       })() };
+    }},
+    // ★ P78：台词库。AI 想把「这个角色在这种情境下会怎么说」记下来时用。
+    //   只写运行时层（npc_runtime.json），卡带 voice.cues 原稿不动；同 kind + 同名整组替换。
+    //   a = { action:'set'|'remove'|'list', id, kind, name, lines:[...] }
+    //   id = NPC（id 或名字）；name = 台词组名（情绪名 / 对方 id / 话题词）。
+    npc_voice: { run: function(a) {
+      if (typeof NpcRuntime === 'undefined' || !NpcRuntime) return { ok: false, reason: 'NPC 运行时未加载' };
+      const act = String(a.action || 'set').toLowerCase();
+      const id = String(a.id || a.npc || a.npcId || '').trim();
+      if (!id) return { ok: false, reason: '缺少 NPC（id 或名字）' };
+      const cueName = String(a.name || a.cueName || a.cue || a.mood || '').trim();
+      if (act === 'list') {
+        const list = NpcRuntime.listVoiceCues(id) || [];
+        return { ok: true, type: 'npc_voice', action: 'list', id: id, cues: list };
+      }
+      if (act === 'remove') {
+        const r = NpcRuntime.removeVoiceCue(id, a.kind, cueName);
+        return r && r.ok ? { ok: true, type: 'npc_voice', action: 'remove', id: id, removed: r.removed }
+                         : { ok: false, reason: (r && r.reason) || '删除失败' };
+      }
+      const lines = Array.isArray(a.lines) ? a.lines : (a.line ? [a.line] : []);
+      const r = NpcRuntime.setVoiceCue(id, { kind: a.kind, name: cueName, lines: lines });
+      if (!r || !r.ok) return { ok: false, reason: (r && r.reason) || '写入失败' };
+      return { ok: true, type: 'npc_voice', action: 'set', id: r.id, cue: r.cue, replaced: r.replaced, total: r.total };
     }}
   },
 

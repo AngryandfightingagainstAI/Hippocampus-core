@@ -356,6 +356,130 @@ function NpcEditor(props) {
     );
   }
 
+  // ---- P78：台词库（voice.cues）----
+  // 四类：emotion（按情绪，情绪名可自定义）/ npc（对某个 NPC）/ like / dislike。
+  // 注入规则（prompt_builder.buildNpcCueLines）：情绪按运行时 mood 同名先命中、否则「通用」；
+  //   npc 组只在目标在场时注入；like/dislike 按话题词命中最近一句玩家输入或当前地点。
+  function voiceCard() {
+    var v = n.voice || {};
+    var cues = Array.isArray(v.cues) ? v.cues : [];
+    var KIND_TITLE = { emotion: '情绪', npc: '对某个 NPC', like: '喜欢的事物', dislike: '讨厌的事物' };
+    var KIND_HINT = {
+      emotion: '情绪名写运行时 mood 会用到的词（愤怒 / 温柔 / 疲惫），或写「通用」当默认',
+      npc: '选一个 NPC；只在对方在场时注入这几句',
+      like: '话题词命中最近一句玩家输入或当前地点时注入',
+      dislike: '同「喜欢的事物」，命中时注入'
+    };
+    function cueRow(cue, ci) {
+      var kind = cue.kind || 'emotion';
+      var lines = Array.isArray(cue.lines) ? cue.lines : [];
+      return React.createElement(
+        View,
+        { key: 'cue' + ci, style: { borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm, padding: 8, marginBottom: 8 } },
+        React.createElement(
+          View,
+          { style: { flexDirection: 'row', gap: 8, alignItems: 'center', marginBottom: 6 } },
+          kind === 'npc'
+            ? React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Controls.SetSelect, {
+                value: cue.name || '', options: npcOpts,
+                onChange: function (val) { MOD.setCue(idx, ci, 'name', val); refresh(); }
+              })
+            )
+            : React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Controls.SetTextInput, {
+                value: txt(cue.name), placeholder: kind === 'emotion' ? '情绪名（可自定义，写「通用」当默认）' : '话题词',
+                onChangeText: function (val) { MOD.setCue(idx, ci, 'name', val); }
+              })
+            ),
+          delBtn(function () { MOD.delCue(idx, ci); refresh(); })
+        ),
+        React.createElement(Controls.SetNote, { first: true }, KIND_HINT[kind] || ''),
+        lines.map(function (ln, li) {
+          return React.createElement(
+            View,
+            { key: 'ln' + li, style: { flexDirection: 'row', gap: 6, alignItems: 'flex-start', marginBottom: 4 } },
+            React.createElement(
+              View,
+              { style: { flex: 1 } },
+              React.createElement(Controls.SetTextInput, {
+                value: txt(ln), placeholder: '这个情境下他/她会怎么说', multiline: true, rows: 1,
+                onChangeText: function (val) { MOD.setCueLine(idx, ci, li, val); }
+              })
+            ),
+            delBtn(function () { MOD.delCueLine(idx, ci, li); refresh(); })
+          );
+        }),
+        React.createElement(
+          View,
+          { style: { marginTop: 2 } },
+          React.createElement(Controls.SetButton, {
+            label: '+ 加一句',
+            onPress: function () { MOD.addCueLine(idx, ci); refresh(); }
+          })
+        )
+      );
+    }
+    function kindBlock(kind) {
+      var group = [];
+      cues.forEach(function (cue, ci) {
+        if ((cue.kind || 'emotion') === kind) group.push(cueRow(cue, ci));
+      });
+      return React.createElement(
+        View,
+        { key: 'kind' + kind, style: { marginTop: 8 } },
+        React.createElement(Text, { style: { fontSize: f.sm, color: c.ink, marginBottom: 4 } }, '【' + KIND_TITLE[kind] + '】'),
+        group.length ? null : React.createElement(Controls.SetNote, { first: true }, '（还没有）'),
+        group,
+        React.createElement(Controls.SetButton, {
+          label: '+ 添加一组' + KIND_TITLE[kind],
+          onPress: function () { MOD.addCue(idx, kind); refresh(); }
+        })
+      );
+    }
+    return React.createElement(
+      Controls.SetCard,
+      { title: '台词库（给 AI 参考）' },
+      React.createElement(Controls.SetNote, { first: true }, '按情境给 AI 参考台词，游戏里只喂当前用得上的 1–3 条，不会整本塞进提示词。'),
+      React.createElement(Controls.SetNote, { first: false }, '这些是「参考」不是「必须照念」；AI 在游戏里也能自己补写，只影响本存档。'),
+      React.createElement(
+        Controls.SetRow,
+        { label: '风格' },
+        React.createElement(
+          View,
+          { style: { flex: 1 } },
+          React.createElement(Controls.SetTextInput, {
+            value: txt(v.style), placeholder: '一句话风格描述（例：说话短促，句尾常带反问）', multiline: true, rows: 2,
+            onChangeText: function (val) { MOD.setVoiceField(idx, 'style', val); }
+          })
+        )
+      ),
+      React.createElement(
+        Controls.SetRow,
+        { label: '例句（逗号分隔）' },
+        smallInput(listText(v.examples), '别烦我。 / 你自己看着办', function (val) { MOD.setVoiceList(idx, 'examples', val); }, 200)
+      ),
+      React.createElement(
+        Controls.SetRow,
+        { label: '禁忌（逗号分隔）' },
+        smallInput(listText(v.taboo), '不说软话 / 不道歉', function (val) { MOD.setVoiceList(idx, 'taboo', val); }, 200)
+      ),
+      React.createElement(
+        Controls.SetRow,
+        { label: '口头禅（逗号分隔）' },
+        smallInput(listText(v.catchphrase), '啧 / 随你', function (val) { MOD.setVoiceList(idx, 'catchphrase', val); }, 200)
+      ),
+      kindBlock('emotion'),
+      kindBlock('npc'),
+      kindBlock('like'),
+      kindBlock('dislike')
+    );
+  }
+
   // ---- 主表单（renderNpcBody :134-211）----
   function body() {
     var w = n.weight != null ? n.weight : 5;
@@ -453,7 +577,8 @@ function NpcEditor(props) {
       ),
       factionCard(),
       relationCard(),
-      periodCard()
+      periodCard(),
+      voiceCard()
     );
   }
 

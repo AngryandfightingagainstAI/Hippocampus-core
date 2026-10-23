@@ -178,6 +178,105 @@ var CardValidator = {
           out.push('NPC「' + who + '」的 voice.catchphrase 有 ' + arr.length + ' 条，只取前 4 条');
         }
       }
+
+      // P78：台词库 cues
+      if (v.cues != null) {
+        if (!Array.isArray(v.cues)) {
+          out.push('NPC「' + who + '」的 voice.cues 必须是数组，已忽略');
+          continue;
+        }
+        if (v.cues.length > 40) {
+          out.push('NPC「' + who + '」的 voice.cues 有 ' + v.cues.length + ' 组，只取前 40 组');
+        }
+        const seen = {};
+        const names = {};
+        npcs.forEach(function (d) {
+          if (!d) return;
+          if (d.id) names[d.id] = 1;
+          if (d.name) names[d.name] = 1;
+        });
+        v.cues.slice(0, 40).forEach(function (cue, i) {
+          const at = 'NPC「' + who + '」的 voice.cues[' + i + ']';
+          if (!cue || typeof cue !== 'object' || Array.isArray(cue)) {
+            out.push(at + ' 必须是对象，已跳过');
+            return;
+          }
+          if (cue.kind != null && ['emotion', 'npc', 'like', 'dislike'].indexOf(cue.kind) < 0) {
+            out.push(at + '.kind「' + cue.kind + '」不认识（只能是 emotion / npc / like / dislike），按 emotion 处理');
+          }
+          const name = (typeof cue.name === 'string') ? cue.name.trim() : '';
+          if (!name) {
+            out.push(at + '.name 为空（情绪名 / 目标 NPC / 话题词都不写就没法匹配），已跳过');
+            return;
+          }
+          if (cue.kind === 'npc' && !names[name]) {
+            out.push(at + ' 指向的 NPC「' + name + '」不在这张卡带的 worldbook.npcs 里，运行时匹配不到');
+          }
+          const kind = (['emotion', 'npc', 'like', 'dislike'].indexOf(cue.kind) >= 0) ? cue.kind : 'emotion';
+          const sig = kind + '|' + name;
+          if (seen[sig]) {
+            out.push(at + ' 与前面同 kind + 同名的分组重复，只保留第一组');
+          } else {
+            seen[sig] = 1;
+          }
+          if (!Array.isArray(cue.lines) || !cue.lines.length) {
+            out.push(at + '.lines 为空，已跳过');
+          } else if (cue.lines.length > 6) {
+            out.push(at + '.lines 有 ' + cue.lines.length + ' 条，只取前 6 条');
+          }
+          if (cue.period != null && typeof cue.period !== 'string') {
+            out.push(at + '.period 必须是字符串（时期名），已忽略');
+          }
+          if (cue.timeRange != null && (!Array.isArray(cue.timeRange) || cue.timeRange.length !== 2)) {
+            out.push(at + '.timeRange 要写成 [起始年, 结束年]，已忽略');
+          }
+        });
+      }
+    }
+    return out;
+  },
+
+  // P78：台词库（voice.cues）的合法 kind。emotion=按情绪、npc=对某个 NPC、
+  //   like=对喜欢的事物、dislike=对讨厌的事物。情绪名可自定义（就是 kind=emotion 的 name）。
+  VOICE_CUE_KINDS: ['emotion', 'npc', 'like', 'dislike'],
+
+  // P78：把 voice.cues 归一成 [{id,kind,name,lines,period,timeRange}]。
+  //   规则：kind 不在白名单 → 按 emotion 处理；name 为空 → 丢弃（没有触发条件的台词没法注入）；
+  //         lines 去空、每条 ≤80 字、每组 ≤6 条；整体 ≤40 组；period/timeRange 只存档备用（二期判定）。
+  normalizeCues(raw) {
+    const out = [];
+    if (!Array.isArray(raw)) return out;
+    const KINDS = this.VOICE_CUE_KINDS;
+    const clean = (s, max) => {
+      if (typeof s !== 'string') return '';
+      const t = s.replace(/\s+/g, ' ').trim();
+      return t.length > max ? t.slice(0, max) + '…' : t;
+    };
+    for (const it of raw) {
+      if (out.length >= 40) break;
+      if (!it || typeof it !== 'object' || Array.isArray(it)) continue;
+      const name = clean(it.name, 24);
+      if (!name) continue;
+      const kind = KINDS.indexOf(it.kind) >= 0 ? it.kind : 'emotion';
+      const lines = [];
+      if (Array.isArray(it.lines)) {
+        for (const ln of it.lines) {
+          const t = clean(ln, 80);
+          if (!t) continue;
+          lines.push(t);
+          if (lines.length >= 6) break;
+        }
+      }
+      if (!lines.length) continue;
+      const cue = { id: clean(it.id, 40) || (kind + ':' + name), kind: kind, name: name, lines: lines };
+      const period = clean(it.period, 20);
+      if (period) cue.period = period;
+      if (Array.isArray(it.timeRange) && it.timeRange.length === 2) {
+        const a = parseInt(it.timeRange[0], 10);
+        const b = parseInt(it.timeRange[1], 10);
+        if (isFinite(a) && isFinite(b)) cue.timeRange = [Math.min(a, b), Math.max(a, b)];
+      }
+      out.push(cue);
     }
     return out;
   },
@@ -205,8 +304,9 @@ var CardValidator = {
     const examples = list(raw.examples, 3, 60);
     const taboo = list(raw.taboo, 6, 40);
     const catchphrase = list(raw.catchphrase, 4, 40);
-    if (!style && !examples.length && !taboo.length && !catchphrase.length) return null;
-    return { style: style, examples: examples, taboo: taboo, catchphrase: catchphrase };
+    const cues = (typeof this.normalizeCues === 'function') ? this.normalizeCues(raw.cues) : [];
+    if (!style && !examples.length && !taboo.length && !catchphrase.length && !cues.length) return null;
+    return { style: style, examples: examples, taboo: taboo, catchphrase: catchphrase, cues: cues };
   },
 
   // ============ P43 · 兼容字段归一（让文档承诺成真） ============

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // P33 · 手机版体验 smoke（纯 Node 断言，零 RN 运行时）
 // 用户 m07904 四条裁决的守卫：
 //   ① 叙事屏菜单入口放大带字 + 顶部横滑状态条下线（数值搬进侧栏抽屉）
@@ -246,6 +246,34 @@ check('U-7ba 人设页长文随字数长高且能展开/收起',
   portrait.indexOf('展开 ▾') >= 0 && portrait.indexOf('收起 ▴') >= 0);
 check('U-7bb 人设页聚焦输入框会滚进可视区（scrollTo + onFocus）',
   /scrollTo\(\{ y:/.test(portrait) && /onFocus=\{focusTo/.test(portrait));
+
+// ---- P77b（用户 m01337「改」）：创角页同类问题 ----
+var create = read('rn/screens/CreateScreen.js');
+check('U-7bc 创角页接了键盘避让', create.indexOf('useKeyboardInset()') >= 0 &&
+  /paddingBottom[\s\S]{0,100}kbInset/.test(create));
+check('U-7bd 创角页字段聚焦会滚进可视区（onLayout + onFocus）',
+  /onLayout=\{rememberY\(key\)\}/.test(create) &&
+  (create.match(/onFocus=\{focusTo\(key\)\}/g) || []).length >= 2 &&
+  /scrollTo\(\{ y:/.test(create));
+check('U-7be 创角页 ScrollView 挂了 ref（否则拿不到滚动句柄）',
+  /ref=\{scrollRef\}/.test(create));
+
+// ---- P78（用户 m01511「做吧」）：世界书 NPC 台词库 ----
+var npcEditor = read('rn/screens/settings/worldbook/npcEditor.js');
+check('U-7bf 世界书 NPC 编辑器有台词库卡片', npcEditor.indexOf('台词库（给 AI 参考）') >= 0);
+check('U-7bg 台词库四类分组都在（情绪 / 对某 NPC / 喜欢 / 讨厌）',
+  ['emotion', 'npc', 'like', 'dislike'].every(function (k) {
+    return npcEditor.indexOf("kindBlock('" + k + "')") >= 0;
+  }));
+check('U-7bh 台词库每组可加/删/改台词行',
+  npcEditor.indexOf('MOD.addCue(idx, kind)') >= 0 &&
+  npcEditor.indexOf('MOD.addCueLine(idx, ci)') >= 0 &&
+  npcEditor.indexOf('MOD.setCueLine(idx, ci, li, val)') >= 0 &&
+  npcEditor.indexOf('MOD.delCueLine(idx, ci, li)') >= 0 &&
+  npcEditor.indexOf('MOD.delCue(idx, ci)') >= 0);
+var npcPanel = read('rn/panels/NpcPanel.js');
+check('U-7bi NPC 面板显示当前情绪组台词（此刻 + 运行时 voiceCues）',
+  npcPanel.indexOf("'此刻：'") >= 0 && npcPanel.indexOf('rt.voiceCues') >= 0);
 
 // ---- 真渲染：用 react-test-renderer 把 AutoInput 跑起来（不是 grep 源码） ----
 //   手法照 tools/theme_switch_smoke.js：Module._load 桩掉 react-native，react 用真的。
