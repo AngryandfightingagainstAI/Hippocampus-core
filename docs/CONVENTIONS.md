@@ -334,7 +334,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools/run_batch.js                   # 前置门 + 全量（95 套）（2026-10-22 阶段 1 后重记：新增 test_phase1_p0.js）
+node tools/run_batch.js                   # 前置门 + 全量（96 套）（2026-10-22 阶段 1 后重记：新增 test_phase1_p0.js）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）

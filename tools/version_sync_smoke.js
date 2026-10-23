@@ -26,8 +26,8 @@ var PC_HINT = process.env.HIPPOCAMPUS_PC || 'D:\\AI文游\\神秘小引擎测试
 var RN_HINT = process.env.HIPPOCAMPUS_RN || 'D:\\HippocampusRN';
 
 // ---- 版本基线（改版本时这里一起改）----
-var EXPECT_VERSION = '1.3.3';
-var MIN_VERSION_CODE = 10303;
+var EXPECT_VERSION = '1.3.4';
+var MIN_VERSION_CODE = 10304;
 
 var okN = 0, failN = 0;
 var skipN = 0;

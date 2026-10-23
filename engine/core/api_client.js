@@ -24,7 +24,8 @@ var ApiClient = {
     if (!key && !this._isLocalUrl(profile.baseUrl)) {
       throw new Error('API Key 为空');
     }
-    const maxTok = options.max_tokens != null ? options.max_tokens : (profile.max_tokens || 2048);
+    // 2026-10-23：最大输出不再有内置上限。0 / 空 = 不发送 max_tokens，交给服务端用模型默认值。
+    const maxTok = options.max_tokens != null ? options.max_tokens : profile.max_tokens;
     const temp = options.temperature != null ? options.temperature : (profile.temperature != null ? profile.temperature : 0.8);
     const topP = options.top_p != null ? options.top_p : (profile.top_p != null ? profile.top_p : 0.95);
 
@@ -73,7 +74,8 @@ var ApiClient = {
   },
 
   async _request(profile, url, key, model, messages, maxTokens, temperature, topP, jsonMode) {
-    const body = { model, messages, temperature, max_tokens: maxTokens, stream: false };
+    const body = { model, messages, temperature, stream: false };
+    if (Number(maxTokens) > 0) body.max_tokens = Number(maxTokens);
     if (topP != null) body.top_p = topP;
     if (jsonMode) body.response_format = { type: 'json_object' };
     const headers = { 'Content-Type': 'application/json' };
@@ -123,11 +125,12 @@ var ApiClient = {
     if (!model) throw new Error('模型名为空');
     if (!key && !this._isLocalUrl(profile.baseUrl)) throw new Error('API Key 为空');
 
-    var maxTok = options.max_tokens != null ? options.max_tokens : (profile.max_tokens || 2048);
+    var maxTok = options.max_tokens != null ? options.max_tokens : profile.max_tokens;
     var temp = options.temperature != null ? options.temperature : (profile.temperature != null ? profile.temperature : 0.8);
     var topP = options.top_p != null ? options.top_p : (profile.top_p != null ? profile.top_p : 0.95);
 
-    var body = { model: model, messages: messages, temperature: temp, max_tokens: maxTok, stream: true };
+    var body = { model: model, messages: messages, temperature: temp, stream: true };
+    if (Number(maxTok) > 0) body.max_tokens = Number(maxTok);
     if (topP != null) body.top_p = topP;
     var headers = { 'Content-Type': 'application/json' };
     if (key) headers['Authorization'] = 'Bearer ' + key;

@@ -283,7 +283,8 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
 
   var apiSrc = readSrc('engine/api_manager.js') || '';
   check('C2 api_manager 默认 mt=16384', apiSrc.indexOf('var mt = 16384;') >= 0);
-  check('C2b api_manager 思考模型抬升 < 16384 → 16384', apiSrc.indexOf('p.max_tokens < 16384') >= 0 && apiSrc.indexOf('p.max_tokens = 16384;') >= 0);
+  check('C2b api_manager 不再强制抬升（用户填多少就多少）', apiSrc.indexOf('p.max_tokens < 16384') < 0);
+  check('C2b2 api_manager 0 = 不限制（不再回落 16384）', apiSrc.indexOf('if (!(mt > 0)) mt = 0;') >= 0);
   try {
     var ApiManager = require(path.join(root, 'engine', 'api_manager.js'));
     var p = ApiManager.defaultProfile('测', '', 'deepseek-reasoner');
@@ -299,8 +300,9 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
   check('C3b audit 文案建议 16384 以上', auditSrc.indexOf('建议 16384 以上') >= 0);
 
   var apiTabSrc = readSrc('rn/screens/settings/ApiTab.js') || '';
-  check('C4 ApiTab 上限 131072', apiTabSrc.indexOf('max: 131072') >= 0);
-  check('C4b ApiTab 步长 1024', apiTabSrc.indexOf('step: 1024') >= 0);
+  check('C4 ApiTab 上限已取消（无 131072）', apiTabSrc.indexOf('131072') < 0);
+  check('C4c ApiTab 最大输出可自由填写（SetTextInput）', apiTabSrc.indexOf("placeholder: '不限制'") >= 0);
+  check('C4b ApiTab 提示「留空 / 0 = 不限制」', apiTabSrc.indexOf('留空 / 0 = 不限制') >= 0);
 
   var storySrc = readSrc('engine/story.js') || '';
   check('C5 story 主调用显式传 max_tokens', storySrc.indexOf('ApiClient.chat(toSend, __chatOpts)') >= 0);

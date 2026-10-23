@@ -292,10 +292,17 @@ function ApiTab() {
               onChange: function (v) { setField('top_p', v); }
             })),
           React.createElement(Controls.SetRow, { label: '最大输出' },
-            React.createElement(Controls.SetStepper, {
-              value: cs.max_tokens, min: 256, max: 131072, step: 1024,
-              onChange: function (v) { setField('max_tokens', v); }
+            React.createElement(Controls.SetTextInput, {
+              value: (cs.max_tokens != null && cs.max_tokens > 0) ? String(cs.max_tokens) : '',
+              placeholder: '不限制',
+              keyboardType: 'numeric',
+              onChangeText: function (v) {
+                var digits = String(v || '').replace(/[^0-9]/g, '');
+                setField('max_tokens', digits ? parseInt(digits, 10) : 0);
+              }
             })),
+          React.createElement(Text, { style: { color: c.muted, fontSize: 12, marginBottom: 8 } },
+            '留空 / 0 = 不限制（请求里不发送 max_tokens，用服务端默认值）。填多少就是多少，没有上限。'),
           React.createElement(Controls.SetSelect, {
             label: 'JSON Mode',
             value: cs.jsonMode,

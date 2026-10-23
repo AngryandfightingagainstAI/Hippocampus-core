@@ -68,8 +68,9 @@ function sendStream(text, callbacks) {
   catch (e) { return Promise.reject(new Error('组装消息失败：' + (e && e.message || e))); }
 
   var profile = (typeof ApiManager !== 'undefined') ? ApiManager.getActive() : null;
-  var maxTok = (profile && profile.max_tokens && profile.max_tokens > 0)
-    ? Math.min(profile.max_tokens, 8000) : 4000;
+  // 2026-10-23：不再封顶 8000。用户填多少就是多少；0 / 未设置 = 不限制（0 传到 ApiClient 即不发 max_tokens）
+  var maxTok = (profile && profile.max_tokens != null && isFinite(Number(profile.max_tokens)))
+    ? Math.max(0, Math.round(Number(profile.max_tokens))) : 4000;
 
   var full = '';
   var n = 0;
@@ -198,8 +199,9 @@ function extract() {
   catch (e) { return Promise.reject(new Error('构造整理 prompt 失败：' + (e && e.message || e))); }
 
   var profile = (typeof ApiManager !== 'undefined') ? ApiManager.getActive() : null;
-  var maxTok = (profile && profile.max_tokens && profile.max_tokens > 0)
-    ? Math.min(profile.max_tokens, 8000) : 4000;
+  // 2026-10-23：不再封顶 8000。用户填多少就是多少；0 / 未设置 = 不限制（0 传到 ApiClient 即不发 max_tokens）
+  var maxTok = (profile && profile.max_tokens != null && isFinite(Number(profile.max_tokens)))
+    ? Math.max(0, Math.round(Number(profile.max_tokens))) : 4000;
 
   return ApiClient.chat([{ role: 'user', content: sys }], { max_tokens: maxTok, temperature: 0.3 })
     .then(function(resp) {

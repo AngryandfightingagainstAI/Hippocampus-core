@@ -130,25 +130,18 @@
         Storage.setGlobal(g);
       }
       var changed = false;
-      a.profiles.forEach(function(p) {
-        if (isThinkingModel(p.model) && p.max_tokens && p.max_tokens < 16384) {
-          p.max_tokens = 16384;
-          changed = true;
+      a.profiles.forEach(function (p) {
+        // 2026-10-23：最大输出不设上限。缺字段补 16384（只是一个默认值）；
+        // 显式 0 / 空 / 负数 = 0，表示不限制（请求里不发送 max_tokens）；>0 原样保留。
+        if (p.max_tokens == null || p.max_tokens === '') {
+          p.max_tokens = 16384; changed = true;
+        } else {
+          var rawMt = Number(p.max_tokens);
+          var mt = isFinite(rawMt) ? Math.round(rawMt) : 0;
+          if (!(mt > 0)) mt = 0;
+          if (p.max_tokens !== mt) { p.max_tokens = mt; changed = true; }
         }
       });
-      // 一次性存量迁移（口径照 storage.js 的 dice_enabled_migrated_v1）：
-      // P5 只把「新配置默认值」与「思考模型」抬到 16384，老落盘配置不动，
-      // 用户机上那条历史默认配置仍是 2048（表现为起始输出上限过小）。
-      // 只认 ==2048（当年默认值，即用户从未动过）；用户显式设过的其它值一律不动。
-      // 迁移只写一次：落盘 + 版本标记；之后用户手动改回 2048 也不再自动抬升。
-      try {
-        if (!localStorage.getItem('max_tokens_migrated_v2')) {
-          a.profiles.forEach(function(p) {
-            if (p.max_tokens === 2048) { p.max_tokens = 16384; changed = true; }
-          });
-          localStorage.setItem('max_tokens_migrated_v2', '1');
-        }
-      } catch (e) {}
       if (changed) Storage.setGlobal(g);
       return a;
     },
