@@ -8,6 +8,19 @@
 // ============================================================
 
 (function() {
+  // 数值规则唯一实现（engine/core/stat_rules.js）：桌面由 index.html 先加载，RN 走 require。
+  // 属性键一律经 StatRules 归一，禁止在调用点手拼 'attr_' + key（阶段 A 修的就是这个）。
+  function _sr() {
+    if (typeof StatRules !== 'undefined' && StatRules && typeof StatRules.remaining === 'function') return StatRules;
+    if (typeof require === 'function') {
+      try {
+        var m = require('./core/stat_rules.js');
+        if (m && typeof m.remaining === 'function') return m;
+      } catch (e) {}
+    }
+    return null;
+  }
+
   var Portrait = {
     _path: function() {
       if (!GameState.currentCardId || !GameState.currentSaveId) return null;
@@ -229,27 +242,37 @@
       return keys;
     },
 
-    // 属性元信息：attrKey → { min, max, poolKey }
+    // 属性元信息：裸键与规范键都指向同一份 { min, max, name }（由 stat_rules 统一）
     _attributeMeta: function(card) {
       var meta = {};
-      (card && card.attributes || []).forEach(function(a) {
-        if (!a || !a.key) return;
-        meta[a.key] = { min: a.min, max: a.max };
-        meta['attr_' + a.key] = { min: a.min, max: a.max };
+      var SR = _sr();
+      if (!SR) return meta;
+      SR.defs(card, null).forEach(function(d) {
+        var m = { min: d.min, max: d.max, name: d.name };
+        meta[d.key] = m;
+        meta[d.bare] = m;
       });
       return meta;
     },
 
     // 一行属性状态：力量 5/20 敏捷 8/20 · 剩余点数 5
+    // 阶段 A 补充：显示也走 stat_rules（历史 attr_attr_str 归一后不再显示 init 兜底值）。
     _attributeStatusLine: function(playerData) {
       var card = GameState.currentCard;
-      if (!card || !card.attributes || !card.attributes.length) return '';
+      var SR = _sr();
+      var defs = SR ? SR.defs(card, null) : [];
+      if (!SR) {
+        if (!card || !card.attributes || !card.attributes.length) return '';
+        defs = card.attributes.map(function(a) {
+          return { key: 'attr_' + String(a.key).replace(/^attr_/, ''), bare: String(a.key).replace(/^attr_/, ''), name: a.name, min: a.min, max: a.max, init: a.init };
+        });
+      }
+      if (!defs.length) return '';
       var parts = [];
-      card.attributes.forEach(function(a) {
-        var v = playerData['attr_' + a.key];
-        if (v == null) v = playerData[a.key];
-        if (v == null) v = a.init != null ? a.init : 0;
-        parts.push((a.name || a.key) + ' ' + v + '/' + (a.max != null ? a.max : '?'));
+      defs.forEach(function(d) {
+        var v = SR ? SR.valueOf(playerData, d.key) : playerData[d.key];
+        if (v == null) v = d.init != null ? d.init : 0;
+        parts.push((d.name || d.bare) + ' ' + v + '/' + (d.max != null ? d.max : '?'));
       });
       var remaining = this._remainingPoints(playerData);
       if (remaining != null) parts.push('剩余点数 ' + remaining);
@@ -263,53 +286,26 @@
     //   AI 在 prompt 里看到的「剩余点数」永远是 0（_attributeStatusLine），于是它反复提
     //   不可行的属性方案、反复被拒 —— 用户看到的「一直超点数」其实是这个死循环。
     _remainingPoints: function(playerData) {
-      var card = GameState.currentCard;
-      if (!card || !card.attributePool || card.attributePool.total == null) return null;
-      var pool = card.attributePool;
-      var base = pool.base != null ? pool.base : 0;
-      var locked = this._destinyLockedBare(playerData);
-      var allocated = 0;
-      (card.attributes || []).forEach(function(a) {
-        if (a && a.key && locked[a.key]) return;   // 天命锁定项不计入创角池
-        var v = playerData['attr_' + a.key];
-        if (v == null) v = playerData[a.key];
-        if (typeof v !== 'number' || isNaN(v)) return;
-        var fb = a.min != null ? a.min : base;
-        allocated += Math.max(0, v - fb);
-      });
-      return Math.max(0, pool.total - allocated);
+      var SR = _sr();
+      if (!SR) return null;
+      return SR.remaining(GameState.currentCard, playerData);
     },
 
-    // 天命锁定属性的裸键集合 { str: true, ... }
+    // 天命锁定属性的裸键集合 { str: true, ... }（展示/兼容用；内部判定用规范键）
     _destinyLockedBare: function(playerData) {
       var set = {};
-      var lock = this._destinyLock(playerData);
-      if (!lock) return set;
-      var vals = lock.values || {};
-      Object.keys(vals).forEach(function(k) {
-        set[k.indexOf('attr_') === 0 ? k.slice(5) : k] = true;
-      });
+      var SR = _sr();
+      if (!SR) return set;
+      var locked = SR.lockedValues(playerData);
+      Object.keys(locked).forEach(function(k) { set[SR.bare(k)] = true; });
       return set;
     },
 
     // 天命锁定属性占用的点数（只用于展示「天命已占 N 点」，不进池计算）
     _destinyAlloc: function(playerData) {
-      var card = GameState.currentCard;
-      var lock = this._destinyLock(playerData);
-      if (!card || !lock) return 0;
-      var pool = card.attributePool || {};
-      var base = pool.base != null ? pool.base : 0;
-      var locked = this._destinyLockedBare(playerData);
-      var total = 0;
-      (card.attributes || []).forEach(function(a) {
-        if (!a || !a.key || !locked[a.key]) return;
-        var v = playerData['attr_' + a.key];
-        if (v == null) v = playerData[a.key];
-        if (typeof v !== 'number' || isNaN(v)) return;
-        var fb = a.min != null ? a.min : base;
-        total += Math.max(0, v - fb);
-      });
-      return total;
+      var SR = _sr();
+      if (!SR) return 0;
+      return SR.destinyAllocated(GameState.currentCard, playerData);
     },
 
     // 阶段 1b：天命锁。
@@ -323,99 +319,64 @@
     },
 
     _destinyLockedKeys: function(playerData) {
-      var d = this._destinyLock(playerData);
-      if (!d) return [];
-      var vals = d.values || {};
-      return Object.keys(vals).map(function(k) { return k.indexOf('attr_') === 0 ? k : ('attr_' + k); });
+      var SR = _sr();
+      if (!SR) return [];
+      return Object.keys(SR.lockedValues(playerData));
     },
 
-    // 校验属性 patch：单值 clamp min/max → 天命锁 → 池占用统计（P76·B：只统计不拒绝）
-    // 键一律归一为 attr_<key>（裸 x 补前缀，attr_x 保持）；未声明键忽略并警告
+    // 校验属性 patch：归一 → clamp → 天命锁 → 池占用统计（P76·B：只统计不拒绝）
+    // 键一律经 stat_rules 归一为 attr_<key>（裸 x / attr_x / 历史 attr_attr_x 等价）
     // 返回 { ok, clamped, warnings, error, code, lockedKeys, poolOver }
     //   poolOver = { total, before, after, need, remaining } | null
     validateAttributes: function(attrPatch, playerData) {
       var card = GameState.currentCard;
-      var meta = this._attributeMeta(card);
-      var pool = (card && card.attributePool) ? card.attributePool : null;
-      var base = (pool && pool.base != null) ? pool.base : 0;
-      var clamped = {};   // 归一后的 attr_<key> → 值
-      var warnings = [];
-
-      // 先逐键归一 + clamp
-      Object.keys(attrPatch || {}).forEach(function(k) {
-        var m = meta[k];
-        if (!m) {
-          warnings.push(k + ' 不是卡带声明的属性，已忽略');
-          return;
-        }
-        // 归一为 attr_<key>
-        var normKey = (k.indexOf('attr_') === 0) ? k : ('attr_' + k);
-        var v = Number(attrPatch[k]);
-        if (isNaN(v)) { warnings.push(k + ' 不是有效数值，已忽略'); return; }
-        if (m.min != null && v < m.min) { warnings.push(k + ' ' + v + ' 低于下限 ' + m.min + '，已收到 ' + m.min); v = m.min; }
-        if (m.max != null && v > m.max) { warnings.push(k + ' ' + v + ' 超出上限 ' + m.max + '，已收到 ' + m.max); v = m.max; }
-        clamped[normKey] = v;
-      });
+      var SR = _sr();
+      if (!SR) {
+        return { ok: true, clamped: {}, warnings: ['数值规则模块未加载（stat_rules.js），已跳过属性校验'], poolOver: null };
+      }
+      var defs = SR.defs(card, null);
+      var norm = SR.normalizePatch(attrPatch, defs);
+      var clamped = norm.values;
+      var warnings = norm.warnings.slice();
 
       // 天命锁：锁定属性不允许任何改动（含下调），先于池校验给出可解释的拒绝
-      var lock = this._destinyLock(playerData);
-      if (lock) {
-        var attrNames = {};   // attr_<key> → 中文名
-        (card && card.attributes || []).forEach(function(a) {
-          if (a && a.key) attrNames['attr_' + a.key] = a.name || a.key;
+      var violations = SR.lockViolations(clamped, playerData);
+      if (violations.length) {
+        var names = {};
+        defs.forEach(function(d) { names[d.key] = d.name; });
+        var lockedKeys = violations.map(function(v) { return v.key; });
+        var parts = violations.map(function(v) {
+          return (names[v.key] || SR.bare(v.key)) + '（' + v.before + '）';
         });
-        var lockedKeys = [];
-        var lockedParts = [];
-        var lockedVals = lock.values || {};
-        Object.keys(clamped).forEach(function(nk) {
-          var bare = nk.indexOf('attr_') === 0 ? nk.slice(5) : nk;
-          if (!(bare in lockedVals) && !(nk in lockedVals)) return;
-          var before = (lockedVals[nk] != null) ? lockedVals[nk] : lockedVals[bare];
-          if (clamped[nk] === before) return;   // 同值重写不算改
-          lockedKeys.push(nk);
-          lockedParts.push((attrNames[nk] || bare) + '（' + before + '）');
-        });
-        if (lockedKeys.length) {
-          return {
-            ok: false,
-            code: 'DESTINY_LOCKED',
-            lockedKeys: lockedKeys,
-            clamped: clamped,
-            error: '天命锁：' + lockedParts.join('、') + ' 已由天命固定，审核阶段不能修改。'
-              + '想换这组数值只能回开局界面「重掷天命」；其余属性、技能、物品、人设字段仍可照常调整。'
-          };
-        }
+        return {
+          ok: false,
+          code: 'DESTINY_LOCKED',
+          lockedKeys: lockedKeys,
+          clamped: clamped,
+          error: '天命锁：' + parts.join('、') + ' 已由天命固定，审核阶段不能修改。'
+            + '想换这组数值只能回开局界面「重掷天命」；其余属性、技能、物品、人设字段仍可照常调整。'
+        };
       }
 
       // 2026-10-23 P76·B（用户选 B）：池只约束创角分配，人设/剧情阶段的属性成长不再被池拒绝，
       //   改为回传 poolOver（超了多少点），由调用方提示玩家并照常落盘 —— 用户原话「我不介意超标，
-      //   但我要知道超了什么」。天命锁定项不计入池（_remainingPoints 同一口径）。
+      //   但我要知道超了什么」。天命锁定项不计入池（与 _remainingPoints 同一口径）。
       //   单值 min/max 仍然硬 clamp（上面已做），这是数值合法性的底线。
       var poolOver = null;
+      var pool = SR.poolOf(card, null);
       if (pool && pool.total != null) {
-        var lockedBare = this._destinyLockedBare(playerData);
-        var allocatedBefore = 0, allocatedAfter = 0;
-        (card.attributes || []).forEach(function(a) {
-          if (!a || !a.key || lockedBare[a.key]) return;   // 天命锁定项不进池
-          var key = 'attr_' + a.key;
-          var vBefore = playerData[key] != null ? playerData[key] :
-                        (playerData[a.key] != null ? playerData[a.key] : (a.init != null ? a.init : 0));
-          var vAfter = (clamped[key] != null) ? clamped[key] : vBefore;
-          var fb = a.min != null ? a.min : base;
-          var cb = (typeof vBefore === 'number' && !isNaN(vBefore)) ? Math.max(0, vBefore - fb) : 0;
-          var ca = (typeof vAfter === 'number' && !isNaN(vAfter)) ? Math.max(0, vAfter - fb) : 0;
-          allocatedBefore += cb;
-          allocatedAfter += ca;
-        });
-        if (allocatedAfter > pool.total) {
+        var locked = SR.lockedValues(playerData);
+        var before = SR.allocated(defs, playerData, pool.base, { excludeLocked: true, locked: locked });
+        var after = SR.allocated(defs, playerData, pool.base, { excludeLocked: true, locked: locked, override: clamped });
+        if (after > pool.total) {
           poolOver = {
             total: pool.total,
-            before: allocatedBefore,
-            after: allocatedAfter,
-            need: allocatedAfter - pool.total,
-            remaining: Math.max(0, pool.total - allocatedBefore)
+            before: before,
+            after: after,
+            need: after - pool.total,
+            remaining: Math.max(0, pool.total - before)
           };
-          warnings.push('属性点超出创角池 ' + poolOver.need + ' 点（已分配 ' + allocatedAfter + ' / 上限 ' + pool.total + '），已照常写入');
+          warnings.push('属性点超出创角池 ' + poolOver.need + ' 点（已分配 ' + after + ' / 上限 ' + pool.total + '），已照常写入');
         }
       }
 

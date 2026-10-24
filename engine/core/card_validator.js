@@ -33,7 +33,141 @@ var CardValidator = {
     //   公式写成 "3d6+"、属性名带空格；运行期这些只是「天命面板不出现 / 掷出怪值」，
     //   玩家只会觉得坏了。导入时把问题报成 warning（绝不拦导入）。
     for (const m of this.auditDestiny(card)) warnings.push(m);
+    // 阶段 A：属性段自查（card.attributes 为权威源；属性步 / 天命 key 应与之一致）。
+    //   key 允许 `str` 与 `attr_str` 两种写法，运行期由 stat_rules 归一；不一致只警告不拦导入。
+    for (const m of this.auditAttributes(card)) warnings.push(m);
+    // 阶段 C2：技能数值（worldbook.skills[].stat / worldbook.skillPool）自查。
+    //   可选段，只报 warning，绝不拦导入；导入期没有角色属性，只做静态检查（不求值）。
+    for (const m of this.auditSkillStats(card)) warnings.push(m);
     return warnings.length ? { ok: true, warnings: warnings } : { ok: true };
+  },
+
+  // ============ 阶段 C2 · 技能数值（worldbook.skills[].stat / skillPool）============
+  // 解析顺序：全局 SkillRules（桌面 index.html 先加载）→ require（RN / node 测试）；
+  // 两处都拿不到时直接跳过（不抛错、不产生假警告）。
+  _skillRules() {
+    try {
+      if (typeof SkillRules !== 'undefined' && SkillRules && typeof SkillRules.validateCard === 'function') return SkillRules;
+    } catch (e) { /* 全局不存在时忽略 */ }
+    try {
+      if (typeof require === 'function') {
+        const SR = require('./skill_rules.js');
+        if (SR && typeof SR.validateCard === 'function') return SR;
+      }
+    } catch (e) { /* require 不可用 / 循环依赖时忽略 */ }
+    return null;
+  },
+
+  // 仅静态检查：模板字段、重复 id、min>max、attrs 引用、公式语法与已知引用、预算字段冲突。
+  // 不调用 resolve / capacity / finalize（都需要角色属性值，导入期没有）。
+  auditSkillStats(card) {
+    const out = [];
+    const SR = this._skillRules();
+    if (!SR) return out;
+    const wb = (card && card.worldbook) || {};
+    const skills = Array.isArray(wb.skills) ? wb.skills : [];
+    const withStat = skills.filter(function (s) {
+      return s && typeof s === 'object' && s.stat && typeof s.stat === 'object';
+    });
+    // 旧卡：既没 stat 也没 skillPool ⇒ 一个字都不报（避免无意义警告刷屏）
+    if (!withStat.length && wb.skillPool == null) return out;
+    try {
+      const vc = SR.validateCard(card);
+      (vc.errors || []).forEach(function (e) {
+        out.push('技能数值：' + e.message + '（' + e.path + '）');
+      });
+      (vc.warnings || []).forEach(function (e) {
+        out.push('技能数值：' + e.message + '（' + e.path + '）');
+      });
+      if (typeof SR.poolOf === 'function') {
+        const po = SR.poolOf(card, null);
+        (po.errors || []).forEach(function (e) {
+          out.push('技能预算：' + e.message + '（' + e.path + '）');
+        });
+        // 步骤里也可能声明 pool；与 worldbook.skillPool 冲突时导入期就该报
+        (Array.isArray(card.steps) ? card.steps : []).forEach(function (st) {
+          if (!st || !st.pool) return;
+          const sp = SR.poolOf(card, st);
+          (sp.errors || []).forEach(function (e) {
+            out.push('技能预算：' + e.message + '（' + (st.id || 'steps[].pool') + '）');
+          });
+        });
+      }
+    } catch (e) {
+      out.push('技能数值：自查失败（' + (e && e.message ? e.message : e) + '）');
+    }
+    return out;
+  },
+
+  // ============ 阶段 A · 属性段（card.attributes / 属性步 / 天命 key 对齐）============
+  // 只报 warning，不拦导入：
+  //   · 旧卡属性步里有、attributes 没声明的键，运行期按 legacy 属性处理（不参与天命/人设锁）；
+  //   · key 写成 `str` 或 `attr_str` 都合法，`attr_x` 与 `x` 视为同一个属性（重复才报）。
+  auditAttributes(card) {
+    const out = [];
+    try {
+      const bare = (k) => {
+        let s = String(k == null ? '' : k);
+        while (s.indexOf('attr_') === 0) s = s.slice(5);
+        return s;
+      };
+      const canon = (k) => { const b = bare(k); return b ? 'attr_' + b : ''; };
+      const attrs = Array.isArray(card.attributes) ? card.attributes : [];
+      const seen = {};
+      attrs.forEach((a, i) => {
+        const at = 'attributes[' + i + ']';
+        if (!a || typeof a !== 'object') { out.push(at + ' 不是对象，运行期会被忽略'); return; }
+        if (!a.key) { out.push(at + ' 缺少 key'); return; }
+        const b = bare(a.key);
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(b)) {
+          out.push(at + '.key「' + a.key + '」含非法字符（只允许字母/数字/下划线，且不能数字开头）');
+        }
+        if (seen[canon(a.key)] != null) {
+          out.push(at + '.key「' + a.key + '」与 attributes[' + seen[canon(a.key)] + '] 重复（attr_x 与 x 视为同一个属性）');
+        } else {
+          seen[canon(a.key)] = i;
+        }
+        if (!a.name) out.push(at + ' 缺少 name（界面会退回显示 key）');
+        if (a.min != null && a.max != null && Number(a.min) > Number(a.max)) {
+          out.push(at + ' 的 min 大于 max，钳位会一直取 min');
+        }
+        if (a.init != null && a.min != null && Number(a.init) < Number(a.min)) out.push(at + '.init 低于 min');
+        if (a.init != null && a.max != null && Number(a.init) > Number(a.max)) out.push(at + '.init 高于 max');
+      });
+      (card.steps || []).forEach((s, si) => {
+        if (!s || s.type !== 'form' || !Array.isArray(s.fields) || !s.fields.length) return;
+        const isAttr = s.fields.every(f => f && f.type === 'number') ||
+          s.fields.every(f => f && f.key && String(f.key).indexOf('attr_') === 0);
+        if (!isAttr) return;
+        s.fields.forEach((f, fi) => {
+          if (!f || !f.key) return;
+          if (seen[canon(f.key)] == null) {
+            out.push('steps[' + si + '].fields[' + fi + '].key「' + f.key + '」不在 card.attributes 里'
+              + '（运行期按 legacy 属性处理，不参与天命/人设锁）');
+          }
+        });
+        // A2：同一属性在 card.attributes 与属性步里都写了 min/max/init/name 且值不同 →
+        //   实际生效的是 card.attributes（StatRules.defs 的既有约定），过去这种冲突完全静默。
+        //   这里只报诊断，不改写、不合并、不覆盖任何一边。
+        try {
+          const SR = _statRulesForAudit();
+          if (SR && typeof SR.defWarnings === 'function') {
+            SR.defWarnings(card, s).forEach(m => out.push('steps[' + si + ']：' + m));
+          }
+        } catch (e) {}
+      });
+      const dest = card.worldbook && card.worldbook.destiny;
+      if (dest && Array.isArray(dest.attributes)) {
+        dest.attributes.forEach((d, di) => {
+          if (!d || !d.key) return;
+          if (seen[canon(d.key)] == null) {
+            out.push('worldbook.destiny.attributes[' + di + '].key「' + d.key + '」不在 card.attributes 里，'
+              + '掷出的值不会落到任何属性上');
+          }
+        });
+      }
+    } catch (e) {}
+    return out;
   },
 
   // ============ P76·Fix4 · 天命段（worldbook.destiny）============
@@ -453,3 +587,16 @@ var CardValidator = {
 
 if (typeof window !== 'undefined') window.CardValidator = CardValidator;
 if (typeof module !== 'undefined' && module.exports) module.exports = CardValidator;
+
+// A2：属性定义冲突诊断需要 StatRules.defWarnings（口径唯一实现）。
+//   desktop index.html 里 card_validator 先于 stat_rules 加载，所以这里延迟解析：
+//   调用时全局已有就用全局，否则按相对路径 require（RN / Node）。
+//   都拿不到时只是少一条诊断，不影响校验结论。
+//   放在文件末尾：不挪动文件头部的行号（p52 的静态契约锁 :12/:13）。
+function _statRulesForAudit() {
+  if (typeof StatRules !== 'undefined' && StatRules) return StatRules;
+  if (typeof require === 'function') {
+    try { return require('./stat_rules.js'); } catch (e) {}
+  }
+  return null;
+}

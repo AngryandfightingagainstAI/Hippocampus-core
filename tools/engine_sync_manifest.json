@@ -1,18 +1,18 @@
 {
   "v": 1,
   "note": "两仓同源件登记册。mirror = 内容同源（行尾差异允许）；fork = 故意不同，锁两侧行尾归一哈希。 改共享文件请改手机仓（canonical）后跑 --write；改 fork 件请两侧同改后跑 --regen。",
-  "reason": "--regen",
-  "recordedAt": "2026-10-23T05:05:22Z",
+  "reason": "设置迁移：RN engine/core/storage.js 补 max_tokens 2048->16384 一次性迁移，对齐桌面 storage.js",
+  "recordedAt": "2026-10-24T13:51:48Z",
   "heads": {
     "rn": null,
     "desktop": null
   },
   "counts": {
-    "mirror": 75,
-    "mirrorEol": 22,
+    "mirror": 81,
+    "mirrorEol": 20,
     "fork": 15,
-    "unsharedDesktop": 175,
-    "unsharedRn": 161
+    "unsharedDesktop": 192,
+    "unsharedRn": 170
   },
   "mirror": [
     "engine/achievements.js",
@@ -24,10 +24,16 @@
     "engine/core/api_client.js",
     "engine/core/card_validator.js",
     "engine/core/cards_demo.js",
+    "engine/core/formula.js",
     "engine/core/gamestate.js",
     "engine/core/narrative_lint.js",
     "engine/core/plan_block.js",
     "engine/core/prompt_builder.js",
+    "engine/core/skill_editor_helpers.js",
+    "engine/core/skill_flow.js",
+    "engine/core/skill_rules.js",
+    "engine/core/skill_view.js",
+    "engine/core/stat_rules.js",
     "engine/core/tool_executor.js",
     "engine/core/turn_intent.js",
     "engine/creation_quiz.js",
@@ -95,8 +101,6 @@
     "engine/achievements.js",
     "engine/alias.js",
     "engine/calendar.js",
-    "engine/card_diagnose.js",
-    "engine/core/card_validator.js",
     "engine/core/cards_demo.js",
     "engine/dice.js",
     "engine/dice_history.js",
@@ -137,7 +141,7 @@
       "diffLines": 456
     },
     "engine/core/storage.js": {
-      "rn": "4777A5C488743AE4E80D74A32A510A8B",
+      "rn": "99961A48E887EA3FEF2FDA72DE0017AC",
       "desktop": "811CE7151C3AFBB2D74DB608A3F6531E",
       "diffLines": 253
     },

@@ -265,7 +265,7 @@ var ImportDraft = {
       for (var i = 0; i < listFields.length; i++) {
         var f = listFields[i];
         if (Array.isArray(wb[f]) && wb[f].length) {
-          var merged = mergeNamed(card.worldbook[f], wb[f]);
+          var merged = mergeNamed(card.worldbook[f], wb[f], f);
           card.worldbook[f] = merged;
           applied.push('worldbook.' + f + '(' + wb[f].length + ')');
         }
@@ -424,13 +424,42 @@ function applyTable(table, card, notes, section) {
       if (!cell) continue;
       descParts.push((headers[c] ? headers[c] + '：' : '') + cell);
     }
-    card.worldbook[target] = mergeNamed(card.worldbook[target], [{ name: name, desc: descParts.join('；') }]);
+    card.worldbook[target] = mergeNamed(card.worldbook[target], [{ name: name, desc: descParts.join('；') }], target);
     added++;
   }
   if (added) notes.push('表格「' + headers.slice(0, 3).join(' / ') + '」→ 补了 ' + added + ' 条 ' + target);
 }
 
-function mergeNamed(existing, incoming) {
+// 修复 B：新增条目的字段白名单（按世界书既有数据契约）。
+//   未知字段仍然丢弃——这里只放行已知契约里的字段，不是「把输入整份拷贝」。
+var MERGE_FIELDS = {
+  npcs: ['id', 'weight', 'keywords', 'locationId', 'gender', 'height', 'age', 'born',
+    'abilities', 'likes', 'dislikes', 'factions', 'relations', 'periods', 'desc',
+    'tags', 'voice', 'cues'],
+  factions: ['id', 'desc', 'hasHiddenSide', 'publicSide', 'hiddenSide', 'mainGoal', 'mainFace',
+    'stanceOfficial', 'stanceMilitary', 'stancePeople', 'stancePeers', 'relations', 'linkedNPCs', 'tags'],
+  items: ['id', 'category', 'desc', 'effects', 'linkedMaps', 'linkedNPCs', 'tags'],
+  skills: ['id', 'desc', 'hasSideEffect', 'sideEffect', 'hasLevels', 'levels',
+    'linkedMaps', 'linkedNPCs', 'tags', 'stat'],
+  shops: ['id', 'desc', 'npcId', 'locationId', 'currencyId', 'refresh', 'items', 'tags'],
+  events: ['id', 'desc', 'trigger', 'effects', 'priority', 'cooldown', 'once', 'tags'],
+  tasks: ['id', 'desc', 'type', 'steps', 'reward', 'failWhen', 'tags'],
+  achievements: ['id', 'desc', 'hidden', 'icon', 'category', 'trigger', 'reward', 'tags']
+};
+
+function pickMergeFields(type, it) {
+  var keys = MERGE_FIELDS[type];
+  if (!keys) return { name: String(it.name).trim(), desc: it.desc || '' };
+  var out = { name: String(it.name).trim() };
+  for (var k = 0; k < keys.length; k++) {
+    var f = keys[k];
+    if (it[f] !== undefined && it[f] !== null) out[f] = it[f];
+  }
+  if (out.desc == null) out.desc = '';
+  return out;
+}
+
+function mergeNamed(existing, incoming, type) {
   var byName = {}, out = [];
   var i;
   for (i = 0; i < existing.length; i++) {
@@ -448,7 +477,7 @@ function mergeNamed(existing, incoming) {
       continue;
     }
     byName[n] = out.length;
-    out.push({ name: n, desc: it.desc || '' });
+    out.push(pickMergeFields(type, it));
   }
   return out;
 }

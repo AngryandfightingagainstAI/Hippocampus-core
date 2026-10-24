@@ -1477,6 +1477,32 @@ var StoryLoop = {
 // ============================================================
 // CreateFlow（断点续传版）
 // ============================================================
+// 数值规则唯一实现（engine/core/stat_rules.js）：桌面由 index.html 先加载，RN 走 require。
+// 属性键归一、池统计、天命锁口径都走这里，禁止在调用点手拼 'attr_' + key。
+function _statRules() {
+  if (typeof StatRules !== 'undefined' && StatRules && typeof StatRules.isAttrStep === 'function') return StatRules;
+  if (typeof require === 'function') {
+    try {
+      var m = require('./core/stat_rules.js');
+      if (m && typeof m.isAttrStep === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
+// 阶段 C4：技能创角流程唯一入口（engine/core/skill_flow.js）。
+// 桌面由 index.html 先加载，RN 走 require；UI 只渲染它返回的数据，不自算。
+function _skillFlow() {
+  if (typeof SkillFlow !== 'undefined' && SkillFlow && typeof SkillFlow.planStep === 'function') return SkillFlow;
+  if (typeof require === 'function') {
+    try {
+      var m = require('./core/skill_flow.js');
+      if (m && typeof m.planStep === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
 var CreateFlow = {
   card: null, steps: [], index: 0, data: {},
 
@@ -1526,7 +1552,12 @@ var CreateFlow = {
 
   start(card, draft) {
     this.card = card;
-    this.steps = (card.steps || []).filter(s => !this.isSkipped(s));
+    // 阶段 C4：技能步骤准备（显式 type:'skills' 不重复；有规则且无显式才自动插入；旧卡不插）
+    const SF = _skillFlow();
+    const prep = SF ? SF.prepareSteps(card) : { steps: (card.steps || []), inserted: false };
+    this._skillStepInserted = !!prep.inserted;
+    this.steps = prep.steps.filter(s => !this.isSkipped(s));
+    this._skillStep = SF ? SF.skillStepOf(this.steps) : null;
     // P47·批次2：换卡带创角时清空上一轮天命结果
     this._destinySets = null;
     this._destinyPicked = null;
@@ -1535,13 +1566,16 @@ var CreateFlow = {
     this._destinyAI = null;
 
     if (draft && draft.data) {
-      this.index = Math.max(0, Math.min(draft.index || 0, this.steps.length - 1));
       this.data = draft.data || {};
+      // 草稿步骤数与当前卡带不一致（例如 C4 插入/移除了技能步骤）时不按旧 index 落位，
+      // 但保留已填内容；失效的技能分配会在技能步骤里被标出，由玩家显式处理。
+      const sameShape = (draft.totalSteps == null) || (draft.totalSteps === this.steps.length);
+      this.index = sameShape ? Math.max(0, Math.min(draft.index || 0, this.steps.length - 1)) : 0;
       while (this.index < this.steps.length && this.isSkipped(this.steps[this.index])) this.index++;
       if (this.index >= this.steps.length) this.index = 0;
       Platform.ui.showScreen('screen-create');
       this.render();
-      Platform.ui.appendHint('（从上次未完成的创建继续）');
+      Platform.ui.appendHint(sameShape ? '（从上次未完成的创建继续）' : '（卡带步骤有变化，已保留你填过的内容；技能分配若有失效项，请在技能步骤里处理）');
       return;
     }
 
@@ -1572,15 +1606,45 @@ var CreateFlow = {
       Platform.ui.showScreen('screen-game');
       Platform.ui.renderGame();
       StoryLoop.start();
-    });
+    }, this._skillValidate.bind(this));
+  },
+
+  // C4：人设确认前的技能校验（作为可选第三参传给 UI_Portrait）。
+  // 属性在人设阶段被改过时，bonus 必须按新属性重算；重算后不合法就阻止确认，
+  // 并给出返回技能步骤的下标，由 ui_portrait 询问玩家是否回去改。
+  _skillValidate() {
+    const SF = _skillFlow();
+    if (!SF || !GameState.playerData || !GameState.playerData.skillStats || !this.card) return { ok: true };
+    const attrs = SF.attrsOf(this.card, GameState.playerData);
+    const r = SF.recalc(this.card, attrs, GameState.playerData.skillStats, this._skillStep || null);
+    if (!r.ok) {
+      const e = (r.errors || [])[0];
+      return {
+        ok: false,
+        message: (e ? e.message : '技能数值需要调整')
+          + (e && e.path ? '（' + e.path + '）' : '')
+          + '\n属性变化后技能加成需要重算，当前分配不再合法。',
+        stepIndex: this.steps ? this.steps.indexOf(this._skillStep) : -1
+      };
+    }
+    if (r.changed) GameState.playerData.skillStats = r.skillStats;
+    return { ok: true };
   },
 
   getPool(step) {
+    const SR = _statRules();
+    if (SR) {
+      const p = SR.poolOf(this.card, step);
+      if (p && p.total != null) return p;
+      return null;
+    }
     if (step.pool && step.pool.total != null) return step.pool;
     if (this.card.attributePool && this.card.attributePool.total != null) return this.card.attributePool;
     return null;
   },
   isAttrStep(step) {
+    const SR = _statRules();
+    if (SR) return SR.isAttrStep(step);
     if (!step.fields || !step.fields.length) return false;
     const allNumber = step.fields.every(f => f.type === 'number');
     const allAttrKey = step.fields.every(f => f.key && String(f.key).indexOf('attr_') === 0);
@@ -1590,6 +1654,21 @@ var CreateFlow = {
     const pool = this.getPool(step);
     if (!pool) return 0;
     const base = pool.base != null ? pool.base : 0;
+    const SR = _statRules();
+    if (SR) {
+      // A2：属性定义统一取 StatRules.defs()（card.attributes 权威；step.fields 只在
+      // attributes 缺 min/max/init 时兜底）。历史上这里自己按 step.fields 拼了一份，
+      // 与 attributes 冲突时点数口径会和角色面板/人设校验不一致。
+      const list = (typeof SR.defs === 'function')
+        ? SR.defs(this.card, step)
+        : (step.fields || []).filter(f => f && f.key).map(f => ({
+            key: SR.canon(f.key), min: f.min, max: f.max
+          }));
+      return SR.allocated(list, this.data, base, {
+        excludeLocked: true,
+        locked: SR.lockedValues(this.data)
+      });
+    }
     let total = 0;
     (step.fields || []).forEach(f => {
       const v = this.data[f.key];
@@ -1635,10 +1714,126 @@ var CreateFlow = {
         else html += this.renderMultiSelect(step);
         break;
       case 'quiz': html += this.renderQuizSet(step); break;
+      case 'skills': html += this.renderSkills(step); break;
       case 'summary': html += this.renderSummary(); html += this.renderRelations(); break;
       default: html += '<p>（未知步骤类型：' + escapeHtml(step.type) + '）</p>';
     }
     return html;
+  },
+
+  // 阶段 C4：技能分配步骤。所有数值、上限、剩余、错误都来自 SkillFlow.planStep；
+  // 这里只拼 HTML，不自己算区间，避免两端/两处口径漂移。
+  renderSkills(step) {
+    const SF = _skillFlow();
+    if (!SF) return '<p class="cf-skill-hint">（技能数值模块未加载，暂时无法分配技能点）</p>';
+    const attrs = SF.attrsOf(this.card, this.data);
+    const alloc = this.data.__skillAlloc || {};
+    const plan = SF.planStep(this.card, step, attrs, alloc);
+    if (!plan.enabled) return '<p class="cf-skill-hint">这张卡带没有配置技能数值规则，可以直接进入下一步。</p>';
+
+    let html = '<div class="cf-skill-box">';
+    const b = plan.budget;
+    if (b && b.total != null) {
+      const st = plan.status || {};
+      const used = st.allocated || 0;
+      const over = used > b.total;
+      html += '<div class="cf-pool-bar">'
+        + '<span class="cf-pool-label">技能点</span>'
+        + '<b class="cf-pool-num' + (over ? ' over' : '') + '">' + used + '</b>'
+        + '<span class="cf-pool-total"> / ' + b.total + '</span>'
+        + '<span class="cf-pool-remain">（剩余 ' + (b.total - used) + '）</span>'
+        + '</div>';
+      if (b.requireSpend) html += '<div class="cf-skill-note">这张卡带要求把技能点分配完。</div>';
+      if (st.bounded === false) html += '<div class="cf-skill-note">存在无上限技能：可分配总量不封顶，但仍受预算限制。</div>';
+    } else {
+      html += '<div class="cf-skill-note">这张卡带没有技能预算，只需满足每个技能的上下限。</div>';
+    }
+
+    const errs = plan.errors || [];
+    if (errs.length) {
+      html += '<div class="cf-skill-issues">';
+      errs.slice(0, 4).forEach(function (e) {
+        html += '<div class="cf-skill-issue err">[' + escapeHtml(e.code) + '] ' + escapeHtml(e.path) + ' — ' + escapeHtml(e.message) + '</div>';
+      });
+      if (errs.length > 4) html += '<div class="cf-skill-issue">……另有 ' + (errs.length - 4) + ' 条</div>';
+      html += '</div>';
+    }
+
+    html += '<div class="cf-skill-list">';
+    (plan.items || []).forEach(function (it) {
+      const a = (plan.alloc && typeof plan.alloc[it.id] === 'number') ? plan.alloc[it.id] : 0;
+      const base = it.init + it.bonus;
+      const value = base + a;
+      const need = (it.min != null && value < it.min) ? (it.min - value) : 0;
+      const cap = (it.max == null) ? '无上限' : ('上限 ' + it.max);
+      html += '<div class="cf-skill-row">'
+        + '<div class="cf-skill-name">' + escapeHtml(it.name || it.id) + '</div>'
+        + '<div class="cf-skill-meta">基础 ' + it.init + '+' + it.bonus + '，' + cap
+        + (need ? '，<b class="cf-skill-need">还需分配 ' + need + ' 点</b>' : '') + '</div>'
+        + '<div class="cf-skill-ctl">'
+        + '<button class="cf-skill-btn" onclick="CreateFlow.skillAdjust(\'' + escapeHtml(it.id) + '\',-1)">−</button>'
+        + '<span class="cf-skill-alloc">' + a + '</span>'
+        + '<button class="cf-skill-btn" onclick="CreateFlow.skillAdjust(\'' + escapeHtml(it.id) + '\',1)">＋</button>'
+        + '<span class="cf-skill-value">= ' + value + '</span>'
+        + '</div>'
+        + '</div>';
+    });
+    html += '</div>';
+
+    const orphans = plan.orphans || [];
+    if (orphans.length) {
+      html += '<div class="cf-skill-issues"><div class="cf-skill-issue err">以下技能已不在当前卡带中，必须移除后才能继续：</div>';
+      orphans.forEach(function (o) {
+        html += '<div class="cf-skill-issue err">' + escapeHtml(o.id) + '（已分配 ' + o.alloc + '）'
+          + ' <button class="cf-skill-btn" onclick="CreateFlow.skillDropOrphan(\'' + escapeHtml(o.id) + '\')">移除</button></div>';
+      });
+      html += '</div>';
+    }
+    html += '</div>';
+    return html;
+  },
+
+  // 单次 +/-：区间、预算、模式全部交给 skill_flow / skill_rules；这里只落草稿。
+  skillAdjust(id, delta) {
+    const SF = _skillFlow();
+    if (!SF) return;
+    const step = this._skillStep || this.current();
+    const attrs = SF.attrsOf(this.card, this.data);
+    const alloc = this.data.__skillAlloc || {};
+    const cur = (typeof alloc[id] === 'number') ? alloc[id] : 0;
+    const next = cur + delta;
+    if (next < 0) return;
+    const plan = SF.planStep(this.card, step, attrs, alloc);
+    const mode = (plan.budget && plan.budget.mode) ? plan.budget.mode : 'block';
+    const r = SF.stepApply(this.card, step, attrs, alloc, id, next, { mode: mode });
+    if (!r.ok) {
+      const e = (r.errors || [])[0];
+      Platform.ui.toast(e ? (e.message + (e.path ? '（' + e.path + '）' : '')) : '无法分配这个点数', { type: 'warn' });
+      return;
+    }
+    this.data.__skillAlloc = r.alloc || alloc;
+    if (r.clamped && r.reasons && r.reasons.length) {
+      Platform.ui.toast('已按卡带规则调整为 ' + r.actual + ' 点', { type: 'info' });
+    }
+    this._saveDraft();
+    this.render();
+  },
+
+  skillDropOrphan(id) {
+    if (!this.data.__skillAlloc) return;
+    delete this.data.__skillAlloc[id];
+    this._saveDraft();
+    this.render();
+  },
+
+  // 人设页校验失败时的返回路径：跳回技能步骤，不把玩家卡在人设页。
+  backToSkills(index) {
+    if (typeof this.steps === 'undefined' || !this.steps.length) return;
+    const at = (typeof index === 'number' && index >= 0 && index < this.steps.length) ? index : Math.max(0, this.steps.indexOf(this._skillStep));
+    this.index = at;
+    Platform.ui.showScreen('screen-create');
+    this.render();
+    Platform.ui.toast('请先调整技能分配，再回到人设', { type: 'info' });
   },
 
   // P47·批次2 / P75：天命面板（属性 N 选一 + 让 AI 现定）。
@@ -1802,15 +1997,21 @@ var CreateFlow = {
     const set = (this._destinySets || [])[i];
     if (!set) return;
     this._destinyPicked = set;
-    // 阶段 1b：天命值落成结构化锁。写入 attr_<key>（创角表单与运行时都用这个键）
-    // 同时保留裸键，兼容旧卡带/旧逻辑读取。
+    // 阶段 1b：天命值落成结构化锁。key 一律经 stat_rules 归一为 attr_<key>，
+    // 同时保留裸键兼容旧读取方（阶段 A 修掉了带前缀卡带写成 attr_attr_ 的双前缀）。
+    const SR = _statRules();
     const lockValues = {};
     this._destinyAttrs().forEach(a => {
       if (!a || !a.key || typeof set.values[a.key] !== 'number') return;
       const v = set.values[a.key];
-      this.data[a.key] = v;
-      this.data['attr_' + a.key] = v;
-      lockValues['attr_' + a.key] = v;
+      if (SR) {
+        SR.writeValue(this.data, a.key, v, true);
+        lockValues[SR.canon(a.key)] = v;
+      } else {
+        this.data[a.key] = v;
+        this.data['attr_' + a.key] = v;
+        lockValues['attr_' + a.key] = v;
+      }
     });
     this.data._destiny = {
       locked: true,
@@ -1824,6 +2025,21 @@ var CreateFlow = {
   renderForm(step) {
     const pool = this.getPool(step);
     const isAttr = this.isAttrStep(step) && pool;
+    // A2：属性步的定义（名称 / min / max / 默认值）统一来自 StatRules.defs()。
+    //   card.attributes 是唯一权威源，step.fields 只在 attributes 缺该项时兜底；
+    //   两者给出不同值时 attributes 生效，并通过 defWarnings 报一条诊断（不改任何一边）。
+    const SRf = isAttr ? _statRules() : null;
+    const dmap = (SRf && typeof SRf.defMap === 'function') ? SRf.defMap(this.card, step) : null;
+    if (dmap && typeof SRf.defWarnings === 'function') {
+      const ws = SRf.defWarnings(this.card, step);
+      if (ws.length) {
+        this._defWarned = this._defWarned || {};
+        if (!this._defWarned[this.index]) {
+          this._defWarned[this.index] = true;
+          try { console.warn('[属性定义冲突] ' + ws.join('\n')); } catch (e) {}
+        }
+      }
+    }
     let html = '';
     if (isAttr) {
       const allocated = this.calcAllocated(step);
@@ -1837,7 +2053,13 @@ var CreateFlow = {
     html += (step.fields || []).map(f => {
       const id = 'cf-f-' + f.key;
       const idAttr = escapeAttr(id);                                  // ★ 安全：f.key 来自卡带，不能直接拼进 id 属性
-      const fallback = (f.default != null) ? f.default : (isAttr && f.min != null ? f.min : '');
+      // A2：单字段也走统一定义表；dmap 里没有（非属性步 / 未声明键）时退回字段自身
+      const d = dmap ? (dmap[f.key] || (SRf && SRf.canon ? dmap[SRf.canon(f.key)] : null)) : null;
+      const effMin = (d && d.min != null) ? d.min : f.min;
+      const effMax = (d && d.max != null) ? d.max : f.max;
+      const effInit = (d && d.init != null) ? d.init : f.default;
+      const effLabel = (d && d.name) ? d.name : f.label;
+      const fallback = (effInit != null) ? effInit : (isAttr && effMin != null ? effMin : '');
       // 同步 fallback 到 this.data：用户没动过输入框时，data 里也应该是 fallback 的值
       if ((this.data[f.key] == null) && fallback !== '' && fallback != null) {
         this.data[f.key] = fallback;
@@ -1849,8 +2071,8 @@ var CreateFlow = {
         input = '<input id="' + idAttr + '" type="text" value="' + escapeAttr(val) + '" placeholder="' + escapeAttr(f.placeholder || '') + '" oninput="CreateFlow.onTextInput(' + jsAttr(f.key) + ', this.value, false)">';
       } else if (f.type === 'number') {
         // ★ 安全：min/max 来自卡带，先归一成数字再拼（既防属性注入，也防 jsArg 位置注入）
-        const minNum = (f.min != null && isFinite(Number(f.min))) ? Number(f.min) : null;
-        const maxNum = (f.max != null && isFinite(Number(f.max))) ? Number(f.max) : null;
+        const minNum = (effMin != null && isFinite(Number(effMin))) ? Number(effMin) : null;
+        const maxNum = (effMax != null && isFinite(Number(effMax))) ? Number(effMax) : null;
         const minAttr = minNum != null ? 'min="' + minNum + '"' : '';
         const maxAttr = maxNum != null ? 'max="' + maxNum + '"' : '';
         const minJs = minNum != null ? String(minNum) : 'null';
@@ -1869,7 +2091,7 @@ var CreateFlow = {
       } else {
         input = '<input id="' + idAttr + '" type="text" value="' + escapeAttr(val) + '" oninput="CreateFlow.onTextInput(' + jsAttr(f.key) + ', this.value, false)">';
       }
-      return '<div class="field"><label>' + escapeHtml(f.label) + req + '</label>' + input + '</div>';
+      return '<div class="field"><label>' + escapeHtml(effLabel) + req + '</label>' + input + '</div>';
     }).join('');
     return html;
   },
@@ -1878,9 +2100,12 @@ var CreateFlow = {
     const raw = inputEl.value;
     if (raw === '' || raw === '-' || raw === '.') { this.data[key] = ''; }
     else { const v = Number(raw); if (!isNaN(v)) this.data[key] = v; }
+    // 阶段 A：属性键经 stat_rules 归一写双键，避免表单键与天命键各写一份、读到的却是旧值
+    const SR = isAttr ? _statRules() : null;
+    if (SR && typeof this.data[key] === 'number') SR.writeValue(this.data, key, this.data[key], true);
     // 阶段 1b：天命锁跟随玩家在创角表单里的手动微调（锁的是“最终确定的这组值”，不是掷出的历史值）
     if (isAttr && this.data._destiny && this.data._destiny.locked) {
-      const nk = String(key).indexOf('attr_') === 0 ? key : ('attr_' + key);
+      const nk = SR ? SR.canon(key) : (String(key).indexOf('attr_') === 0 ? key : ('attr_' + key));
       if (this.data._destiny.values && Object.prototype.hasOwnProperty.call(this.data._destiny.values, nk)) {
         this.data._destiny.values[nk] = this.data[key];
       }
@@ -2236,10 +2461,19 @@ var CreateFlow = {
   },
   renderSummary() {
     const lm = {}, om = {};
-    (this.card.attributes || []).forEach(a => { lm['attr_' + a.key] = a.name || a.key; lm[a.key] = a.name || a.key; });
+    // A2：摘要里的属性名也取统一定义表（card.attributes 权威）；字段 label 只在没有属性名时兜底
+    const SRs = _statRules();
+    const defList = SRs && typeof SRs.defs === 'function'
+      ? SRs.defs(this.card)
+      : (this.card.attributes || []).map(a => ({ key: a.key, bare: a.key, name: a.name || a.key }));
+    defList.forEach(d => {
+      const nm = d.name || d.bare || d.key;
+      lm[d.key] = nm;
+      if (d.bare) lm[d.bare] = nm;
+    });
     (this.card.steps || []).forEach(step => {
       (step.fields || []).forEach(f => {
-        lm[f.key] = f.label || f.key;
+        if (!lm[f.key]) lm[f.key] = f.label || f.key;
         if (f.type === 'choice') (f.options || []).forEach(o => { om[f.key + '.' + o.id] = o.label || o.name || o.id; });
       });
       const key = step.key || step.id;
@@ -2324,13 +2558,19 @@ var CreateFlow = {
   async validateCurrent() {
     const step = this.current();
     if (step.type === 'form') {
+      // A2：钳位上下限也取统一定义表（属性步以 card.attributes 为准，字段值只兜底）
+      const SRc = this.isAttrStep(step) ? _statRules() : null;
+      const dmapC = (SRc && typeof SRc.defMap === 'function') ? SRc.defMap(this.card, step) : null;
       (step.fields || []).forEach(f => {
         if (f.type === 'number') {
+          const d = dmapC ? (dmapC[f.key] || (SRc.canon ? dmapC[SRc.canon(f.key)] : null)) : null;
+          const min = (d && d.min != null) ? d.min : f.min;
+          const max = (d && d.max != null) ? d.max : f.max;
           const v = this.data[f.key];
           if (typeof v === 'number' && !isNaN(v)) {
             let c = v;
-            if (f.min != null && c < f.min) c = f.min;
-            if (f.max != null && c > f.max) c = f.max;
+            if (min != null && c < min) c = min;
+            if (max != null && c > max) c = max;
             this.data[f.key] = c;
           }
         }
@@ -2366,6 +2606,29 @@ var CreateFlow = {
       const cur = this.data[k] || [];
       const min = step.min != null ? step.min : 0;
       if (cur.length < min) { Platform.ui.toast('至少选 ' + min + ' 项', { type: 'warn' }); return false; }
+    } else if (step.type === 'skills') {
+      const SF = _skillFlow();
+      if (!SF) { Platform.ui.toast('技能数值模块未加载，无法校验技能分配', { type: 'warn' }); return false; }
+      const attrs = SF.attrsOf(this.card, this.data);
+      const plan = SF.planStep(this.card, step, attrs, this.data.__skillAlloc || {});
+      const orphans = plan.orphans || [];
+      if (orphans.length) {
+        Platform.ui.toast('有 ' + orphans.length + ' 个技能已不在当前卡带中（' + orphans.map(o => o.id).join('、') + '）\n请先点「移除」再继续', { type: 'warn' });
+        return false;
+      }
+      if (!plan.submitOk) {
+        const errs = plan.errors || [];
+        const under = errs.filter(e => e.code === 'E_SKILL_UNDER_BUDGET')[0];
+        if (under) {
+          const total = plan.budget ? plan.budget.total : 0;
+          const used = plan.status ? plan.status.allocated : 0;
+          Platform.ui.toast('技能点还没分配完（已分配 ' + used + ' / ' + total + '）\n请继续分配', { type: 'warn' });
+        } else {
+          const e = errs[0];
+          Platform.ui.toast(e ? (e.message + (e.path ? '（' + e.path + '）' : '')) : '技能分配还不合法', { type: 'warn' });
+        }
+        return false;
+      }
     }
     return true;
   },
@@ -2382,11 +2645,12 @@ var CreateFlow = {
   async cancel() { if (await Platform.ui.confirmAsync('取消创建？\n（你的进度已保存，下次可以继续）')) Platform.ui.showHome(); },
 
   finish() {
-    GameState.playerData = JSON.parse(JSON.stringify(this.data));
-    // 问卷答案只是过程数据，不进存档
-    Object.keys(GameState.playerData).forEach(k => { if (k.indexOf('__picks_') === 0) delete GameState.playerData[k]; });
-    if (!GameState.playerData.inventory) GameState.playerData.inventory = { bar: [], common: [], story: [], rare: [] };
-    if (typeof Alias !== 'undefined') Alias.normalize(GameState.playerData);
+    const SF = _skillFlow();
+    // 先在一份副本上完成「问卷加成 → 技能初始化」；只有校验全过才落到 GameState.playerData，
+    // 避免提交失败时把半成品写进当前角色。
+    const pd = JSON.parse(JSON.stringify((SF && SF.stripTransient) ? SF.stripTransient(this.data) : this.data));
+    if (!pd.inventory) pd.inventory = { bar: [], common: [], story: [], rare: [] };
+    if (typeof Alias !== 'undefined') Alias.normalize(pd);
     // P67：问卷结论写进角色（quiz_<id> / __quiz / __quizFacts），并按 grants 叠加开局属性
     try {
       if (typeof CreationQuiz !== 'undefined' && CreationQuiz && this.card) {
@@ -2397,14 +2661,28 @@ var CreateFlow = {
           defs.forEach(q => { picks[q.id] = this.quizPicks(q.id); });
           const results = CreationQuiz.scoreAll(defs, picks);
           if (results.length) {
-            const bonus = CreationQuiz.apply(GameState.playerData, results);
-            CreationQuiz.applyGrants(GameState.playerData, bonus, this.card.attributes);
-            GameState.playerData.__quizFacts = CreationQuiz.facts(results);
+            const bonus = CreationQuiz.apply(pd, results);
+            CreationQuiz.applyGrants(pd, bonus, this.card.attributes);
+            pd.__quizFacts = CreationQuiz.facts(results);
           }
         }
       }
     } catch (e) {}
 
+    // C4：技能初始化必须在问卷加成之后（bonus 公式要用最终属性），失败则退回技能步骤重分配。
+    if (SF && SF.hasRules(this.card)) {
+      const attrs = SF.attrsOf(this.card, pd);
+      const commit = SF.commit(this.card, attrs, this.data.__skillAlloc || {}, this._skillStep || null);
+      if (!commit.ok) {
+        const e = (commit.errors || [])[0];
+        Platform.ui.toast(e ? (e.message + (e.path ? '（' + e.path + '）' : '')) : '技能分配未通过校验', { type: 'warn' });
+        if (this._skillStep) this.backToSkills(this.steps.indexOf(this._skillStep));
+        return;
+      }
+      if (commit.skillStats) pd.skillStats = commit.skillStats;
+    }
+
+    GameState.playerData = pd;
     let pname = Alias.get(GameState.playerData, 'name');
     if (pname && GameState.currentSaveId) Saves.setPlayerName(GameState.currentCardId, GameState.currentSaveId, String(pname));
 

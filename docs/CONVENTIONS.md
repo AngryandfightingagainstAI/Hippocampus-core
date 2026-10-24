@@ -82,22 +82,29 @@ node tools\engine_sync.js --regen   # 故意改了 fork 件后重记两侧哈希
 `node_modules` / `android` / `build` / `dist` / `docs` / `ios` / `vendor` / `.git`，
 对两边都存在的相对路径按字节分三桶）。
 
-最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF；P74·A+ 新增 `engine/core/turn_intent.js`、`plan_block.js`、`narrative_lint.js` 三件套并同步 `engine/story.js`；2026-10-23 P76 角色档案批：`engine/core/card_validator.js` 加天命段审计后整件二进制同步，从「仅行尾不同」转入「逐字节相同」）：**逐字节相同 54 个**、**仅行尾不同 21 个**、**真差异 15 个**，
-合计 90 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
+最近一次实算（2026-10-21 主控：`engine/core/prompt_builder.js` 补老存档兜底后归一为「仅行尾不同」；同日 P70-T2 新增 `engine/prompt_inspect.js` 两仓同字节；P72 新增 `engine/message_tree.js` 桌面 CRLF / RN LF；P74·A+ 新增 `engine/core/turn_intent.js`、`plan_block.js`、`narrative_lint.js` 三件套并同步 `engine/story.js`；2026-10-23 P76 角色档案批：`engine/core/card_validator.js` 加天命段审计后整件二进制同步，从「仅行尾不同」转入「逐字节相同」；2026-10-24 阶段 A 新增 `engine/core/stat_rules.js`（属性键归一 / 池统计唯一实现）两仓同字节，54→55；阶段 C2 同步 `engine/card_diagnose.js` 后整件二进制同步，从「仅行尾不同」转入「逐字节相同」；同日阶段 B 新增 `engine/core/formula.js`（确定性公式解释器，纯模块）两仓同字节，55→56；阶段 C3 新增 `engine/core/skill_editor_helpers.js`（技能编辑器校验聚合）两仓同字节，58→59；阶段 C4 新增 `engine/core/skill_flow.js`（技能步骤/分配/提交纯流程）两仓同字节，59→60；阶段 C5 新增 `engine/core/skill_view.js`（技能数值只读视图）两仓同字节，60→61）：**逐字节相同 61 个**、**仅行尾不同 20 个**、**真差异 15 个**，
+合计 95 个同名 `.js`。三桶的计数与下面三张清单都由桌面仓守卫
 `tests/unit/test_p53_license_docs.js` 现算比对 —— 盘上文件变了而这里没同步，那套测试会红。
 
-**逐字节相同**（54 个；改任何一个都必须两仓同步、连行尾一起）：
+**逐字节相同**（61 个；改任何一个都必须两仓同步、连行尾一起）：
 
 ```text
 # 逐字节相同
 engine/core/prompt_builder.js
 engine/background.js
+engine/card_diagnose.js
 engine/card_display.js
 engine/core/api_client.js
 engine/core/card_validator.js
 engine/core/gamestate.js
 engine/core/narrative_lint.js
 engine/core/plan_block.js
+engine/core/stat_rules.js
+engine/core/skill_rules.js
+engine/core/skill_editor_helpers.js
+engine/core/skill_flow.js
+engine/core/skill_view.js
+engine/core/formula.js
 engine/core/tool_executor.js
 engine/core/turn_intent.js
 engine/creation_quiz.js
@@ -146,7 +153,7 @@ vfs/logger.js
 vfs/storage_adapter.js
 ```
 
-**仅行尾不同**（21 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
+**仅行尾不同**（20 个；PC 全 CRLF、RN 全 LF，把 `\r\n` 归一成 `\n` 后逐字符相同。
 这类**不是内容不同**：P13 时曾把其中一部分误列进「内容不同」）：
 
 ```text
@@ -154,7 +161,6 @@ vfs/storage_adapter.js
 engine/achievements.js
 engine/alias.js
 engine/calendar.js
-engine/card_diagnose.js
 engine/core/cards_demo.js
 engine/dice.js
 engine/dice_history.js
@@ -335,7 +341,7 @@ node tools\run_all_smokes.js --only a,b   # 只跑指定套件
 ```powershell
 cd 'D:\AI文游\神秘小引擎测试版\神秘小引擎测试版'
 node tools\claims.js                      # 前置门：14 项（期望 14 ok / 0 known-open）
-node tools/run_batch.js                   # 前置门 + 全量（99 套）（2026-10-23 台词库批后重记：新增 test_p78_npc_voice_cues.js）
+node tools/run_batch.js                   # 前置门 + 全量（113 套）（2026-10-24 阶段 A 新增 test_stat_rules.js；阶段 B 新增 test_formula.js；补充核验新增 test_phaseA_fixes.js；阶段 C1 新增 test_skill_rules.js；阶段 C2 新增 test_skill_c2.js；阶段 C5 新增 test_skill_view.js / test_c5_panel_prompt.js；修复 A/B 新增 test_fix_a_portrait_tx.js / test_fix_b_mergenamed.js；旧问题批次一 A1 新增 test_oldfix_a1.js；A2 属性定义来源统一新增 test_a2_stat_defs_source.js）
 node tools\longline_token_smoke.js        # 36 回合长线预算
 node tools\prompt_budget_smoke.js         # 预算降级阶梯
 node tools\import_smoke.js                # 导入层（与 RN 同源，130 条）
@@ -386,7 +392,7 @@ node tests\unit\test_info_feed_unit.js    # 单跑其中一套
 - 被测的模块（`engine/proposal_validator.js`、`engine/info_feed.js`、
   `engine/core/tool_executor.js`、`engine/outputs.js`、`engine/card_diagnose.js`、
   `engine/story.js`、`engine/snapshots.js`、`vfs/logger.js`）都是**两仓同源件**
-  （`card_diagnose.js` 属「仅行尾不同」桶，`engine/story.js`、`vfs/logger.js`、
+  （`card_diagnose.js` 已于 C2 转入「逐字节相同」桶，`engine/story.js`、`vfs/logger.js`、
   `engine/snapshots.js` 属「逐字节相同」桶；
   `test_story_compress_unit.js` 的 K7 只把 `engine/core/storage.js` 当**源码文本**读，
   该文件两仓本就不同源）；`test_prompt_deduction_unit.js` 另外要读

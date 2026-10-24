@@ -324,6 +324,57 @@
     return { id: 'eraProducts', label: '年代产物', status: 'pass', detail: segs.length + ' 段' };
   }
 
+  // ---- 阶段 C2：技能数值（静态） ----
+  function skillRules() {
+    try {
+      if (typeof SkillRules !== 'undefined' && SkillRules && typeof SkillRules.validateCard === 'function') return SkillRules;
+    } catch (e) { /* 全局不存在 */ }
+    try {
+      if (typeof require === 'function') {
+        var SR = require('./core/skill_rules.js');
+        if (SR && typeof SR.validateCard === 'function') return SR;
+      }
+    } catch (e) { /* require 不可用 */ }
+    return null;
+  }
+
+  function checkSkillStats(card) {
+    var wb = card.worldbook || {};
+    var skills = Array.isArray(wb.skills) ? wb.skills : [];
+    var withStat = [];
+    skills.forEach(function (s) {
+      if (s && typeof s === 'object' && s.stat && typeof s.stat === 'object') withStat.push(s);
+    });
+    // 旧卡：没有 stat 也没有 skillPool ⇒ 未使用，不报
+    if (!withStat.length && wb.skillPool == null) {
+      return { id: 'skillStats', label: '技能数值', status: 'pass', detail: '未使用（可忽略）' };
+    }
+    var SR = skillRules();
+    if (!SR) {
+      return { id: 'skillStats', label: '技能数值', status: 'warn', detail: '数值规则模块未加载，未能检查' };
+    }
+    var problems = [];
+    try {
+      var vc = SR.validateCard(card);
+      (vc.errors || []).forEach(function (e) { problems.push(e.message + '（' + e.path + '）'); });
+      (vc.warnings || []).forEach(function (e) { problems.push(e.message + '（' + e.path + '）'); });
+      if (typeof SR.poolOf === 'function') {
+        var po = SR.poolOf(card, null);
+        (po.errors || []).forEach(function (e) { problems.push('预算：' + e.message); });
+      }
+    } catch (e) {
+      problems.push('检查失败：' + (e && e.message ? e.message : e));
+    }
+    if (!problems.length) {
+      return { id: 'skillStats', label: '技能数值', status: 'pass',
+        detail: withStat.length + ' 个技能带 stat，字段合法' };
+    }
+    var head = problems.slice(0, 3).join('；');
+    var tail = problems.length > 3 ? '；等 ' + problems.length + ' 条' : '';
+    return { id: 'skillStats', label: '技能数值', status: 'warn',
+      detail: withStat.length + ' 个技能带 stat，' + problems.length + ' 条问题：' + head + tail };
+  }
+
   function checkShops(card) {
     var wb = card.worldbook || {};
     var shops = wb.shops;
@@ -495,6 +546,12 @@
     var compCheck = checkCompleteness(card);
     checks.push(compCheck);
     if (compCheck.status === 'warn') warnings.push('完整性：' + compCheck.detail);
+
+    // 阶段 C2：技能数值（worldbook.skills[].stat / worldbook.skillPool）
+    //   只读静态检查；旧卡没有 stat 时直接 pass（不产生无意义警告）。
+    var skillCheck = checkSkillStats(card);
+    checks.push(skillCheck);
+    if (skillCheck.status === 'warn') warnings.push('技能数值：' + skillCheck.detail);
 
     // 身份层 display 是可选段：无段（老卡）不产生检查项；
     // 有段但非法只报 warn 一条，绝不拦导入，主页由 CardDisplay 回退默认身份。

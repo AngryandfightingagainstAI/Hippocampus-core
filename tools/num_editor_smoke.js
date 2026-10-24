@@ -394,7 +394,10 @@ function runSource() {
 
   check('H4 保存路径逐字同源（cardCopy → meta → 落盘）',
     rnSrc.indexOf('    const cardCopy = JSON.parse(JSON.stringify(card));\n    this.saveToCard(cardCopy);\n    if (!cardCopy.meta) cardCopy.meta = {};\n    cardCopy.meta.lastModifiedAt = new Date().toISOString();\n    cardCopy.meta.lastModifiedBy = \'editor\';') >= 0 &&
-    rnSrc.indexOf('    const imported = Storage.getImportedCards();\n    imported[this.cardId] = cardCopy;\n    Storage.setImportedCards(imported);\n    this.dirty = false;') >= 0);
+    rnSrc.indexOf('    const imported = Storage.getImportedCards();\n    imported[this.cardId] = cardCopy;\n    Storage.setImportedCards(imported);\n') >= 0 &&
+    // 断点 B 修复（与桌面 engine/editor.js:213-216 同形）：落盘后要把结构同步进当前存档，
+    // 所以「Storage.setImportedCards(imported) → this.dirty = false」之间夹了 syncToCurrentState。
+    rnSrc.indexOf('    const synced = this.syncToCurrentState(cardCopy);\n    this.dirty = false;') >= 0);
 
   // 非琐碎行全落（允许列表 = 已适配的 UI 行）
   var ADAPTED = [
@@ -508,7 +511,9 @@ function runComponent() {
   //   桌面独有件 engine/editor.js（RN 实测不存在，RN 是 engine/num_editor.js + engine/wb/* 结构）
   //   不参与 red —— 该槽位改锁 RN 本仓移植产物 engine/num_editor.js（条数不变，只换比较对象）。
   var REF = [
-    ['engine/num_editor.js', 11458, '01E7BED6AA56DA94FDC3CACFD89C9968']
+    // 2026-10-23 断点 B 移植批：num_editor.js 补 syncToCurrentState（对齐桌面
+    // engine/editor.js:213-276），11458 → 14520 B。
+    ['engine/num_editor.js', 14520, '755A70D88DED3BEC152EF9C814CF925C']
   ];
   REF.forEach(function (b) {
     var p = path.join(root, b[0]);

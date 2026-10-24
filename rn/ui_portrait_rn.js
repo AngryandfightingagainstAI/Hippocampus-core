@@ -24,11 +24,22 @@ try {
 var _playerData = null;
 var _cb = null;
 var _portrait = null; // 最近一次 AI 产出的人设
+// C4：可选技能校验（创角入口传入；重审人设入口不传 ⇒ 行为不变）
+var _validate = null;
+var _skillReturn = null;
+// 修复 A：重审人设的整批修改快照（整理成人设只改内存，确认时一次落盘；取消/放弃回退）
+var _snapshot = null;
 
-function start(playerData, cb) {
+function setSkillReturn(fn) {
+  _skillReturn = (typeof fn === 'function') ? fn : null;
+}
+
+function start(playerData, cb, validate) {
   _playerData = playerData || null;
   _cb = (typeof cb === 'function') ? cb : null;
   _portrait = null;
+  _validate = (typeof validate === 'function') ? validate : null;
+  _snapshot = null; // 创角路径：整理成人设按原行为立即落盘
   // 从落盘恢复聊天 + 撤回（portrait_chat.json）
   try { if (typeof PortraitChat !== 'undefined' && PortraitChat.restore) PortraitChat.restore(); } catch (e) {}
   if (NavStore) NavStore.navigate('portrait');
@@ -41,6 +52,31 @@ function getPlayerData() {
     if (typeof GameState !== 'undefined' && GameState.playerData) return GameState.playerData;
   } catch (e) {}
   return {};
+}
+
+// 修复 A：重审人设 = 没有创角回调（_cb）且存档里已有人设。
+function isReview() {
+  if (_cb) return false;
+  try {
+    return !!(typeof GameState !== 'undefined' && GameState && GameState.playerData && GameState.playerData.portrait);
+  } catch (e) { return false; }
+}
+
+// 修复 A：把正式对象回退到进入人设页前的快照，并落盘。
+function restoreSnapshot() {
+  if (!_snapshot) return false;
+  var pd = getPlayerData();
+  if (!pd) return false;
+  try {
+    Object.keys(pd).forEach(function (k) { if (!(k in _snapshot)) delete pd[k]; });
+    Object.keys(_snapshot).forEach(function (k) { pd[k] = _snapshot[k]; });
+    _snapshot = null;
+    if (typeof GameState !== 'undefined' && GameState) {
+      if (GameState.invalidateCache) GameState.invalidateCache();
+      if (GameState.persist) GameState.persist();
+    }
+    return true;
+  } catch (e) { return false; }
 }
 
 // —— 动作①：讨论（流式）——
@@ -208,10 +244,17 @@ function extract() {
       var text = (resp && typeof resp.content === 'string') ? resp.content : String(resp || '');
       var parsed = Portrait.parseExtractResponse(text);
       if (!parsed) return { ok: false, error: 'AI 输出不是有效 patch' };
+      // 修复 A：重审人设在任何改动之前抓快照（必须在 mergePatch 之前），
+      //   这样取消/放弃才能回到「进入人设页时」的属性与技能。
+      if (isReview() && !_snapshot) {
+        try { _snapshot = JSON.parse(JSON.stringify(pd)); } catch (e) { _snapshot = null; }
+      }
       var result = Portrait.mergePatch(parsed.patch, pd);
       if (!result.ok) return { ok: false, error: result.error };
-      // 写盘：playerData（含 portrait）
-      try { if (typeof GameState !== 'undefined' && GameState.persist) GameState.persist(); } catch (e) {}
+      // 修复 A：重审人设只改内存，确认时与人设/技能一起落盘；创角路径保持原行为
+      if (!isReview()) {
+        try { if (typeof GameState !== 'undefined' && GameState.persist) GameState.persist(); } catch (e) {}
+      }
       // 撤回记录
       try {
         Portrait.recordUndo({
@@ -229,7 +272,7 @@ function extract() {
 function undo(entryId) {
   try {
     var r = Portrait.undoLast(entryId);
-    if (r.ok) {
+    if (r.ok && !isReview()) {
       try { if (typeof GameState !== 'undefined' && GameState.persist) GameState.persist(); } catch (e) {}
     }
     return r;
@@ -253,6 +296,11 @@ function complete(result) {
   _playerData = null;
   _cb = null;
   _portrait = null;
+  // C5-4：创角专用的技能校验闭包必须随流程结束清掉，
+  //   否则游戏内重审人设会误用"返回技能步骤"这类只属于创角的回调。
+  _validate = null;
+  _skillReturn = null;
+  _snapshot = null;
   if (typeof cb === 'function') {
     try { cb(result || {}); } catch (e) { /* cb 异常不得卡屏 */ }
     return;
@@ -283,12 +331,78 @@ function applyPortrait(portrait) {
   } catch (e) {}
 }
 
+// C4：确认/跳过前的技能校验。失败时给两条路：返回技能步骤改分配，或留在本页继续编辑。
+function gateBlocked() {
+  if (!_validate) return Promise.resolve(false);
+  var r = null;
+  try { r = _validate(); } catch (e) { r = null; }
+  if (!r || r.ok) return Promise.resolve(false);
+  var msg = (r.message || '技能数值需要调整')
+    + '\n\n返回技能分配步骤修改？（点“取消”可留在本页继续编辑人设）';
+  return Promise.resolve(Platform.ui.confirmAsync(msg)).then(function (back) {
+    if (back) {
+      if (_skillReturn) { try { _skillReturn(); } catch (e) {} }
+      _cb = null;
+      _validate = null;
+    }
+    return true;
+  });
+}
+
+// C5-4：游戏中重审人设时，属性可能已被改写；按最终属性重算技能 bonus/value（保留 alloc）。
+//   旧档没有 skillStats 时不动（不补算）。创角路径不在这里处理（由 gate/_validate 负责）。
+function _SF() {
+  if (typeof SkillFlow !== 'undefined' && SkillFlow && typeof SkillFlow.recalc === 'function') return SkillFlow;
+  if (typeof require === 'function') {
+    try {
+      var m = require('../engine/core/skill_flow.js');
+      if (m && typeof m.recalc === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
+function inGameSkillCheck() {
+  if (_cb) return { ok: true };
+  var SF = _SF();
+  var GS = (typeof GameState !== 'undefined') ? GameState : null;
+  if (!SF || !GS || !GS.playerData || !GS.playerData.skillStats) return { ok: true };
+  var r = SF.recalc(GS.currentCard, SF.attrsOf(GS.currentCard, GS.playerData), GS.playerData.skillStats);
+  if (!r || !r.ok) {
+    var e0 = (r && r.errors && r.errors[0]) || null;
+    return {
+      ok: false,
+      message: '属性变动后技能数值不符合规则：'
+        + (e0 ? ((e0.path ? e0.path + '：' : '') + (e0.message || '')) : '未知原因')
+    };
+  }
+  if (r.changed) GS.playerData.skillStats = r.skillStats;
+  return { ok: true };
+}
+
 function confirm(portrait, openingPrompt) {
   if (!portrait) return;
-  try { Portrait.save(portrait); } catch (e) {}
-  applyPortrait(portrait);
-  applyOpening(openingPrompt);
-  complete({ portrait: portrait, openingPrompt: openingPrompt == null ? '' : String(openingPrompt) });
+  return gateBlocked().then(function (blocked) {
+    if (blocked) return;
+    var chk = inGameSkillCheck();
+    if (!chk.ok) {
+      return Promise.resolve(Platform.ui.confirmAsync(
+        chk.message + '\n\n放弃本次人设修改并返回游戏？（点“取消”留在本页继续调整属性）'
+      )).then(function (leave) {
+        if (leave) {
+          // 修复 A：放弃 ⇒ 属性/技能一起回退到进入人设页前
+          restoreSnapshot();
+          if (NavStore) NavStore.navigate('story');
+        }
+      });
+    }
+    // 修复 A：提交成功后清掉快照（不再回退）
+    _snapshot = null;
+    try { Portrait.save(portrait); } catch (e) {}
+    applyPortrait(portrait);
+    applyOpening(openingPrompt);
+    complete({ portrait: portrait, openingPrompt: openingPrompt == null ? '' : String(openingPrompt) });
+  });
 }
 
 function applyOpening(opening) {
@@ -312,18 +426,23 @@ function applyOpening(opening) {
 }
 
 function skip(openingPrompt) {
-  var pd = getPlayerData();
-  var fb;
-  try { fb = Portrait.fallback(pd); } catch (e) {
-    fb = { summary: '（未生成人设总述，使用原始字段）', traits: [], lockedAt: new Date().toISOString(), aiVersion: 0 };
-  }
-  try { Portrait.save(fb); } catch (e) {}
-  applyPortrait(fb);
-  applyOpening(openingPrompt);
-  complete({ portrait: fb, openingPrompt: openingPrompt == null ? '' : String(openingPrompt) });
+  return gateBlocked().then(function (blocked) {
+    if (blocked) return;
+    var pd = getPlayerData();
+    var fb;
+    try { fb = Portrait.fallback(pd); } catch (e) {
+      fb = { summary: '（未生成人设总述，使用原始字段）', traits: [], lockedAt: new Date().toISOString(), aiVersion: 0 };
+    }
+    try { Portrait.save(fb); } catch (e) {}
+    applyPortrait(fb);
+    applyOpening(openingPrompt);
+    complete({ portrait: fb, openingPrompt: openingPrompt == null ? '' : String(openingPrompt) });
+  });
 }
 
 function cancel() {
+  // 修复 A：取消重审 ⇒ 回退本次未确认的属性修改
+  restoreSnapshot();
   _playerData = null;
   _cb = null;
   _portrait = null;
@@ -346,6 +465,7 @@ function getOpeningPrompt() {
 
 var UI_Portrait = {
   start: start,
+  setSkillReturn: setSkillReturn,
   send: send,
   sendStream: sendStream,
   audit: audit,

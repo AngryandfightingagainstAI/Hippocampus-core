@@ -44,6 +44,9 @@ var useNavigation = require('../navigation.js').useNavigation;
 var useKeyboardInset = require('../use_keyboard_inset.js').useKeyboardInset;
 var Model = require('../home_model.js');
 var CF = require('../create_flow_model.js');
+// C4：技能分配的唯一计算入口（UI 只渲染，不自行算预算/上限）
+var SF = null;
+try { SF = require('../../engine/core/skill_flow.js'); } catch (e) { SF = null; }
 // P10·A2：建档前起名走 promptOpen（OverlayHost.PromptModal，根层已挂；Promise<string|null>）
 var StoryStore = require('../story_store.js');
 // P10·A7：空态文案单一来源（逐字照桌面 ui_cards.js:38）
@@ -68,7 +71,7 @@ function msgOf(res) {
     case 'MULTI_MIN': return '至少选 ' + res.min + ' 项';
     case 'QUIZ_MISS': return '还有 ' + res.miss + ' 道题没选';
     case 'MULTI_MAX': return '最多选 ' + res.max + ' 项';
-    default: return '';
+    default: return (res && res.message) ? res.message : '';
   }
 }
 
@@ -117,7 +120,9 @@ function CreateScreen() {
   var picked = Model.getHomePicked();
   var cardId = picked ? picked.id : null;
   var card = picked ? picked.card : null;
-  var rawSteps = (card && Array.isArray(card.steps) && card.steps.length) ? card.steps : DEFAULT_STEPS;
+  var rawSteps = (card && Array.isArray(card.steps) && card.steps.length)
+    ? ((CF.prepareSteps(card).steps) || card.steps)
+    : DEFAULT_STEPS;
 
   var idxState = React.useState(0);
   var stepIdx = idxState[0];
@@ -168,14 +173,21 @@ function CreateScreen() {
         if (!sid) { setErr('建档失败：卡带不存在'); return; }
         if (!GameState.loadFromSave(cardId, sid)) { setErr('装载新档失败'); return; }
         var draftData = (draft && draft.data) ? draft.data : {};
+        var prep = (card && Array.isArray(card.steps) && card.steps.length)
+          ? CF.prepareSteps(card)
+          : { steps: DEFAULT_STEPS };
         var st = CF.filterSteps(
-          (card && Array.isArray(card.steps) && card.steps.length) ? card : { steps: DEFAULT_STEPS },
+          { steps: prep.steps || DEFAULT_STEPS },
           draftData
         );
         if (!st.length) st = DEFAULT_STEPS;
         setSteps(st);
         setData(draftData);
-        if (draft) setStepIdx(Math.max(0, Math.min(draft.index || 0, st.length - 1)));
+        if (draft) {
+          // C4：卡带步骤增删后旧草稿的 index 可能对不上；形状变了就从头走，但保留已填内容
+          var sameShape = (draft.totalSteps == null) || (draft.totalSteps === st.length);
+          setStepIdx(sameShape ? Math.max(0, Math.min(draft.index || 0, st.length - 1)) : 0);
+        }
         setSaveId(sid);
         setReady(true);
       } catch (e) {
@@ -194,9 +206,11 @@ function CreateScreen() {
     var s = steps[stepIdx];
     if (!s || s.type !== 'form') return;
     var pool = CF.poolOf(card, s);
+    // A2：默认值也按统一定义（card.attributes 优先）算，避免显示值与点数口径不一致
+    var dmap = CF.isAttrStep(s) ? CF.defMapOf(card, s) : null;
     setData(function (prev) {
       var next = Object.assign({}, prev);
-      CF.syncDefaults(s, next, !!pool);
+      CF.syncDefaults(s, next, !!pool, dmap);
       return shallowEqObj(next, prev) ? prev : next;
     });
   }, [ready, stepIdx, steps]);
@@ -216,12 +230,21 @@ function CreateScreen() {
     if (!isNaN(v)) setField(key, v);
   }
   // 失焦归一（对齐 onNumberBlur:800-817）
+  //   A2：属性步的上下限取统一定义（card.attributes 权威），字段值只兜底
   function onNumberBlur(key, fd) {
     var v = data[key];
     if (v === '' || v == null) { setField(key, ''); return; }
     var num = Number(v);
     if (isNaN(num)) { setField(key, ''); return; }
-    setField(key, CF.clampNumber(num, fd.min, fd.max));
+    var d = null;
+    if (fd && fd.key && CF.isAttrStep(steps[stepIdx])) {
+      var dm = CF.defMapOf(card, steps[stepIdx]);
+      var bk = String(fd.key).replace(/^(attr_)+/, '');
+      d = dm ? (dm[fd.key] || (bk ? dm[bk] : null) || null) : null;
+    }
+    var mn = (d && d.min != null) ? d.min : (fd ? fd.min : null);
+    var mx = (d && d.max != null) ? d.max : (fd ? fd.max : null);
+    setField(key, CF.clampNumber(num, mn, mx));
   }
   // 多选（对齐 toggleMulti:980-986）
   function onToggleMulti(stepObj, id) {
@@ -376,13 +399,12 @@ function CreateScreen() {
     }
   }
 
-  function onPickDestiny(set) {
+  function onPickDestiny(set, i) {
     if (creating || !set || !set.values) return;
     setDestinyPicked(set);
-    var next = Object.assign({}, data);
-    destinyAttrs.forEach(function (a) {
-      if (a && a.key && typeof set.values[a.key] === 'number') next[a.key] = set.values[a.key];
-    });
+    // 阶段 A 补充：与桌面 pickDestiny 同口径落 _destiny 锁（此前只写属性值，
+    // 导致 Android 天命锁、提示词「（天命）」标注、池排除全部失效）。
+    var next = CF.applyDestinyPick(data, destinyAttrs, set, i);
     setData(next);
     CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
   }
@@ -505,11 +527,55 @@ function CreateScreen() {
     setErr('');
     try {
       GameState.playerData = CF.buildPlayerData(data, card);
+      // C4：技能初始化（问卷加成已在 buildPlayerData 内完成，这里拿到的就是最终属性）
+      var skillStep = null, skillIdx = -1;
+      if (SF && SF.hasRules(card)) {
+        for (var si = 0; si < steps.length; si++) {
+          if (steps[si] && steps[si].type === 'skills') { skillStep = steps[si]; skillIdx = si; break; }
+        }
+        var sattrs = SF.attrsOf(card, GameState.playerData);
+        var scommit = SF.commit(card, sattrs, data.__skillAlloc || {}, skillStep);
+        if (!scommit.ok) {
+          var ce = (scommit.errors || [])[0];
+          Platform.ui.toast(ce ? (ce.message + (ce.path ? '（' + ce.path + '）' : '')) : '技能分配未通过校验', { type: 'warn' });
+          if (skillIdx >= 0) {
+            CF.saveDraft(cardId, saveId, skillIdx, data, steps.length);
+            setStepIdx(skillIdx);
+          }
+          setCreating(false);
+          return;
+        }
+        if (scommit.skillStats) GameState.playerData.skillStats = scommit.skillStats;
+      }
       var pname = (typeof Alias !== 'undefined' && Alias.get) ? Alias.get(GameState.playerData, 'name') : GameState.playerData.name;
       if (pname && GameState.currentSaveId) Saves.setPlayerName(cardId, saveId, String(pname));
       GameState._gameTime = GameState._buildInitialGameTime(GameState.currentCard, GameState.playerData);
       CF.clearDraft(cardId, saveId);
       GameState.persist();
+      // C4：人设确认前的技能校验。属性被改过 ⇒ 重算 bonus；不合法则阻止确认，
+      //   并把「回到技能步骤」注册给人设屏，避免玩家卡在人设页。
+      function validateSkills() {
+        if (!SF || !GameState.playerData || !GameState.playerData.skillStats) return { ok: true };
+        var a2 = SF.attrsOf(GameState.currentCard, GameState.playerData);
+        var r = SF.recalc(GameState.currentCard, a2, GameState.playerData.skillStats, skillStep);
+        if (!r.ok) {
+          var e = (r.errors || [])[0];
+          return {
+            ok: false,
+            message: (e ? e.message : '技能数值需要调整') + (e && e.path ? '（' + e.path + '）' : '')
+              + '\n属性变化后技能加成需要重算，当前分配不再合法。'
+          };
+        }
+        if (r.changed) GameState.playerData.skillStats = r.skillStats;
+        return { ok: true };
+      }
+      if (UI_Portrait && typeof UI_Portrait.setSkillReturn === 'function') {
+        UI_Portrait.setSkillReturn(function () {
+          CF.saveDraft(cardId, saveId, skillIdx >= 0 ? skillIdx : stepIdx, data, steps.length);
+          if (skillIdx >= 0) setStepIdx(skillIdx);
+          nav.navigate('create');
+        });
+      }
       // P9·S7：先进人设屏（对齐桌面 engine/story.js _enterPortrait:663-677），确认或
       //   跳过后在 cb 里进游戏起回合。「跳过」分支在 UI_Portrait.skip（Portrait.fallback
       //   兜底，未删）；确认分支在 UI_Portrait.confirm。旧「直接 fallback + 进游戏」路径移除。
@@ -527,7 +593,7 @@ function CreateScreen() {
         if (!GameState.chatHistory.length && typeof StoryLoop !== 'undefined') {
           StoryLoop.start();
         }
-      });
+      }, validateSkills);
     } catch (e) {
       setErr('创建失败：' + (e && e.message ? e.message : String(e)));
       setCreating(false);
@@ -567,6 +633,19 @@ function CreateScreen() {
       poolNumOver: { color: c.danger, fontWeight: '600' },
       poolRemain: { color: c.faint, fontSize: f.xs },
       poolBase: { fontSize: f.xs, color: c.faint, marginTop: 2 },
+      // C4：技能分配行
+      skillRow: {
+        flexDirection: 'row', alignItems: 'center', paddingVertical: 8,
+        borderTopWidth: 1, borderTopColor: c.hair
+      },
+      skillBtn: {
+        minWidth: 34, paddingHorizontal: 8, paddingVertical: 4, marginHorizontal: 4,
+        borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm, alignItems: 'center'
+      },
+      skillBtnTxt: { fontSize: f.sm, color: c.ink },
+      skillAlloc: { minWidth: 26, textAlign: 'center', fontSize: f.sm, color: c.ink, fontWeight: '600' },
+      skillValue: { minWidth: 44, textAlign: 'right', fontSize: f.xs, color: c.muted },
+      skillErr: { fontSize: f.xs, color: c.danger, marginTop: 4 },
       option: {
         borderWidth: 1, borderColor: c.hairStrong, borderRadius: tk.radius.sm,
         backgroundColor: c.panel, paddingHorizontal: 12, paddingVertical: 10, marginBottom: 8
@@ -654,7 +733,9 @@ function CreateScreen() {
   function renderForm(s) {
     var pool = CF.poolOf(card, s);
     var isAttr = !!pool;
-    var allocated = pool ? CF.calcAllocated(s, data, pool) : 0;
+    // A2：属性步每一行的名称 / min / max / 默认值都取统一定义（card.attributes 权威）
+    var dmap = CF.isAttrStep(s) ? CF.defMapOf(card, s) : null;
+    var allocated = pool ? CF.calcAllocated(card, s, data, pool) : 0;
     var remain = pool ? pool.total - allocated : 0;
     return (
       <View>
@@ -672,11 +753,15 @@ function CreateScreen() {
         {(s.fields || []).map(function (fd) {
           var key = fd.key;
           var val = data[key];
+          // A2：单字段定义（attributes 优先，未声明键退回字段自身）；defMap 里 canon 键与裸键都命中
+          var bareKey = String(key == null ? '' : key).replace(/^(attr_)+/, '');
+          var def = dmap ? (dmap[key] || (bareKey ? dmap[bareKey] : null)) : null;
+          var effLabel = (def && def.name) ? def.name : (fd.label || key);
           // P23·①：显式清空（''）不回填默认值，否则删掉默认数字后没法重输
-          var shown = CF.shownValue(fd, val, isAttr);
+          var shown = CF.shownValue(fd, val, isAttr, def);
           return (
             <View key={key} style={styles.fieldWrap} onLayout={rememberY(key)}>
-              <Text style={styles.fieldLabel}>{(fd.label || key) + (fd.required ? '（必填）' : '')}</Text>
+              <Text style={styles.fieldLabel}>{effLabel + (fd.required ? '（必填）' : '')}</Text>
               {fd.type === 'number' ? (
                 <TextInput
                   style={styles.input}
@@ -931,7 +1016,7 @@ function CreateScreen() {
               key={'ds' + i}
               style={styles.destinyRow}
               activeOpacity={0.6}
-              onPress={function () { onPickDestiny(set); }}
+              onPress={function () { onPickDestiny(set, i); }}
             >
               <Text style={styles.destinyRowText}>
                 {destinyAttrs.map(function (a) {
@@ -1061,6 +1146,102 @@ function CreateScreen() {
     );
   }
 
+  // ---------- C4：技能分配步骤（渲染与加减；所有计算走 SkillFlow，UI 不自算） ----------
+  function skillPlan(stepObj) {
+    if (!SF) return null;
+    try { return SF.planStep(card, stepObj, SF.attrsOf(card, data), data.__skillAlloc || {}); }
+    catch (e) { return null; }
+  }
+  function skillAdjust(id, delta) {
+    if (!step || !SF) return;
+    var plan = skillPlan(step);
+    if (!plan) return;
+    var mode = plan.budget ? plan.budget.mode : 'block';
+    var cur = (data.__skillAlloc && data.__skillAlloc[id]) || 0;
+    var r = SF.stepApply(card, step, SF.attrsOf(card, data), data.__skillAlloc || {}, id, cur + delta, { mode: mode });
+    if (!r || !r.ok) {
+      var e = (r && r.errors) ? r.errors[0] : null;
+      Platform.ui.toast(e ? (e.message + (e.path ? '（' + e.path + '）' : '')) : '技能分配失败', { type: 'warn' });
+      return;
+    }
+    var next = Object.assign({}, data, { __skillAlloc: r.alloc || {} });
+    setData(next);
+    CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+    if (r.clamped) Platform.ui.toast('已按卡带规则调整为 ' + r.actual + ' 点', { type: 'info' });
+  }
+  function skillDropOrphan(id) {
+    if (!SF) return;
+    var alloc = Object.assign({}, data.__skillAlloc || {});
+    delete alloc[id];
+    var next = Object.assign({}, data, { __skillAlloc: alloc });
+    setData(next);
+    CF.saveDraft(cardId, saveId, stepIdx, next, steps.length);
+  }
+  function renderSkills(stepObj) {
+    var plan = skillPlan(stepObj);
+    if (!plan) return <Text style={styles.unknown}>{'技能数值模块未加载（engine/core/skill_flow.js）'}</Text>;
+    var alloc = plan.alloc || {};
+    var st = plan.status || { allocated: 0, remaining: null };
+    var total = plan.budget ? plan.budget.total : null;
+    return (
+      <View>
+        {total != null ? (
+          <View style={styles.poolBar}>
+            <Text style={styles.poolLabel}>
+              {'技能点 已分配 '}
+              <Text style={st.allocated > total ? styles.poolNumOver : styles.poolNum}>{String(st.allocated)}</Text>
+              {' / ' + total + '（剩余 ' + (st.remaining == null ? '-' : st.remaining) + '）'}
+            </Text>
+            {plan.budget.requireSpend ? <Text style={styles.poolBase}>{'这张卡带要求把技能点花完'}</Text> : null}
+            {plan.capacity && plan.capacity.bounded === false ? <Text style={styles.poolBase}>{'存在无上限技能：可以继续加点'}</Text> : null}
+          </View>
+        ) : null}
+        {(plan.errors || []).slice(0, 4).map(function (e, i) {
+          return <Text key={'e' + i} style={styles.skillErr}>{'[' + e.code + '] ' + (e.path ? e.path + ' — ' : '') + e.message}</Text>;
+        })}
+        {(plan.items || []).map(function (it) {
+          var a = alloc[it.id] || 0;
+          var minReq = plan.minRequired ? plan.minRequired[it.id] : 0;
+          return (
+            <View key={it.id} style={styles.skillRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.fieldLabel}>{it.name + '（' + it.id + '）'}</Text>
+                <Text style={styles.poolBase}>
+                  {'基础 ' + it.init + ' + 加成 ' + it.bonus + ' = ' + (it.init + it.bonus)
+                    + (it.max == null ? '（无上限）' : '（上限 ' + it.max + '）')}
+                </Text>
+                {minReq > 0 ? <Text style={styles.skillErr}>{'还需分配 ' + Math.ceil(minReq) + ' 点'}</Text> : null}
+              </View>
+              <TouchableOpacity style={styles.skillBtn} onPress={function () { skillAdjust(it.id, -1); }}>
+                <Text style={styles.skillBtnTxt}>{'−'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.skillAlloc}>{String(a)}</Text>
+              <TouchableOpacity style={styles.skillBtn} onPress={function () { skillAdjust(it.id, 1); }}>
+                <Text style={styles.skillBtnTxt}>{'+'}</Text>
+              </TouchableOpacity>
+              <Text style={styles.skillValue}>{'=' + (it.init + it.bonus + a)}</Text>
+            </View>
+          );
+        })}
+        {(plan.orphans || []).length ? (
+          <View style={{ marginTop: 10 }}>
+            <Text style={styles.skillErr}>{'失效技能（已不在当前卡带中，必须移除才能继续）'}</Text>
+            {(plan.orphans || []).map(function (o) {
+              return (
+                <View key={o.id} style={styles.skillRow}>
+                  <Text style={styles.fieldLabel}>{o.id + '（' + (o.alloc || 0) + ' 点）'}</Text>
+                  <TouchableOpacity style={styles.skillBtn} onPress={function () { skillDropOrphan(o.id); }}>
+                    <Text style={styles.skillBtnTxt}>{'移除'}</Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+      </View>
+    );
+  }
+
   function renderBody() {
     if (!step) return null;
     switch (step.type) {
@@ -1094,6 +1275,7 @@ function CreateScreen() {
           )
           : renderOptions(step, false, true);
       case 'summary': return renderSummary();
+      case 'skills': return renderSkills(step);
       default:
         return <Text style={styles.unknown}>{'（未知步骤类型：' + String(step.type) + '）'}</Text>;
     }

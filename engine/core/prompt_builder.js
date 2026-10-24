@@ -552,23 +552,48 @@ var PromptBuilder = {
     //   这里给一行紧凑快照，天命锁定的项标「（天命）」——那些值不该被剧情改动。
     const attrParts = [];
     const lockedVals = (pd._destiny && pd._destiny.values) || {};
-    (card.attributes || []).forEach(function (a) {
+    // C5-4：属性值统一走 stat_rules（历史双前缀 attr_attr_* 也能读到真值），
+    //   与角色面板/校验同口径；模块缺失时退回旧读法。
+    const _SR = (typeof StatRules !== 'undefined' && StatRules && typeof StatRules.valueOf === 'function') ? StatRules : null;
+    // A2：属性定义统一取 StatRules.defs(card)（card.attributes 是权威源）。
+    //   以前这里直接遍历 card.attributes，虽然来源正确，但绕过了统一接口：
+    //   key 归一 / name 兜底 / max 取数规则都自己写了一份，和建卡流程可能分叉。
+    let defList = null;
+    if (_SR && typeof _SR.defs === 'function') {
+      try { defList = _SR.defs(card); } catch (e) { defList = null; }
+    }
+    if (!defList) defList = (card.attributes || []).map(function (a) {
+      return { key: a && a.key, bare: a && a.key, name: a && (a.name || a.key), max: a && a.max };
+    });
+    defList.forEach(function (a) {
       if (!a || !a.key) return;
       const k = String(a.key);
-      const v = (pd['attr_' + k] != null) ? pd['attr_' + k] : pd[k];
+      const v = _SR ? _SR.valueOf(pd, k) : ((pd['attr_' + k] != null) ? pd['attr_' + k] : pd[k]);
       if (v == null || v === '') return;
-      let one = (a.name || k) + ' ' + v + (a.max != null ? '/' + a.max : '');
-      if (lockedVals['attr_' + k] != null || lockedVals[k] != null) one += '（天命）';
+      const nm = a.name || a.bare || k;
+      let one = nm + ' ' + v + (a.max != null ? '/' + a.max : '');
+      const bareK = a.bare || (_SR ? _SR.bare(k) : k);
+      if (lockedVals['attr_' + bareK] != null || lockedVals[bareK] != null) one += '（天命）';
       attrParts.push(one);
     });
     const rels = this.buildInitialRelations(card);
-    if (!rows.length && !rels.length && !attrParts.length) return '';
+    // C5-3：技能数值摘要（只读、最多 8 项、≤240 字；旧档无 skillStats / 无规则时为空）
+    let _SV = (typeof SkillView !== 'undefined' && SkillView && typeof SkillView.promptLine === 'function') ? SkillView : null;
+    if (!_SV) {
+      try {
+        const _m = (typeof require === 'function') ? require('./skill_view.js') : null;
+        if (_m && typeof _m.promptLine === 'function') _SV = _m;
+      } catch (e) { _SV = null; }
+    }
+    const skillLine = _SV ? _SV.promptLine(card, pd) : '';
+    if (!rows.length && !rels.length && !attrParts.length && !skillLine) return '';
     const out = ['【角色档案】创角时定下的设定，写正文时当既成事实用，不要改动或忽略'];
     if (rows.length) {
       out.push(rows.slice(0, 40).join('\n'));
       if (rows.length > 40) out.push('· …等 ' + rows.length + ' 项');
     }
     if (attrParts.length) out.push('· 属性：' + attrParts.join(' · '));
+    if (skillLine) out.push(skillLine);
     if (rels.length) {
       out.push('');
       out.push('【先置关系】开局时就已经成立的关系（不是刚认识）');

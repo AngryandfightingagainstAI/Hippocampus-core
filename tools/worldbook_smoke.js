@@ -578,7 +578,7 @@ function runQ() {
     ['engine/wb/npc.js', 7135, '654201D085A47A697C95800D1041C7AB'],
     ['engine/wb/faction.js', 3425, '8287CA7F9C56EE56D14F0D87832F08CA'],
     ['engine/wb/item.js', 2173, '6995D33AC91854172A382D9FD6C87FF7'],
-    ['engine/wb/skill.js', 2937, '17108CA22A613A459C315D5790E63A37'],
+    ['engine/wb/skill.js', 6123, '92B68753435A95410B0535016CBF5593'],
     ['engine/wb/race.js', 2671, 'C98A39BBA86D434F9BED1AB352373DFD'],
     ['engine/wb/occupation.js', 2152, 'C156E98D8F488220479EF3CAE5EE8A86'],
     ['engine/wb/shop.js', 2528, '7401F9D1C1DBC2A06922A2CEA7E8E602'],
@@ -587,7 +587,8 @@ function runQ() {
     ['engine/wb/outputs.js', 4749, '05F63B7990E4ED2A26C4E8EBD76CF518'],
     ['engine/wb/world_setting.js', 8647, 'D0869881B785B3F935935AA878454C62'],
     ['engine/wb/map.js', 12226, '6C601F5C3393385B3C993B495721F2E9'],
-    ['engine/num_editor.js', 11458, '01E7BED6AA56DA94FDC3CACFD89C9968']
+    // 2026-10-23 断点 B 移植批：numEditor 补 syncToCurrentState，11458 → 14520 B。
+    ['engine/num_editor.js', 14520, '755A70D88DED3BEC152EF9C814CF925C']
   ];
   REF.forEach(function (b) {
     var p = path.join(root, b[0]);
@@ -601,7 +602,8 @@ function runQ() {
   ['engine/wb_common.js'].concat(fs.readdirSync(path.join(root, 'engine', 'wb')).map(function (f) { return 'engine/wb/' + f; }))
     .forEach(function (rel) { wbTotal += lfBuf(path.join(root, rel)).length; });
   // P78 台词库批：npc.js 补 voice.cues 编辑（+2535 B），合计 54163 → 56698。
-eq('Q RN engine/wb_common.js + engine/wb/*.js 13 文件合计字节（LF 口径）', wbTotal, 56698);
+  // C3 技能预算批：skill.js 补 skillPool 与 stat 数值规则读写（+3186 B），合计 56698 → 59884。
+eq('Q RN engine/wb_common.js + engine/wb/*.js 13 文件合计字节（LF 口径）', wbTotal, 59884);
   // 桌面独有件/同名件软提示：刻意的跨仓参考，不参与断言
   ['worldbook/', 'engine/editor.js', 'engine/web_search.js'].forEach(function (rel) {
     var dp = path.join(DESK, rel);

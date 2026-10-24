@@ -450,10 +450,11 @@ function runG() {
   ApiManager.getAll();
   eq('G4 用户显式 4096 不被覆盖', mtOf('g_b'), 4096);
 
-  // G5 思考模型 4096 ⇒ 16384（既有 :102-103 口径回归守卫）
+  // G5 思考模型显式 4096 也不再被抬升（2026-10-23 口径：不再强制把思考模型抬到 16384，
+  // 用户填多少就是多少，0 表示不限制 —— 见 engine/api_manager.js 的 normalizeProfile 注释）
   seed([{ id: 'g_c', name: '思考', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-reasoner', max_tokens: 4096 }]);
   ApiManager.getAll();
-  eq('G5 思考模型 4096 ⇒ 16384（既有口径）', mtOf('g_c'), 16384);
+  eq('G5 思考模型显式 4096 原样保留（不强制抬升）', mtOf('g_c'), 4096);
 
   // G6 标记已存在 ⇒ 不再迁移（证明「迁移只写一次」）
   seed([{ id: 'g_d', name: '默认配置', baseUrl: '', model: 'deepseek-flash', max_tokens: 2048 }]);
@@ -461,8 +462,10 @@ function runG() {
   ApiManager.getAll();
   eq('G6 标记已存在 ⇒ 2048 不再抬升（只写一次）', mtOf('g_d'), 2048);
 
-  // G7 源码断言：迁移版本标记键 + 判定条件存在
-  var src = fs.readFileSync(path.join(root, 'engine', 'api_manager.js'), 'utf8');
+  // G7 源码断言：迁移版本标记键 + 判定条件存在。
+  // 位置在 engine/core/storage.js（与桌面同口径）：api_manager.js 是 B 类文件，
+  // 不得多出未声明的平台依赖（localStorage），所以迁移放在已声明 localStorage 的 storage.js 里。
+  var src = fs.readFileSync(path.join(root, 'engine', 'core', 'storage.js'), 'utf8');
   check('G7 源码含一次性迁移（max_tokens_migrated_v2 + ===2048 判定）',
     src.indexOf('max_tokens_migrated_v2') >= 0 && src.indexOf('p.max_tokens === 2048') >= 0);
 

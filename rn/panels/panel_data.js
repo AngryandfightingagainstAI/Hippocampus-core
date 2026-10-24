@@ -11,6 +11,31 @@
 
 'use strict';
 
+// 属性键归一 / 取值（与桌面同源 engine/core/stat_rules.js）。
+// 缺失时返回 null，调用点退回旧的裸读法。
+function _sr() {
+  if (typeof StatRules !== 'undefined' && StatRules && typeof StatRules.valueOf === 'function') return StatRules;
+  if (typeof require === 'function') {
+    try {
+      var m = require('../../engine/core/stat_rules.js');
+      if (m && typeof m.valueOf === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
+// 技能数值视图（与桌面同源 engine/core/skill_view.js）。缺失时返回 null。
+function _sv() {
+  if (typeof SkillView !== 'undefined' && SkillView && typeof SkillView.rows === 'function') return SkillView;
+  if (typeof require === 'function') {
+    try {
+      var m = require('../../engine/core/skill_view.js');
+      if (m && typeof m.rows === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
 // ---------- 状态卡（桌面 ui_panels.js:14 renderStatusCardPanel）----------
 // 空态主句：「本卡带未启用状态卡系统。」（ui_panels.js:17）
 // P10·A9：副引导句逐字照桌面同段 <span>：「如需启用，请去 世界书编辑器 → 世界设定 里配置。」
@@ -147,6 +172,7 @@ function computeCharacter() {
     name: '（未填）', gender: '—', age: '—', birthday: '—',
     height: '', appearance: '', background: '',
     portraitSummary: '', portraitFullBio: '', traits: [], attrs: [], talents: [],
+    skillView: { state: 'no-rules', noStatsText: '', orphanCount: 0, rows: [] },
     money: '—', inventory: [
       { key: 'bar', label: '快捷栏', items: [] },
       { key: 'common', label: '通用道具', items: [] },
@@ -187,17 +213,40 @@ function computeCharacter() {
       empty.portraitFullBio = String(pd.portrait.fullBio);
     }
 
+    var SR = _sr();
     for (var i = 0; i < attrs.length; i++) {
       var a = attrs[i] || {};
-      var v = pd['attr_' + a.key] != null ? pd['attr_' + a.key] : (pd[a.key] != null ? pd[a.key] : (a.init || 0));
+      var v = SR ? SR.valueOf(pd, a.key) : (pd['attr_' + a.key] != null ? pd['attr_' + a.key] : (pd[a.key] != null ? pd[a.key] : null));
+      if (v == null) v = a.init != null ? a.init : 0;
       var max = a.max != null ? a.max : 20;
       var pct = Math.max(0, Math.min(100, (v / max) * 100));
-      empty.attrs.push({ key: a.key || '', name: a.name || a.key || '', value: v, max: max, pct: pct });
+      var canonK = SR ? SR.canon(a.key) : ('attr_' + String(a.key).replace(/^attr_/, ''));
+      var locked = !!(pd._destiny && pd._destiny.locked && pd._destiny.values && pd._destiny.values[canonK] != null);
+      empty.attrs.push({ key: canonK, name: a.name || a.key || '', value: v, max: max, pct: pct, locked: locked });
     }
 
     var talents = pd.talents || pd.skills || [];
     if (Array.isArray(talents)) {
       empty.talents = talents.map(function (t) { return String(t); });
+    }
+
+    // C5：技能数值（只读，取 skillStats 已存值，不重算）
+    var SV = _sv();
+    if (SV) {
+      var sv = SV.rows(card, pd);
+      empty.skillView = {
+        state: sv.state,
+        noStatsText: (sv.state === 'no-stats') ? SV.noStatsText() : '',
+        orphanCount: sv.orphanCount || 0,
+        rows: sv.rows.map(function (r) {
+          return {
+            id: r.id, name: r.name,
+            valueText: SV.valueText(r),
+            detailText: SV.detailText(r),
+            orphan: !!r.orphan
+          };
+        })
+      };
     }
 
     if (pd.money != null) empty.money = String(pd.money);

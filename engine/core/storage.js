@@ -159,6 +159,22 @@ var Storage = {
           localStorage.setItem('dice_enabled_migrated_v1', '1');
         }
       } catch (e) {}
+      // 老存档里那条「从未动过」的默认配置会把单次输出上限一直卡在 2048（正文被截断，
+      // 思考模型的 reasoning_content 还会挤掉正文）。只认 ==2048（即用户从未动过），
+      // 用户显式设过的其它值一律不动；迁移只写一次，之后手动改回 2048 也不再自动抬升。
+      // 与桌面 engine/core/storage.js 同口径（那边先落地，RN 此前漏了这一段）。
+      try {
+        if (!localStorage.getItem('max_tokens_migrated_v2')) {
+          if (out.api && Array.isArray(out.api.profiles)) {
+            let mtChanged = false;
+            out.api.profiles.forEach((p) => {
+              if (p && p.max_tokens === 2048) { p.max_tokens = 16384; mtChanged = true; }
+            });
+            if (mtChanged) localStorage.setItem(this.GLOBAL_KEY, JSON.stringify(out));
+          }
+          localStorage.setItem('max_tokens_migrated_v2', '1');
+        }
+      } catch (e) {}
       // theme 必须是对象；旧存档可能存成了字符串 'dark'（历史遗留），在此重置
       if (!out.settings.theme || typeof out.settings.theme !== 'object') {
         out.settings.theme = { activeId: 'paper-white', custom: null, overrides: {} };

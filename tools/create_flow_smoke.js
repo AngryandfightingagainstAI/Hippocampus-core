@@ -79,7 +79,7 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
   };
   check('A3a isAttrStep 识别全 number 步', CF.isAttrStep(step) === true);
   var dOver = { attr_a: 4, attr_b: 3 };
-  eq('A3b calcAllocated 口径（v-fb 累加）', CF.calcAllocated(step, dOver, card.attributePool), 7);
+  eq('A3b calcAllocated 口径（v-fb 累加）', CF.calcAllocated(card, step, dOver, card.attributePool), 7);
   var rOver = CF.validateStep(card, step, dOver);
   eq('A3c 池超限返回 POOL_OVER', rOver.code, 'POOL_OVER');
   eq('A3d POOL_OVER 带 a', rOver.a, 7);
@@ -93,8 +93,8 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
 
   // min 作为 fallback（fb = f.min != null ? f.min : base）
   var step2 = { type: 'form', fields: [{ key: 'attr_x', type: 'number', min: 1 }] };
-  eq('A3i fb 取 f.min（1 点不计入已分配）', CF.calcAllocated(step2, { attr_x: 1 }, card.attributePool), 0);
-  eq('A3j 超出 f.min 的部分计入', CF.calcAllocated(step2, { attr_x: 4 }, card.attributePool), 3);
+  eq('A3i fb 取 f.min（1 点不计入已分配）', CF.calcAllocated(card, step2, { attr_x: 1 }, card.attributePool), 0);
+  eq('A3j 超出 f.min 的部分计入', CF.calcAllocated(card, step2, { attr_x: 4 }, card.attributePool), 3);
 
   // 池在 step 上优先于卡带
   var stepP = { type: 'form', pool: { total: 9, base: 0 }, fields: [{ key: 'attr_y', type: 'number', min: 0 }] };
@@ -270,7 +270,7 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
   check('B13 未知步骤类型', src.indexOf("'（未知步骤类型：' + String(step.type) + '）'") >= 0);
   check('B14 不含「本批未支持」', src.indexOf('本批未支持：') < 0);
   check('B15 数值输入显示值走 CF.shownValue（清空不回填）',
-    src.indexOf('var shown = CF.shownValue(fd, val, isAttr);') >= 0 &&
+    src.indexOf('var shown = CF.shownValue(fd, val, isAttr, def);') >= 0 &&
     src.indexOf("var shown = (val != null && val !== '') ? val : CF.fieldFallback(fd, isAttr);") < 0);
 })();
 
@@ -397,6 +397,49 @@ var CF = require(path.join(root, 'rn', 'create_flow_model.js'));
     src.indexOf('if (pname && GameState.currentSaveId)') >= 0);
   check('G5 buildPlayerData 内含 Alias.normalize（create_flow_model）',
     (readSrc('rn/create_flow_model.js') || '').indexOf('Alias.normalize(pd)') >= 0);
+})();
+
+// ================= H. A2 属性定义统一来源（2026-10-24）=================
+// 背景：card.attributes 是唯一权威定义；属性步 step.fields 只在 attributes 缺项时兜底。
+//   锁四件事：生效值来自 attributes、诊断能指出来源、无冲突不误报、缺 attributes 时回退旧行为。
+(function () {
+  var cardMix = {
+    attributePool: { total: 10, base: 0 },
+    attributes: [
+      { key: 'attr_str', name: '力量', min: 5, max: 20, init: 8 },
+      { key: 'attr_dex', name: '敏捷', min: 1, max: 10 }
+    ]
+  };
+  var stepMix = {
+    type: 'form',
+    fields: [
+      { key: 'attr_str', type: 'number', label: '力气', min: 1, max: 99, default: 1 },
+      { key: 'attr_dex', type: 'number', label: '灵敏', min: 1, max: 10 }
+    ]
+  };
+  var dm = CF.defMapOf(cardMix, stepMix);
+  eq('H1 min 生效值来自 card.attributes', dm['attr_str'].min, 5);
+  eq('H2 max 生效值来自 card.attributes', dm['attr_str'].max, 20);
+  eq('H3 init 生效值来自 card.attributes', dm['attr_str'].init, 8);
+  eq('H4 name 生效值来自 card.attributes', dm['attr_str'].name, '力量');
+  var w = CF.defWarningsOf(cardMix, stepMix);
+  check('H5 冲突产生诊断', w.length >= 1);
+  check('H6 诊断指出属性键', String(w[0] || '').indexOf('attr_str') >= 0);
+  check('H7 诊断指明以 card.attributes 为准', String(w[0] || '').indexOf('以 card.attributes 为准') >= 0);
+  var cardClean = {
+    attributePool: { total: 10, base: 0 },
+    attributes: [{ key: 'attr_str', name: '力量', min: 5, max: 20 }]
+  };
+  var stepClean = { type: 'form', fields: [{ key: 'attr_str', type: 'number', label: '力量', min: 5, max: 20 }] };
+  eq('H8 无冲突时不误报', CF.defWarningsOf(cardClean, stepClean).length, 0);
+  // 点数：attributes min=5 生效（field min=1 不生效）→ attr_str=8 占 3 点，attr_dex=1 占 0 点
+  eq('H9 点数按 attributes 的 min 计',
+    CF.calcAllocated(cardMix, stepMix, { attr_str: 8, attr_dex: 1 }, cardMix.attributePool), 3);
+  // 缺 attributes：回退到字段定义（旧行为）
+  var cardLegacy = { attributePool: { total: 5, base: 0 } };
+  var stepLegacy = { type: 'form', fields: [{ key: 'attr_a', type: 'number', min: 2 }] };
+  eq('H10 card.attributes 缺失时按字段定义回退',
+    CF.calcAllocated(cardLegacy, stepLegacy, { attr_a: 5 }, cardLegacy.attributePool), 3);
 })();
 
 console.log('CREATE_FLOW_SMOKE: ' + ok + ' ok, ' + fail + ' failed');

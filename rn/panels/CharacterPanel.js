@@ -50,6 +50,13 @@ function CharacterPanel(props) {
     attrVal: { fontSize: f.xs, color: c.muted },
     track: { height: 4, backgroundColor: c.hair, borderRadius: 2, overflow: 'hidden' },
     fill: { height: 4, backgroundColor: c.accent },
+    skillRow: { marginBottom: 8 },
+    skillHead: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+    skillName: { flex: 1, fontSize: f.sm, color: c.text },
+    skillVal: { fontSize: f.sm, color: c.text2 || c.text },
+    skillDetail: { fontSize: f.xs, color: c.faint, marginTop: 1 },
+    skillOrphan: { color: c.danger },
+    skillNote: { fontSize: f.xs, color: c.faint, marginTop: 4 },
     invCat: { marginBottom: 8 },
     invCatName: { fontSize: f.sm, color: c.faint, marginBottom: 3 },
     invItem: { fontSize: f.sm, color: c.text2 || c.text, marginBottom: 2 },
@@ -120,7 +127,7 @@ function CharacterPanel(props) {
               <View key={a.key} style={styles.attrRow}>
                 <View style={styles.attrHead}>
                   <Text style={styles.attrName}>{a.name}</Text>
-                  <Text style={styles.attrVal}>{a.value + (a.max != null ? '/' + a.max : '')}</Text>
+                  <Text style={styles.attrVal}>{a.value + (a.max != null ? '/' + a.max : '') + (a.locked ? '（天命）' : '')}</Text>
                 </View>
                 {a.max != null ? (
                   <View style={styles.track}>
@@ -130,6 +137,33 @@ function CharacterPanel(props) {
               </View>
             );
           })}
+        </View>
+      ) : null}
+
+      {view.skillView && view.skillView.state === 'no-stats' ? (
+        <View style={styles.section}>
+          <Text style={styles.secTitle}>{'技能数值'}</Text>
+          <Text style={styles.skillNote}>{view.skillView.noStatsText}</Text>
+        </View>
+      ) : null}
+
+      {view.skillView && view.skillView.state === 'ok' && view.skillView.rows.length ? (
+        <View style={styles.section}>
+          <Text style={styles.secTitle}>{'技能数值'}</Text>
+          {view.skillView.rows.map(function (r, i) {
+            return (
+              <View key={r.id || i} style={styles.skillRow}>
+                <View style={styles.skillHead}>
+                  <Text style={[styles.skillName, r.orphan ? styles.skillOrphan : null]}>{r.name}</Text>
+                  <Text style={[styles.skillVal, r.orphan ? styles.skillOrphan : null]}>{r.valueText}</Text>
+                </View>
+                <Text style={styles.skillDetail}>{r.detailText}</Text>
+              </View>
+            );
+          })}
+          {view.skillView.orphanCount ? (
+            <Text style={styles.skillNote}>{'失效技能不参与任何判定，也不会被自动删除。'}</Text>
+          ) : null}
         </View>
       ) : null}
 

@@ -22,6 +22,14 @@
 
 'use strict';
 
+// C4：技能流程（自动插步骤 / 分配校验 / 提交）。模块不可用时返回 null，调用方退回旧行为。
+var _SF_CACHE = null;
+function SF() {
+  if (_SF_CACHE !== null) return _SF_CACHE || null;
+  try { _SF_CACHE = require('../engine/core/skill_flow.js'); } catch (e) { _SF_CACHE = false; }
+  return _SF_CACHE || null;
+}
+
 var DRAFT_TTL_MS = 7 * 24 * 3600 * 1000;
 
 function _now(nowMs) { return nowMs != null ? nowMs : Date.now(); }
@@ -29,27 +37,81 @@ function _vfs() { return (typeof VFS !== 'undefined' && VFS) ? VFS : null; }
 
 // ---------- 属性池 ----------
 
+// 数值规则唯一实现（engine/core/stat_rules.js）：与桌面 engine/story.js CreateFlow 同口径。
+// 属性键归一 / 锁定项不计池 / 池来源优先级都走这里，避免双端各写一份漂移。
+function _sr() {
+  if (typeof StatRules !== 'undefined' && StatRules && typeof StatRules.allocated === 'function') return StatRules;
+  if (typeof require === 'function') {
+    try {
+      var m = require('../engine/core/stat_rules.js');
+      if (m && typeof m.allocated === 'function') return m;
+    } catch (e) {}
+  }
+  return null;
+}
+
 function getPool(card, step) {
+  var SR = _sr();
+  if (SR) return SR.poolOf(card, step);
   if (step && step.pool && step.pool.total != null) return step.pool;
   if (card && card.attributePool && card.attributePool.total != null) return card.attributePool;
   return null;
 }
 
 function isAttrStep(step) {
+  var SR = _sr();
+  if (SR) return SR.isAttrStep(step);
   if (!step || !step.fields || !step.fields.length) return false;
   var allNumber = step.fields.every(function (f) { return f.type === 'number'; });
   var allAttrKey = step.fields.every(function (f) { return f.key && String(f.key).indexOf('attr_') === 0; });
   return allNumber || allAttrKey;
 }
 
-function calcAllocated(step, data, pool) {
+// A2：属性定义统一入口（card.attributes 权威，step.fields 只在 attributes 缺项时兜底）。
+//   桌面 engine/story.js renderForm / validateCurrent、prompt_builder 走的是同一个 StatRules.defs，
+//   这样「显示 / 校验 / 点数 / 提示词」四处不会再各拿一份定义。
+function defsOf(card, step) {
+  var SR = _sr();
+  if (SR && typeof SR.defs === 'function') return SR.defs(card, step);
+  return (step && step.fields || []).filter(function (f) { return f && f.key; }).map(function (f) {
+    return { key: f.key, bare: f.key, name: f.label || f.key, min: f.min, max: f.max, init: f.default, legacy: true };
+  });
+}
+
+// 属性定义查表（canon 键与裸键都命中）；defMap 缺失时退回 defsOf 自行拼
+function defMapOf(card, step) {
+  var SR = _sr();
+  if (SR && typeof SR.defMap === 'function') return SR.defMap(card, step);
+  var out = {};
+  defsOf(card, step).forEach(function (d) { out[d.key] = d; if (d.bare) out[d.bare] = d; });
+  return out;
+}
+
+// A2 诊断：card.attributes 与属性步定义不一致时的可读提示（不改任何一边）
+function defWarningsOf(card, step) {
+  var SR = _sr();
+  if (SR && typeof SR.defWarnings === 'function') {
+    try { return SR.defWarnings(card, step); } catch (e) { return []; }
+  }
+  return [];
+}
+
+function calcAllocated(card, step, data, pool) {
   if (!pool) return 0;
+  var SR = _sr();
+  var list = defsOf(card, step);
+  if (SR) {
+    return SR.allocated(list, data, pool.base != null ? pool.base : 0, {
+      excludeLocked: true,
+      locked: SR.lockedValues(data)
+    });
+  }
   var base = pool.base != null ? pool.base : 0;
   var total = 0;
-  (step.fields || []).forEach(function (f) {
-    var v = data[f.key];
+  list.forEach(function (d) {
+    var v = data[d.key];
     if (typeof v !== 'number' || isNaN(v)) return;
-    var fb = f.min != null ? f.min : base;
+    var fb = d.min != null ? d.min : base;
     total += Math.max(0, v - fb);
   });
   return total;
@@ -59,6 +121,52 @@ function calcAllocated(step, data, pool) {
 function poolOf(card, step) {
   var pool = getPool(card, step);
   return (pool && isAttrStep(step)) ? pool : null;
+}
+
+// ---------- 天命落库（与桌面 engine/story.js:1833 pickDestiny 同口径）----------
+// 选一组天命：属性经 stat_rules 写规范键（同时保留裸键兼容旧读取方），
+// 并落 playerData._destiny 锁（locked/values/label/lockedAt）。
+// 重掷后再选：先清掉这一组属性键，避免上一组值残留。
+function applyDestinyPick(data, attrs, set, index, nowMs) {
+  var SR = _sr();
+  var next = {};
+  Object.keys(data || {}).forEach(function (k) { next[k] = data[k]; });
+  var list = attrs || [];
+  var values = {};
+
+  function canonOf(key) {
+    if (SR) return SR.canon(key);
+    return 'attr_' + String(key).replace(/^attr_/, '');
+  }
+  function bareOf(key) {
+    if (SR) return SR.bare(key);
+    return String(key).replace(/^attr_/, '');
+  }
+
+  // 1) 清掉上一组写进去的值（规范键 + 裸键），保证重掷后不残留
+  list.forEach(function (a) {
+    if (!a || !a.key) return;
+    delete next[canonOf(a.key)];
+    delete next[bareOf(a.key)];
+  });
+
+  // 2) 写入新一组（只写这一组声明过的属性）
+  list.forEach(function (a) {
+    if (!a || !a.key || !set || !set.values) return;
+    var v = set.values[a.key];
+    if (typeof v !== 'number') return;
+    if (SR) SR.writeValue(next, a.key, v, true);
+    else next[a.key] = v;
+    values[canonOf(a.key)] = v;
+  });
+
+  next._destiny = {
+    locked: true,
+    values: values,
+    label: '天命 ' + ((index || 0) + 1) + ' 组',
+    lockedAt: new Date(nowMs != null ? nowMs : Date.now()).toISOString()
+  };
+  return next;
 }
 
 // ---------- 步骤跳过 ----------
@@ -76,9 +184,17 @@ function filterSteps(card, data) {
   return steps.filter(function (s) { return !isSkipped(s, data); });
 }
 
+// C4：自动插入技能步骤（与桌面 CreateFlow.start 同源）。返回 {steps, inserted, explicit}
+function prepareSteps(card) {
+  var s = SF();
+  var base = (card && Array.isArray(card.steps)) ? card.steps : [];
+  if (!s || !s.prepareSteps) return { steps: base.slice(), inserted: false, explicit: false, hasRules: false };
+  var r = s.prepareSteps(card);
+  return { steps: (r.steps || []).slice(), inserted: !!r.inserted, explicit: !!r.explicit, hasRules: !!r.hasRules };
+}
+
 // next:1025-1028 等效：返回下一有效步下标，越界返回 'finish'
-function nextIndex(steps, index, data) {
-  var i = index;
+function nextIndex(steps, index, data) {  var i = index;
   if (i >= steps.length - 1) return 'finish';
   i++;
   while (i < steps.length && isSkipped(steps[i], data)) i++;
@@ -88,22 +204,26 @@ function nextIndex(steps, index, data) {
 
 // ---------- 表单默认值 ----------
 
-function fieldFallback(f, isAttr) {
-  return (f.default != null) ? f.default : (isAttr && f.min != null ? f.min : '');
+function fieldFallback(f, isAttr, d) {
+  var init = (d && d.init != null) ? d.init : f.default;
+  var min = (d && d.min != null) ? d.min : f.min;
+  return (init != null) ? init : (isAttr && min != null ? min : '');
 }
 
 // P23·①：输入框显示值 —— 只在「没填过」（null / undefined）时回落默认值。
 //   玩家显式清空（''）必须显示空，否则删掉默认数字的瞬间它就弹回来了（RG-1）。
-function shownValue(f, val, isAttr) {
-  return (val != null) ? val : fieldFallback(f, isAttr);
+//   A2：d 是该属性的统一定义（card.attributes 优先），不传时退回字段自身。
+function shownValue(f, val, isAttr, d) {
+  return (val != null) ? val : fieldFallback(f, isAttr, d);
 }
 
 // renderForm:756-763 等效：把 fallback 同步进 data（用户没动过输入框时也有值）。
 // P23·①：判据由「null / 空串」收紧为「null」——空串是玩家清空的动作，不是「没填过」；
 //   继续按 fallback 回填会让「清空 → 默认值」在切步/重渲染时反复发生（RG-1）。
-function syncDefaults(step, data, isAttr) {
+function syncDefaults(step, data, isAttr, dmap) {
   (step.fields || []).forEach(function (f) {
-    var fb = fieldFallback(f, isAttr);
+    var d = dmap ? (dmap[f.key] || null) : null;
+    var fb = fieldFallback(f, isAttr, d);
     if (data[f.key] == null && fb !== '' && fb != null) {
       data[f.key] = fb;
     }
@@ -182,12 +302,48 @@ function quizResults(step, data) {
 
 function validateStep(card, step, data) {
   if (!step) return { ok: true };
+  // C4：技能步骤的提交合法性（与桌面 validateCurrent 的 skills 分支同口径）
+  if (step.type === 'skills') {
+    var s = SF();
+    if (!s) return { ok: false, code: 'SKILL_MODULE', message: '技能数值模块未加载，无法校验技能分配' };
+    var plan = s.planStep(card, step, s.attrsOf(card, data), (data && data.__skillAlloc) || {});
+    var orphans = plan.orphans || [];
+    if (orphans.length) {
+      return {
+        ok: false, code: 'SKILL_ORPHAN',
+        message: '有 ' + orphans.length + ' 个技能已不在当前卡带中（' + orphans.map(function (o) { return o.id; }).join('、') + '）\n请先移除再继续'
+      };
+    }
+    if (!plan.submitOk) {
+      var errs = plan.errors || [];
+      var under = errs.filter(function (e) { return e.code === 'E_SKILL_UNDER_BUDGET'; })[0];
+      if (under) {
+        return {
+          ok: false, code: 'SKILL_UNDER',
+          a: plan.status ? plan.status.allocated : 0,
+          total: plan.budget ? plan.budget.total : 0,
+          message: '技能点还没分配完（已分配 ' + (plan.status ? plan.status.allocated : 0) + ' / ' + (plan.budget ? plan.budget.total : 0) + '）\n请继续分配'
+        };
+      }
+      var e0 = errs[0];
+      return {
+        ok: false, code: (e0 && e0.code) || 'SKILL_INVALID',
+        message: (e0 ? e0.message : '技能分配还不合法') + (e0 && e0.path ? '（' + e0.path + '）' : '')
+      };
+    }
+    return { ok: true };
+  }
   if (step.type === 'form') {
     // 1) number 先 clamp 回 [min,max]（validateCurrent:990-1000）
+    //    A2：属性步的上下限取统一定义（card.attributes 权威），字段值只兜底
+    var dmapV = isAttrStep(step) ? defMapOf(card, step) : null;
     (step.fields || []).forEach(function (f) {
       if (f.type !== 'number') return;
+      var d = dmapV ? (dmapV[f.key] || null) : null;
+      var mn = (d && d.min != null) ? d.min : f.min;
+      var mx = (d && d.max != null) ? d.max : f.max;
       var v = data[f.key];
-      if (typeof v === 'number' && !isNaN(v)) data[f.key] = clampNumber(v, f.min, f.max);
+      if (typeof v === 'number' && !isNaN(v)) data[f.key] = clampNumber(v, mn, mx);
     });
     // 2) required 缺值（:1001-1003）
     for (var i = 0; i < (step.fields || []).length; i++) {
@@ -199,7 +355,7 @@ function validateStep(card, step, data) {
     // 3) 属性池两条（:1004-1011）
     var pool = poolOf(card, step);
     if (pool) {
-      var a = calcAllocated(step, data, pool);
+      var a = calcAllocated(card, step, data, pool);
       if (a > pool.total) return { ok: false, code: 'POOL_OVER', a: a, total: pool.total };
       if (a < pool.total) return { ok: false, code: 'POOL_UNDER', a: a, total: pool.total };
     }
@@ -236,13 +392,15 @@ function toggleMulti(data, key, id, min, max) {
 
 function summaryEntries(card, data) {
   var lm = {}, om = {};
-  (card && card.attributes || []).forEach(function (a) {
-    lm['attr_' + a.key] = a.name || a.key;
-    lm[a.key] = a.name || a.key;
+  // A2：属性名取统一定义（card.attributes 权威），字段 label 只在没有属性名时兜底
+  defsOf(card, null).forEach(function (d) {
+    var nm = d.name || d.bare || d.key;
+    lm[d.key] = nm;
+    if (d.bare) lm[d.bare] = nm;
   });
   (card && card.steps || []).forEach(function (step) {
     (step.fields || []).forEach(function (f) {
-      lm[f.key] = f.label || f.key;
+      if (!lm[f.key]) lm[f.key] = f.label || f.key;
       if (f.type === 'choice') (f.options || []).forEach(function (o) {
         om[f.key + '.' + o.id] = o.label || o.name || o.id;
       });
@@ -328,6 +486,8 @@ function buildPlayerData(data, card) {
   // P67：问卷答案只是过程数据，不进存档
   Object.keys(pd).forEach(function (k) { if (k.indexOf('__picks_') === 0) delete pd[k]; });
   if (!pd.inventory) pd.inventory = { bar: [], common: [], story: [], rare: [] };
+  // C4：临时分配只属于草稿，绝不能进 playerData（问卷结论 __quizFacts 是正式数据，保留）
+  if ('__skillAlloc' in pd) delete pd.__skillAlloc;
   if (typeof Alias !== 'undefined' && Alias && Alias.normalize) Alias.normalize(pd);
   // P67：问卷结论落库（quiz_<id> / __quiz / __quizFacts），grants 叠加到属性
   var Q = _quiz();
@@ -366,10 +526,15 @@ module.exports = {
   DRAFT_TTL_MS: DRAFT_TTL_MS,
   getPool: getPool,
   isAttrStep: isAttrStep,
+  defsOf: defsOf,
+  defMapOf: defMapOf,
+  defWarningsOf: defWarningsOf,
   calcAllocated: calcAllocated,
   poolOf: poolOf,
+  applyDestinyPick: applyDestinyPick,
   isSkipped: isSkipped,
   filterSteps: filterSteps,
+  prepareSteps: prepareSteps,
   nextIndex: nextIndex,
   fieldFallback: fieldFallback,
   shownValue: shownValue,

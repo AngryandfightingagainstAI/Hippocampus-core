@@ -568,8 +568,10 @@ function runF() {
   check('F3 logger.js deleteLogsAfter 带第 4 参 round',
     lg.indexOf('deleteLogsAfter: function(cardId, saveId, gameDate, round)') >= 0);
   check('F4 story.js compress 传 msgFrom', st.indexOf('msgFrom: batchMsgFrom') >= 0);
-  check('F5 snapshot_actions.js 传 snap.round',
-    sa.indexOf('snap.gameTime, snap.round') >= 0);
+  // F5 口径已随 P72·W0-b 变过：回退不再物理删日志（deleteLogsAfter 只留给显式入口），
+  // 改成按 messageId 归档（见 snapshot_actions.js 顶部注释）。这里守的是「别退回去物理删」。
+  check('F5 snapshot_actions.js 回退走归档、不物理删日志',
+    sa.indexOf('Logger.archiveAfter(') >= 0 && sa.indexOf('deleteLogsAfter(') < 0);
   check('F6 prompt_builder.js 工具清单含 query_log({keyword, from?, to?})',
     pb.indexOf('/ query_log({keyword, from?, to?})') >= 0);
   check('F7 prompt_builder.js 有预算刹车入口与阶梯常量',

@@ -185,10 +185,28 @@ function CardsScreen() {
   // P6·S3-6：卡带「+ 新游戏」（桌面 ui_cards.js:104 startNewSave）——
   // 桌面按 cardId 直接建档；RN 创角屏以主页卡带为基准（CreateScreen.js:81-83），
   // 故先设为主页卡再进创角（差异已入报告【改动】自报）。
+  // 旧卡提示（阶段 A 补充）：卡带没声明 card.attributes 时，创角仍可继续，
+  // 但天命锁定/人设阶段校验走 legacy 兜底。每张卡只提示一次。
+  function maybeLegacyAttrHint(card, id) {
+    try {
+      if (!card) return;
+      if (Array.isArray(card.attributes) && card.attributes.length) return;
+      var key = 'hc_legacy_attrs_hint:' + String((card && (card.cardId || card.id)) || id || '');
+      if (typeof localStorage !== 'undefined') {
+        if (localStorage.getItem(key)) return;
+        localStorage.setItem(key, '1');
+      }
+      if (typeof Platform !== 'undefined' && Platform.ui && Platform.ui.toast) {
+        Platform.ui.toast('这张卡带没有声明 card.attributes（旧版属性定义，只写在创角步骤里）。创角仍可继续，但天命锁定与人设阶段的属性校验可能不完整。', { type: 'warn' });
+      }
+    } catch (e) {}
+  }
+
   function newGame(id) {
     Model.setHomeCardId(id);
     var name = cards[id] ? (cards[id].cardName || id) : id;
     setImportMsg({ type: 'success', text: '新游戏：' + name });
+    maybeLegacyAttrHint(cards[id], id);
     nav.navigate('create');
   }
 
@@ -230,11 +248,16 @@ function CardsScreen() {
       setImportMsg({ type: 'error', text: '校验失败：' + v.msg });
       return;
     }
+    // 阶段 C2：技能数值提示只报条数，详情不塞进导入弹窗
+    var skillWarn = (v.warnings || []).filter(function (w) {
+      return String(w).indexOf('技能') === 0;
+    }).length;
+    var skillNote = skillWarn ? '（技能数值有 ' + skillWarn + ' 条提示）' : '';
     try {
       var imported = Storage.getImportedCards();
       imported[card.cardId] = card;
       Storage.setImportedCards(imported);
-      setImportMsg({ type: 'success', text: '已导入：' + (card.cardName || card.cardId) + importNote });
+      setImportMsg({ type: 'success', text: '已导入：' + (card.cardName || card.cardId) + importNote + skillNote });
       setImportText('');
       refresh();
     } catch (e) {
@@ -270,6 +293,11 @@ function CardsScreen() {
     }
     var card = r && r.draft && r.draft.card;
     if (card) lines.push('草稿卡带：' + (card.cardName || '（未命名）') + ' / cardId=' + card.cardId);
+    // 阶段 C3：资料导入不写技能数值规则（stat），已有技能的 stat 会原样保留
+    var skills = (card && card.worldbook && card.worldbook.skills) || [];
+    if (skills.length) {
+      lines.push('技能数值规则：本路径不写入 stat（已有技能的 stat 会保留）；新增技能如需要数值，请到「设置 → 世界书 → 法术」补充。');
+    }
     return lines.join('\n');
   }
 

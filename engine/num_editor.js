@@ -167,6 +167,12 @@ var NumEditor = {
       else { tpl.type='gauge'; tpl.min=0; tpl.max=100; tpl.init=0; tpl.where='sidebar'; }
       tpl.icon='●'; tpl.label=''; tpl.key=''; tpl.showBar=true; tpl.color='blue'; tpl.desc=''; tpl.segments=[];
     }
+    // 关系条目：给一个能直接保存的内部名与标题，避免「新建关系」后立刻被「缺内部名」拦下。
+    if (tpl.type === 'relation') {
+      if (!tpl.key) tpl.key = 'rel_' + Date.now().toString(36);
+      if (!tpl.label) tpl.label = (tpl.to ? ('与 ' + tpl.to + ' 的关系') : '新关系');
+      if (tpl.init == null) tpl.init = 0;
+    }
     this.items.push(tpl); this.dirty = true;
     return { ok: true, index: this.items.length - 1 };
   },
@@ -194,6 +200,9 @@ var NumEditor = {
     const imported = Storage.getImportedCards();
     imported[this.cardId] = cardCopy;
     Storage.setImportedCards(imported);
+    // 断点 B 修复：编辑器只写卡带时，正在进行的存档完全看不到新配的关系。
+    // 这里把「结构」同步进当前存档，但保留存档里已有的当前值（剧情推进过的不能被 init 覆盖）。
+    const synced = this.syncToCurrentState(cardCopy);
     this.dirty = false;
     // RN 侧新增：存盘后跑一次 CardValidator.validate，把报告一并返回给组件层
     // （桌面无此步；不拦保存，只做诊断回执）。CardValidator 未装载时返回 null。
@@ -201,7 +210,59 @@ var NumEditor = {
     try {
       if (typeof CardValidator !== 'undefined') validation = CardValidator.validate(cardCopy);
     } catch (e) { validation = null; }
-    return { ok: true, cardId: this.cardId, validation: validation };
+    return { ok: true, cardId: this.cardId, validation: validation, synced: synced };
+  },
+
+  // 把卡带里的数值/关系条目同步进「当前正在玩的这一档」。
+  // 只同步结构（名称/上下限/关系去向）与新增/删除，不动已有条目的 current。
+  syncToCurrentState(cardCopy) {
+    if (typeof GameState === 'undefined' || !GameState || !GameState.currentState) return false;
+    if (GameState.currentCardId !== this.cardId) return false;
+    const st = GameState.currentState;
+    if (!Array.isArray(st.panels)) st.panels = [];
+    let changed = 0;
+
+    const findPanel = (id) => st.panels.filter((p) => p && p.id === id)[0];
+    const cardPanels = cardCopy.panels || [];
+
+    cardPanels.forEach((cp) => {
+      let target = findPanel(cp.id);
+      if (!target) {
+        target = { id: cp.id, num: cp.num, name: cp.name, entries: [] };
+        st.panels.push(target);
+        changed++;
+      }
+      if (cp.name && target.name !== cp.name) { target.name = cp.name; changed++; }
+      if (!Array.isArray(target.entries)) target.entries = [];
+      (cp.entries || []).forEach((ce) => {
+        const old = target.entries.filter((e) => e && e.key === ce.key)[0];
+        if (!old) {
+          const ne = JSON.parse(JSON.stringify(ce));
+          // 新条目把 init 作为当前值，否则面板会显示 undefined
+          if (ne.current == null) ne.current = (ne.init != null ? ne.init : 0);
+          target.entries.push(ne);
+          changed++;
+          return;
+        }
+        ['name', 'icon', 'min', 'max', 'from', 'to', 'type'].forEach((k) => {
+          if (ce[k] !== undefined && old[k] !== ce[k]) { old[k] = ce[k]; changed++; }
+        });
+      });
+      // 卡带里删掉的条目 → 存档里也删（仅限数值/关系，list 类交给剧情）
+      const cardKeys = (cp.entries || []).map((e) => e && e.key).filter(Boolean);
+      const before = target.entries.length;
+      target.entries = target.entries.filter((e) => {
+        if (!e || (e.type !== 'number' && e.type !== 'relation')) return true;
+        return cardKeys.indexOf(e.key) >= 0;
+      });
+      if (target.entries.length !== before) changed += before - target.entries.length;
+    });
+
+    // 卡带里整块删掉的 panel 不动（可能承载剧情数据），只在最后持久化
+    if (changed > 0 && typeof GameState.persist === 'function') {
+      try { GameState.persist(); } catch (e) {}
+    }
+    return changed > 0;
   }
 };
 

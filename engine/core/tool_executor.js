@@ -454,23 +454,161 @@
   //   query_avatar）；② 仍超 800 字符时改用结构化截断 {truncated, preview, note}，
   //   保证 AI 拿到的是合法 JSON。
   _QUERY_DATA_MAX: 800,
+  // A1（旧问题修复·批次一）：技能摘要优先保留。
+  //   query_player 的 data 是整个 playerData；skillStats 写在对象尾部，
+  //   一旦整档超过 800 字被结构化截断，技能数值会整段丢失。
+  //   这里额外给一份「最多 12 项、按 value 降序」的只读摘要，并限制其字符预算，
+  //   截断时把 skills 放在顶层，保证技能数值不会被 preview 切掉。
+  _SKILL_SUMMARY_MAX_ITEMS: 12,
+  _SKILL_SUMMARY_MAX_CHARS: 420,
+  // 旧存档的 pd.skills 字符串列表：预算独立、优先级低于 skills/skillsNote。
+  _SKILL_LEGACY_MAX_ITEMS: 8,
+  _SKILL_LEGACY_MAX_CHARS: 120,
+  _compactLegacySkills: function(list) {
+    if (!Array.isArray(list) || !list.length) return null;
+    var vals = [];
+    for (var i = 0; i < list.length; i++) {
+      var s = (list[i] == null) ? '' : String(list[i]);
+      if (s) vals.push(s);
+    }
+    if (!vals.length) return null;
+    var total = vals.length;
+    var kept = vals.slice(0, this._SKILL_LEGACY_MAX_ITEMS);
+    var trimmed = total > kept.length;
+    while (kept.length > 1 && JSON.stringify(kept).length > this._SKILL_LEGACY_MAX_CHARS) {
+      kept.pop();
+      trimmed = true;
+    }
+    if (kept.length === 1 && JSON.stringify(kept).length > this._SKILL_LEGACY_MAX_CHARS) {
+      kept = [String(kept[0]).slice(0, 40)];
+      trimmed = true;
+    }
+    return {
+      items: kept,
+      note: trimmed ? ('旧技能列表已截断：仅列 ' + kept.length + ' / ' + total + ' 项') : ''
+    };
+  },
+  _compactSkills: function(playerData) {
+    var pd = playerData || {};
+    var stats = pd.skillStats;
+    if (!stats || typeof stats !== 'object' || Array.isArray(stats)) {
+      return { skills: null, note: '本档无技能数值（旧存档未记录，不会补算）' };
+    }
+    var ids = Object.keys(stats);
+    if (!ids.length) return { skills: [], note: '' };
+
+    var card = (typeof GameState !== 'undefined' && GameState) ? GameState.currentCard : null;
+    var defs = (card && card.worldbook && Array.isArray(card.worldbook.skills)) ? card.worldbook.skills : [];
+    var byId = {};
+    defs.forEach(function(d) {
+      if (d && d.id != null) byId[String(d.id)] = d;
+    });
+
+    var rows = ids.map(function(id) {
+      var rec = stats[id] || {};
+      var def = byId[id] || null;
+      var raw = rec.value;
+      var value = Number(raw);
+      var bad = (raw == null || !isFinite(value));
+      var name = def && def.name ? String(def.name) : String(id);
+      // 紧凑行：省略 null/false 与与 id 同名的 name，给 12 项留出空间。
+      var row = { id: String(id), value: bad ? null : value };
+      if (def && def.max != null && isFinite(Number(def.max))) row.max = Number(def.max);
+      if (name !== String(id)) row.name = name;
+      if (!def) row.orphan = true;
+      if (bad) row.invalid = true;
+      return row;
+    });
+
+    rows.sort(function(a, b) {
+      var av = (a.value == null) ? -Infinity : a.value;
+      var bv = (b.value == null) ? -Infinity : b.value;
+      if (bv !== av) return bv - av;
+      return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+    });
+
+    var total = rows.length;
+    var kept = rows.slice(0, this._SKILL_SUMMARY_MAX_ITEMS);
+    var trimmed = total > kept.length;
+
+    // 字符预算：超出时从末尾（value 最小）丢，保留至少 1 项。
+    while (kept.length > 1 && JSON.stringify(kept).length > this._SKILL_SUMMARY_MAX_CHARS) {
+      kept.pop();
+      trimmed = true;
+    }
+    if (kept.length === 1 && JSON.stringify(kept).length > this._SKILL_SUMMARY_MAX_CHARS) {
+      var one = kept[0];
+      kept = [{ id: one.id, value: one.value }];
+      if (one.name && String(one.name).length <= 24) kept[0].name = one.name;
+      trimmed = true;
+    }
+
+    return {
+      skills: kept,
+      note: trimmed ? ('摘要仅列 ' + kept.length + ' / ' + total + ' 项（按数值降序；未列出的技能不代表不存在）') : ''
+    };
+  },
   _formatQueryData: function(r) {
     let data = r.data;
+    let skillSum = null;
+    let legacySum = null;
     if (r.queryType === 'player' && data && typeof data === 'object' && !Array.isArray(data)) {
       data = Object.assign({}, data);
       if (Object.prototype.hasOwnProperty.call(data, 'portrait')) delete data.portrait;
       if (Object.prototype.hasOwnProperty.call(data, '_openingPrompt')) delete data._openingPrompt;
-      data._hint = '人设总述与特质详情请调 query_portrait';
+      // 旧角色可能把技能当字符串列表存在 pd.skills；只在输出副本里改名，并单独限预算。
+      if (Object.prototype.hasOwnProperty.call(data, 'skills')) {
+        legacySum = this._compactLegacySkills(data.skills);
+        delete data.skills;
+      }
+      skillSum = this._compactSkills(data);
+      data._hint = '人设总述与特质详情请调 query_portrait'
+        + (skillSum.skills ? '；技能数值见 skills 摘要（最多 ' + this._SKILL_SUMMARY_MAX_ITEMS + ' 项，按数值降序）' : '');
+      // skills 放最前：截断时优先保留（旧档也显式给 null，避免 AI 误以为字段不存在）
+      var head = { skills: skillSum.skills };
+      if (skillSum.note) head.skillsNote = skillSum.note;
+      // 旧列表排在新摘要之后（优先级更低），但仍显式返回，不依赖 preview。
+      if (legacySum) {
+        head.skillsLegacy = legacySum.items;
+        if (legacySum.note) head.skillsLegacyNote = legacySum.note;
+      }
+      data = Object.assign(head, data);
     }
     let json;
     try { json = JSON.stringify(data); } catch (e) { return '（数据无法序列化）'; }
     if (json == null) return '（空）';
     if (json.length <= this._QUERY_DATA_MAX) return json;
-    return JSON.stringify({
-      truncated: true,
-      preview: json.slice(0, this._QUERY_DATA_MAX - 120),
-      note: '原始 JSON 长度 ' + json.length + '，已截断；需要完整详情请分项查询'
-    });
+    var note = '原始 JSON 长度 ' + json.length + '，已截断；需要完整详情请分项查询';
+    if (!skillSum) {
+      return JSON.stringify({
+        truncated: true,
+        preview: json.slice(0, this._QUERY_DATA_MAX - 120),
+        note: note
+      });
+    }
+    // 带技能摘要的截断：preview 预算按剩余空间动态计算，整条仍 ≤ 800。
+    var shell = { truncated: true, skills: skillSum.skills };
+    if (skillSum.note) shell.skillsNote = skillSum.note;
+    if (legacySum) {
+      shell.skillsLegacy = legacySum.items;
+      if (legacySum.note) shell.skillsLegacyNote = legacySum.note;
+    }
+    shell.preview = '';
+    shell.note = note;
+    var preview = json.slice(0, Math.max(0, this._QUERY_DATA_MAX - JSON.stringify(shell).length));
+    var out = { truncated: true, skills: skillSum.skills };
+    if (skillSum.note) out.skillsNote = skillSum.note;
+    if (legacySum) {
+      out.skillsLegacy = legacySum.items;
+      if (legacySum.note) out.skillsLegacyNote = legacySum.note;
+    }
+    out.preview = preview;
+    out.note = note;
+    while (JSON.stringify(out).length > this._QUERY_DATA_MAX && out.preview.length > 0) {
+      out.preview = out.preview.slice(0, Math.floor(out.preview.length * 0.9) - 1);
+      if (out.preview.length < 0) out.preview = '';
+    }
+    return JSON.stringify(out);
   },
   formatForHistory: function(results) {
     const oks = results.filter(r => r.ok), fails = results.filter(r => !r.ok), lines = [];

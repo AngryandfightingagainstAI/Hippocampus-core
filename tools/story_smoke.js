@@ -950,26 +950,32 @@ function runJ() {
   var UI_Portrait = require(path.join(root, 'rn', 'ui_portrait_rn.js'));
 
   // J1：confirm ⇒ playerData.portrait 更新 + 缓存作废 + 落盘
+  // 注意：confirm / skip 都返回 Promise（内部先过 gateBlocked），断言必须等它 resolve；
+  // 之前同步断言等于在 promise 跑完前读 playerData，J1-J5 是这么假红的。
   gs._cachedStaticDynamic = 'OLD_SUMMARY';
-  UI_Portrait.confirm({ summary: '新总述', traits: ['冷酷', '多疑'], lockedAt: 'T2', aiVersion: 1 });
-  check('J1 S11 confirm 后 playerData.portrait 为新总述',
-    gs.playerData.portrait && gs.playerData.portrait.summary === '新总述');
-  check('J2 S11 confirm 后 GameState._cachedStaticDynamic === null（缓存作废）',
-    gs._cachedStaticDynamic === null);
-  check('J3 S11 confirm 后调用了 GameState.persist', (gs._persisted || 0) >= 1);
+  return Promise.resolve(UI_Portrait.confirm({ summary: '新总述', traits: ['冷酷', '多疑'], lockedAt: 'T2', aiVersion: 1 }))
+    .then(function () {
+      check('J1 S11 confirm 后 playerData.portrait 为新总述',
+        gs.playerData.portrait && gs.playerData.portrait.summary === '新总述');
+      check('J2 S11 confirm 后 GameState._cachedStaticDynamic === null（缓存作废）',
+        gs._cachedStaticDynamic === null);
+      check('J3 S11 confirm 后调用了 GameState.persist', (gs._persisted || 0) >= 1);
 
-  // J4：skip 分支同样收口（跳过不许绕过 invalidateCache）
-  gs._cachedStaticDynamic = 'OLD_SUMMARY';
-  gs.playerData = {};
-  UI_Portrait.skip();
-  check('J4 S11 skip 后 playerData.portrait 为兜底总述',
-    gs.playerData.portrait && gs.playerData.portrait.summary === '（兜底总述）');
-  check('J5 S11 skip 后 GameState._cachedStaticDynamic === null',
-    gs._cachedStaticDynamic === null);
+      // J4：skip 分支同样收口（跳过不许绕过 invalidateCache）
+      gs._cachedStaticDynamic = 'OLD_SUMMARY';
+      gs.playerData = {};
+      return Promise.resolve(UI_Portrait.skip());
+    })
+    .then(function () {
+      check('J4 S11 skip 后 playerData.portrait 为兜底总述',
+        gs.playerData.portrait && gs.playerData.portrait.summary === '（兜底总述）');
+      check('J5 S11 skip 后 GameState._cachedStaticDynamic === null',
+        gs._cachedStaticDynamic === null);
 
-  globalThis.GameState = savedGS;
-  globalThis.Portrait = savedPortrait;
-  globalThis.Platform = savedPlatform;
+      globalThis.GameState = savedGS;
+      globalThis.Portrait = savedPortrait;
+      globalThis.Platform = savedPlatform;
+    });
 }
 
 // ================= E. babel transform（含 JSX 的 B 类）=================
@@ -998,7 +1004,8 @@ runB().then(runC).then(runD).then(function () {
   return runH();
 }).then(function () {
   runI();
-  runJ();
+  return runJ();
+}).then(function () {
   runE();
   console.log('STORY_SMOKE: ' + ok + ' ok, ' + fail + ' failed');
   if (fail > 0) process.exit(1);
